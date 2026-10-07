@@ -89,23 +89,6 @@ impl UserFolderRepository {
         Ok(found.is_some())
     }
 
-    pub async fn set_quota(&self, root_id: Uuid, quota_bytes: i64) -> Result<(), AppError> {
-        let updated = sqlx::query(r#"UPDATE user_folders SET quota_bytes = $1 WHERE root_id = $2"#)
-            .bind(quota_bytes)
-            .bind(root_id)
-            .execute(&self.pool)
-            .await?
-            .rows_affected();
-
-        if updated == 0 {
-            return Err(AppError::ResourceMissing(
-                "folder assignment does not exist".into(),
-            ));
-        }
-
-        Ok(())
-    }
-
     pub async fn list_users_in(&self, root_id: Uuid) -> Result<Vec<UserView>, AppError> {
         sqlx::query_as!(
             UserView,

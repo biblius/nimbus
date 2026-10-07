@@ -25,7 +25,7 @@ use crate::{
     error::AppError,
     router::middleware::RemoteAddress,
     state::{AppState, HttpConfiguration},
-    user::model::CurrentUserView,
+    user::model::UserViewFull,
 };
 
 #[utoipa::path(
@@ -115,9 +115,9 @@ pub(crate) async fn finish_password_reset(
 #[utoipa::path(
     get,
     path = "/auth/me",
-    responses((status = 200, description = "Current user", body = CurrentUserView))
+    responses((status = 200, description = "Current user", body = UserViewFull))
 )]
-pub(crate) async fn me(session: Session) -> Json<CurrentUserView> {
+pub(crate) async fn me(session: Session) -> Json<UserViewFull> {
     Json(session.user.into())
 }
 

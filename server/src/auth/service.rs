@@ -240,7 +240,7 @@ impl AuthenticationService {
 
         self.users.update_password(user_id, &password).await?;
 
-        self.sessions.expire_all_for_user(user_id).await?;
+        self.sessions.expire_all(user_id).await?;
 
         if let Some(email) = user.email.as_deref()
             && let Err(error) = self

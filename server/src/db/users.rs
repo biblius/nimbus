@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::{
     db::{Db, DbPool},
     error::AppError,
-    user::model::{CreateUser, Role, User, UserView},
+    user::model::{CreateUser, Role, User, UserView, UserViewFull},
 };
 
 #[derive(Clone)]
@@ -133,16 +133,18 @@ impl UserRepository {
         .map_err(AppError::from)
     }
 
-    pub async fn list_active(&self) -> Result<Vec<UserView>, AppError> {
+    pub async fn list_active(&self) -> Result<Vec<UserViewFull>, AppError> {
         sqlx::query_as!(
-            UserView,
+            UserViewFull,
             r#"
             SELECT
                 id,
                 username,
                 email,
                 role AS "role: Role",
-                created_at
+                otp_secret IS NOT NULL AS "otp_enabled!",
+                created_at,
+                updated_at
             FROM users
             WHERE deleted_at IS NULL
             ORDER BY username
@@ -198,6 +200,47 @@ impl UserRepository {
         .fetch_one(executor)
         .await
         .map_err(AppError::from)
+    }
+
+    pub async fn update(
+        &self,
+        id: Uuid,
+        username: Option<&str>,
+        email: Option<&str>,
+        role: Role,
+        password: Option<&str>,
+    ) -> Result<UserView, AppError> {
+        let now = Utc::now();
+
+        let user = sqlx::query_as!(
+            UserView,
+            r#"
+            UPDATE users
+            SET
+                username = COALESCE($1, username),
+                email = $2,
+                role = $3,
+                password = COALESCE($4, password),
+                updated_at = $5
+            WHERE id = $6 AND deleted_at IS NULL
+            RETURNING
+                id,
+                username,
+                email,
+                role AS "role: Role",
+                created_at
+            "#,
+            username,
+            email,
+            role as _,
+            password,
+            now,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        user.ok_or_else(|| AppError::ResourceMissing("user does not exist".into()))
     }
 
     pub async fn update_password(&self, id: Uuid, password: &str) -> Result<(), AppError> {

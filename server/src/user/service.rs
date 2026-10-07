@@ -11,7 +11,8 @@ use crate::{
     error::AppError,
     file::model::{FileEntry, Root, RootAssignment},
     user::model::{
-        CreateSharedFolder, CreateUser, CurrentUserView, Role, SetQuota, User, UserView,
+        CreateSharedFolder, CreateUser, Role, SetQuota, UpdateRoot, UpdateUser, User, UserView,
+        UserViewFull,
     },
 };
 use uuid::Uuid;
@@ -64,7 +65,7 @@ impl UserService {
         Ok(())
     }
 
-    pub async fn create_user(&self, mut input: CreateUser) -> Result<CurrentUserView, AppError> {
+    pub async fn create_user(&self, mut input: CreateUser) -> Result<UserViewFull, AppError> {
         input.validify()?;
 
         if self.users.exists(&input.username).await? {
@@ -119,8 +120,65 @@ impl UserService {
         Ok(user.into())
     }
 
-    pub async fn list_users(&self) -> Result<Vec<UserView>, AppError> {
+    pub async fn list_users(&self) -> Result<Vec<UserViewFull>, AppError> {
         self.users.list_active().await
+    }
+
+    pub async fn update_user(
+        &self,
+        user_id: Uuid,
+        mut input: UpdateUser,
+    ) -> Result<UserView, AppError> {
+        input.validify()?;
+
+        let user = self.users.get_active_by_id(user_id).await?;
+
+        if user.role == Role::Admin && input.role != Role::Admin {
+            let admins = self.users.count_active_admins().await?;
+            if admins <= 1 {
+                return Err(AppError::Forbidden(
+                    "the last admin cannot be demoted".into(),
+                ));
+            }
+        }
+
+        if let Some(ref username) = input.username
+            && *username != user.username
+            && self.users.exists(username).await?
+        {
+            return Err(AppError::ResourceConflict(format!(
+                "username {username} is already in use",
+            )));
+        }
+
+        if let Some(email) = input.email.as_deref()
+            && let Some(owner) = self.users.get_by_email(email).await?
+            && owner.id != user_id
+        {
+            return Err(AppError::ResourceConflict("email is already in use".into()));
+        }
+
+        let password = match input.password.as_deref() {
+            Some(password) => Some(hash_password(password)?),
+            None => None,
+        };
+
+        let user = self
+            .users
+            .update(
+                user_id,
+                input.username.as_deref(),
+                input.email.as_deref(),
+                input.role,
+                password.as_deref(),
+            )
+            .await?;
+
+        if password.is_some() {
+            self.sessions.expire_all(user_id).await?;
+        }
+
+        Ok(user)
     }
 
     pub async fn delete_user(&self, id: Uuid) -> Result<(), AppError> {
@@ -138,7 +196,7 @@ impl UserService {
 
         self.users.soft_delete(id).await?;
 
-        self.sessions.expire_all_for_user(id).await?;
+        self.sessions.expire_all(id).await?;
 
         Ok(())
     }
@@ -189,10 +247,22 @@ impl UserService {
         Ok(root)
     }
 
+    pub async fn list_all_roots(&self) -> Result<Vec<Root>, AppError> {
+        self.files.list_all().await
+    }
+
+    pub async fn update_root(&self, id: Uuid, mut input: UpdateRoot) -> Result<Root, AppError> {
+        input.validify()?;
+        FileEntry::valid_name(&input.name)?;
+        self.files
+            .update_root(id, &input.name, input.quota_bytes)
+            .await
+    }
+
     pub async fn set_quota(&self, folder_id: Uuid, input: SetQuota) -> Result<(), AppError> {
         input.validate()?;
 
-        self.folders.set_quota(folder_id, input.quota_bytes).await?;
+        self.files.set_quota(folder_id, input.quota_bytes).await?;
 
         Ok(())
     }

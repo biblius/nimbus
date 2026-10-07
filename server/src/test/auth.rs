@@ -5,7 +5,7 @@ mod auth_service {
         auth::model::{LoginResult, PasswordChange},
         error::AppError,
         test::TestState,
-        user::model::{CreateUser, Role},
+        user::model::{CreateUser, Role, UpdateUser},
     };
     use suitest::before_all;
 
@@ -63,7 +63,7 @@ mod auth_service {
             .unwrap();
         assert_eq!(ada.role, Role::User);
 
-        let session = crate::test::login(&state, "ada", "temporary").await;
+        let session = crate::test::login(state, "ada", "temporary").await;
         let weak = state
             .services
             .auth
@@ -77,5 +77,40 @@ mod auth_service {
             .await;
 
         assert!(matches!(weak, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    async fn admin_can_edit_a_user(state: TestState) {
+        let ada = state
+            .services
+            .users
+            .create_user(CreateUser {
+                username: "ada-edit".into(),
+                password: "temporary".into(),
+                email: None,
+                role: Role::User,
+            })
+            .await
+            .unwrap();
+
+        let updated = state
+            .services
+            .users
+            .update_user(
+                ada.id,
+                UpdateUser {
+                    username: Some("ada-renamed".into()),
+                    email: Some("ada@example.com".into()),
+                    role: Role::User,
+                    password: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.id, ada.id);
+        assert_eq!(updated.username, "ada-renamed");
+        assert_eq!(updated.email.as_deref(), Some("ada@example.com"));
+        assert_eq!(updated.role, Role::User);
     }
 }

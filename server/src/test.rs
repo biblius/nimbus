@@ -55,7 +55,8 @@ impl TestState {
             .with_test_writer()
             .try_init();
 
-        let storage_dir = std::env::temp_dir().join(format!("nimbus-{uuid}", uuid = Uuid::new_v4()));
+        let storage_dir =
+            std::env::temp_dir().join(format!("nimbus-{uuid}", uuid = Uuid::new_v4()));
         tokio::fs::create_dir_all(&storage_dir).await.unwrap();
 
         #[cfg(feature = "sqlite")]
@@ -181,13 +182,7 @@ async fn build_services(pool: DbPool, cache: Cache, storage_dir: &Path) -> Servi
         Transactor::new(pool.clone()),
     );
     let storage = Storage::new(storage_dir.join("storage"), 1024 * 1024);
-    let files = FileService::new(
-        files_repo,
-        folders,
-        storage,
-        30,
-        Transactor::new(pool),
-    );
+    let files = FileService::new(files_repo, folders, storage, 30, Transactor::new(pool));
     files.prepare().await.unwrap();
     user_service.ensure_initial_admin().await.unwrap();
 
@@ -198,7 +193,11 @@ async fn build_services(pool: DbPool, cache: Cache, storage_dir: &Path) -> Servi
     }
 }
 
-pub async fn login(state: &TestState, username: &str, password: &str) -> crate::auth::session::Session {
+pub async fn login(
+    state: &TestState,
+    username: &str,
+    password: &str,
+) -> crate::auth::session::Session {
     use crate::auth::model::{LoginCredentials, LoginResult};
 
     let login = state

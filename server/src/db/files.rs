@@ -80,6 +80,85 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    pub async fn list_all(&self) -> Result<Vec<Root>, AppError> {
+        sqlx::query_as!(
+            Root,
+            r#"
+            SELECT
+                id,
+                name,
+                quota_bytes AS quota,
+                created_at,
+                updated_at
+            FROM roots
+            ORDER BY name
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn update_root(
+        &self,
+        id: Uuid,
+        name: &str,
+        quota_bytes: i64,
+    ) -> Result<Root, AppError> {
+        let now = Utc::now();
+
+        sqlx::query_as!(
+            Root,
+            r#"
+            UPDATE roots
+            SET
+                name = $1,
+                quota_bytes = $2,
+                updated_at = $3
+            WHERE id = $4
+            RETURNING
+                id,
+                name,
+                quota_bytes AS quota,
+                created_at,
+                updated_at
+            "#,
+            name,
+            quota_bytes,
+            now,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::ResourceMissing("folder does not exist".into()))
+    }
+
+    pub async fn set_quota(&self, root_id: Uuid, quota_bytes: i64) -> Result<(), AppError> {
+        let now = Utc::now();
+
+        let updated = sqlx::query!(
+            r#"
+            UPDATE roots
+            SET
+                quota_bytes = $1,
+                updated_at = $2
+            WHERE id = $3
+            "#,
+            quota_bytes,
+            now,
+            root_id
+        )
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+
+        if updated == 0 {
+            return Err(AppError::ResourceMissing("folder does not exist".into()));
+        }
+
+        Ok(())
+    }
+
     pub async fn get_root(&self, id: Uuid) -> Result<Option<Root>, AppError> {
         sqlx::query_as!(
             Root,
@@ -213,18 +292,17 @@ impl FileRepository {
         root: Uuid,
         parent: Option<Uuid>,
     ) -> Result<Vec<FileEntry>, AppError> {
-        sqlx::query_as!(
-            FileEntry,
+        let mut query = QueryBuilder::new(
             r#"
             SELECT
                 id,
                 root_id,
                 created_by,
-                "type" AS "kind: FileKind",
+                "type" AS kind,
                 name,
                 parent,
-                family AS "family: FileFamily",
-                format AS "format: FileFormat",
+                family,
+                format,
                 hash,
                 size_bytes,
                 created_at,
@@ -232,17 +310,23 @@ impl FileRepository {
                 deleted_at
             FROM files
             WHERE
-                root_id = $1
-            AND parent = $2
-            AND deleted_at IS NULL
-            ORDER BY CASE WHEN "type" = 'd' THEN 0 ELSE 1 END, name
+                root_id =
             "#,
-            root,
-            parent
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(AppError::from)
+        );
+
+        query.push_bind(root).push(" AND deleted_at IS NULL");
+
+        if let Some(parent) = parent {
+            query.push(" AND parent = ").push_bind(parent);
+        };
+
+        query.push(r#" ORDER BY CASE WHEN "type" = 'd' THEN 0 ELSE 1 END, name"#);
+
+        query
+            .build_query_as::<FileEntry>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)
     }
 
     /// Every child of a directory, including soft-deleted rows.
@@ -329,15 +413,20 @@ impl FileRepository {
         }
 
         let now = Utc::now();
+
         let mut query = QueryBuilder::<Db>::new("UPDATE files SET deleted_at = ");
+
         query.push_bind(now);
         query.push(", updated_at = ");
         query.push_bind(now);
         query.push(" WHERE deleted_at IS NULL AND id IN (");
+
         let mut separated = query.separated(", ");
+
         for id in ids {
             separated.push_bind(*id);
         }
+
         separated.push_unseparated(")");
 
         let result = query.build().execute(&self.pool).await?;

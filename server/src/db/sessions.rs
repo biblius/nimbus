@@ -117,7 +117,7 @@ impl SessionRepository {
         Ok(())
     }
 
-    pub async fn expire_all_for_user(&self, user_id: Uuid) -> Result<(), AppError> {
+    pub async fn expire_all(&self, user_id: Uuid) -> Result<(), AppError> {
         let now = Utc::now();
 
         sqlx::query!(

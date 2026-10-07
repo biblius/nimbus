@@ -1,8 +1,8 @@
 use crate::{
+    auth::session::Session,
     error::AppError,
-    router::middleware::AdminSession,
     state::AppState,
-    user::model::{CreateUser, CurrentUserView, UserView},
+    user::model::{CreateUser, UpdateUser, UserView, UserViewFull},
 };
 use axum::{
     Json,
@@ -15,13 +15,13 @@ use uuid::Uuid;
     post,
     path = "/users",
     request_body = CreateUser,
-    responses((status = 201, description = "User and private folder created", body = CurrentUserView))
+    responses((status = 201, description = "User and private folder created", body = UserViewFull))
 )]
 pub(crate) async fn create_user(
+    _session: Session,
     State(state): State<AppState>,
-    _admin: AdminSession,
     Json(input): Json<CreateUser>,
-) -> Result<(StatusCode, Json<CurrentUserView>), AppError> {
+) -> Result<(StatusCode, Json<UserViewFull>), AppError> {
     let user = state.services.users.create_user(input).await?;
     Ok((StatusCode::CREATED, Json(user)))
 }
@@ -29,13 +29,31 @@ pub(crate) async fn create_user(
 #[utoipa::path(
     get,
     path = "/users",
-    responses((status = 200, description = "Active users", body = Vec<CurrentUserView>))
+    responses((status = 200, description = "Active users", body = Vec<UserViewFull>))
 )]
 pub(crate) async fn list_users(
+    _session: Session,
     State(state): State<AppState>,
-    _admin: AdminSession,
-) -> Result<Json<Vec<UserView>>, AppError> {
+) -> Result<Json<Vec<UserViewFull>>, AppError> {
     Ok(Json(state.services.users.list_users().await?))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/users/{id}",
+    params(("id" = Uuid, Path, description = "User id")),
+    request_body = UpdateUser,
+    responses((status = 200, description = "User updated", body = UserView))
+)]
+pub(crate) async fn update_user(
+    _session: Session,
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Json(input): Json<UpdateUser>,
+) -> Result<Json<UserView>, AppError> {
+    Ok(Json(
+        state.services.users.update_user(user_id, input).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -45,8 +63,8 @@ pub(crate) async fn list_users(
     responses((status = 204, description = "User soft-deleted"))
 )]
 pub(crate) async fn delete_user(
+    _session: Session,
     State(state): State<AppState>,
-    _admin: AdminSession,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
     state.services.users.delete_user(id).await?;

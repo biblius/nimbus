@@ -9,9 +9,11 @@
   let {
     client,
     onSuccess,
+    onResetPassword,
   }: {
     client: NimbusClient;
     onSuccess: (user: UserView, firstLogin: boolean) => void;
+    onResetPassword?: () => void;
   } = $props();
 
   let username = $state("");
@@ -36,7 +38,10 @@
       }
       onSuccess(result.session.user, result.session.firstLogin);
     } catch (cause) {
-      error = cause instanceof ApiError ? "Sign-in failed" : "The server could not be reached";
+      error =
+        cause instanceof ApiError
+          ? "Sign-in failed"
+          : "The server could not be reached";
     } finally {
       busy = false;
     }
@@ -53,7 +58,13 @@
     {#if pendingToken}
       <div class="space-y-2">
         <Label for="otp">Authenticator code</Label>
-        <Input id="otp" bind:value={otp} inputmode="numeric" autocomplete="one-time-code" maxlength={6} />
+        <Input
+          id="otp"
+          bind:value={otp}
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength={6}
+        />
       </div>
     {:else}
       <div class="space-y-2">
@@ -62,7 +73,12 @@
       </div>
       <div class="space-y-2">
         <Label for="password">Password</Label>
-        <Input id="password" type="password" bind:value={password} autocomplete="current-password" />
+        <Input
+          id="password"
+          type="password"
+          bind:value={password}
+          autocomplete="current-password"
+        />
       </div>
       <label class="flex items-center gap-2 text-sm">
         <input type="checkbox" bind:checked={remember} />
@@ -77,5 +93,15 @@
     <Button type="submit" class="w-full" disabled={busy}>
       {pendingToken ? "Verify" : "Sign in"}
     </Button>
+    {#if !pendingToken && onResetPassword}
+      <Button
+        type="button"
+        variant="ghost"
+        class="w-full"
+        onclick={onResetPassword}
+      >
+        Forgot your password?
+      </Button>
+    {/if}
   </form>
 </Card>

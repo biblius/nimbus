@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createClient, type NimbusClient } from "@nimbus/shared/api";
+  import { NimbusClient } from "@nimbus/shared/api";
   import SessionApp from "@nimbus/shared/components/SessionApp.svelte";
   import { onMount } from "svelte";
   import { loadEndpoint, saveEndpoint } from "./settings";
@@ -11,14 +11,14 @@
   onMount(async () => {
     endpoint = await loadEndpoint();
     draft = endpoint;
-    client = createClient(endpoint);
+    client = new NimbusClient(endpoint);
   });
 
   async function apply(event: SubmitEvent) {
     event.preventDefault();
     endpoint = draft.trim();
     await saveEndpoint(endpoint);
-    client = createClient(endpoint);
+    client = new NimbusClient(endpoint);
   }
 </script>
 

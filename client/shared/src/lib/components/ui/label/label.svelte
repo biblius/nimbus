@@ -5,6 +5,6 @@
   let { class: className, children, ...rest }: HTMLLabelAttributes = $props();
 </script>
 
-<label class={cn("text-sm font-medium leading-none", className)} {...rest}>
+<label class={cn("text-sm leading-none font-medium", className)} {...rest}>
   {@render children?.()}
 </label>

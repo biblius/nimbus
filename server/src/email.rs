@@ -75,7 +75,7 @@ impl EmailSender {
         username: &str,
         token: Uuid,
     ) -> Result<(), AppError> {
-        let link = format!("{}/reset/{token}", self.frontend_url);
+        let link = format!("{}/password-reset/{token}", self.frontend_url);
         let username = escape(username);
         let html = format!(
             "<p>{username}, a password reset was requested for your Nimbus account.</p>\

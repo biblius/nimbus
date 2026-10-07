@@ -4,7 +4,7 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::user::model::{CurrentUserView, User};
+use crate::user::model::{User, UserViewFull};
 
 #[derive(Debug, Clone, FromRow)]
 pub struct SessionRecord {
@@ -62,7 +62,7 @@ pub struct SessionView {
     pub updated_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
     pub first_login: bool,
-    pub user: CurrentUserView,
+    pub user: UserViewFull,
 }
 
 impl From<Session> for SessionView {

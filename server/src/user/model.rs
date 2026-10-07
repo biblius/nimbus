@@ -78,7 +78,7 @@ pub struct User {
 /// The view of the currently logged in user.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct CurrentUserView {
+pub struct UserViewFull {
     pub id: Uuid,
     pub username: String,
     pub email: Option<String>,
@@ -88,7 +88,7 @@ pub struct CurrentUserView {
     pub updated_at: DateTime<Utc>,
 }
 
-impl From<User> for CurrentUserView {
+impl From<User> for UserViewFull {
     fn from(value: User) -> Self {
         Self {
             id: value.id,
@@ -144,6 +144,27 @@ pub struct CreateUser {
     pub role: Role,
 }
 
+/// Fields an admin can change on an existing account.
+/// Omit `password` to keep the current one.
+#[derive(Debug, Deserialize, Validify, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateUser {
+    #[modify(trim, lowercase)]
+    #[validate(length(min = 1, max = 64))]
+    #[validate(custom(function = valid_username))]
+    pub username: Option<String>,
+
+    #[modify(trim, lowercase)]
+    #[validate(email)]
+    pub email: Option<String>,
+
+    pub role: Role,
+
+    #[serde(default)]
+    #[validate(length(min = 1, max = 256))]
+    pub password: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetQuota {
@@ -172,6 +193,19 @@ pub struct CreateSharedFolder {
 
     #[serde(default)]
     pub members: Vec<Uuid>,
+}
+
+/// Name and quota of an existing root.
+#[derive(Debug, Deserialize, Validify, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRoot {
+    #[modify(trim)]
+    #[validate(length(min = 1, max = 255))]
+    pub name: String,
+
+    /// `0` means the folder is unlimited.
+    #[validate(range(min = 0.))]
+    pub quota_bytes: i64,
 }
 
 fn valid_username(username: &str) -> Result<(), ValidationError> {

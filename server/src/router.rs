@@ -96,13 +96,19 @@ pub fn router(state: AppState) -> Router {
 
     let admin = Router::new()
         .route("/users", post(users::create_user).get(users::list_users))
-        .route("/users/{id}", delete(users::delete_user))
+        .route(
+            "/users/{id}",
+            delete(users::delete_user).patch(users::update_user),
+        )
+        .route("/admin/roots", get(folders::list_all))
+        .route("/roots/{root_id}", put(folders::update_root))
         .route("/roots/shared", post(folders::create_shared))
         .route("/roots/{root_id}/quota", put(folders::set_quota))
         .route(
             "/roots/{root_id}/users/{user_id}",
             post(folders::assign).delete(folders::unassign),
         )
+        .route_layer(axum_middleware::from_fn(middleware::admin_check))
         .route_layer(axum_middleware::from_fn_with_state(
             state.clone(),
             middleware::session_check,

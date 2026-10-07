@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError};
+use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError, prelude::FromRow};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validify::Validify;
@@ -87,7 +87,7 @@ pub struct RootAssignment {
 }
 
 /// Application native model. `parent` is null for entries that sit directly in a root.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub id: Uuid,

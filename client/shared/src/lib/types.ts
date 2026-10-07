@@ -1,6 +1,6 @@
 export type Role = "admin" | "user";
 
-export interface UserView {
+export interface UserViewFull {
   id: string;
   username: string;
   email: string | null;
@@ -18,7 +18,27 @@ export interface SessionView {
   updatedAt: string;
   expiresAt: string | null;
   firstLogin: boolean;
-  user: UserView;
+  user: UserViewFull;
+}
+
+export interface UserView {
+  id: string;
+  username: string;
+  email: string | null;
+  role: Role;
+  createdAt: string;
+}
+
+/**
+ * Data used when creating or modifying a user.
+ * Parameters are not allowed to be null when creating.
+ * If any parameter is null when updating, left as is.
+ */
+export interface UserData {
+  username?: string;
+  email?: string;
+  role: Role;
+  password?: string;
 }
 
 export type LoginResult =
@@ -32,6 +52,29 @@ export interface Root {
   quota: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A root as stored, without the caller's assignment flag. */
+export interface Folder {
+  id: string;
+  name: string;
+  quota: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateUserInput {
+  username: string;
+  password: string;
+  email?: string;
+  role: Role;
+}
+
+export interface UpdateUserInput {
+  username: string;
+  email: string | null;
+  role: Role;
+  password?: string;
 }
 
 export type FileFamily =

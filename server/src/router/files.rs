@@ -178,10 +178,14 @@ pub(crate) async fn upload(
 pub(crate) async fn metadata(
     State(state): State<AppState>,
     session: Session,
-    Path(id): Path<Uuid>,
+    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<FileEntry>, AppError> {
     Ok(Json(
-        state.services.files.metadata(&session.user, id).await?,
+        state
+            .services
+            .files
+            .metadata(&session.user, file_id)
+            .await?,
     ))
 }
 
@@ -197,9 +201,9 @@ pub(crate) async fn metadata(
 pub(crate) async fn download(
     State(state): State<AppState>,
     session: Session,
-    Path(id): Path<Uuid>,
+    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, AppError> {
-    let (entry, path, mime) = state.services.files.content(&session.user, id).await?;
+    let (entry, path, mime) = state.services.files.content(&session.user, file_id).await?;
 
     let file = File::open(path).await?;
 
@@ -229,9 +233,9 @@ pub(crate) async fn download(
 pub(crate) async fn delete_file(
     State(state): State<AppState>,
     session: Session,
-    Path(id): Path<Uuid>,
+    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
-    state.services.files.delete(&session.user, id).await?;
+    state.services.files.delete(&session.user, file_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

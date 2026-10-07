@@ -13,6 +13,21 @@ use axum::{
 use axum_extra::extract::CookieJar;
 use uuid::Uuid;
 
+pub async fn admin_check(request: Request, next: Next) -> Response {
+    let Some(session) = request.extensions().get::<Session>() else {
+        tracing::warn!("admin_check session not found");
+        return AppError::Forbidden("You are not allowed to access this route".into())
+            .into_response();
+    };
+
+    if session.user.role != Role::Admin {
+        return AppError::Forbidden("You are not allowed to access this route".into())
+            .into_response();
+    }
+
+    next.run(request).await
+}
+
 /// Load the session from the session cookie or an `Authorization: Bearer` token.
 ///
 /// Cookie requests require the CSRF header outside of debug builds. Bearer tokens are how
@@ -101,8 +116,6 @@ where
     }
 }
 
-pub struct AdminSession(#[allow(dead_code)] pub Session);
-
 impl FromRequestParts<AppState> for Session {
     type Rejection = AppError;
 
@@ -114,21 +127,6 @@ impl FromRequestParts<AppState> for Session {
             .extensions
             .get::<Session>()
             .cloned()
-            .ok_or(AppError::Auth(AuthFailure::SessionCookieNotFound))
-    }
-}
-
-impl FromRequestParts<AppState> for AdminSession {
-    type Rejection = AppError;
-
-    async fn from_request_parts(
-        parts: &mut axum::http::request::Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let session = Session::from_request_parts(parts, state).await?;
-        if session.user.role != Role::Admin {
-            return Err(AppError::Forbidden("admin role required".into()));
-        }
-        Ok(Self(session))
+            .ok_or(AppError::Auth(AuthFailure::SessionNotFound))
     }
 }

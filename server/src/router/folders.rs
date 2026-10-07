@@ -9,9 +9,8 @@ use crate::{
     auth::session::Session,
     error::AppError,
     file::model::Root,
-    router::middleware::AdminSession,
     state::AppState,
-    user::model::{CreateSharedFolder, SetQuota, UserView},
+    user::model::{CreateSharedFolder, SetQuota, UpdateRoot, UserView},
 };
 
 #[utoipa::path(
@@ -26,7 +25,11 @@ pub(crate) async fn list_members(
     Path(root_id): Path<Uuid>,
 ) -> Result<Json<Vec<UserView>>, AppError> {
     Ok(Json(
-        state.services.users.list_members(&session.user, root_id).await?,
+        state
+            .services
+            .users
+            .list_members(&session.user, root_id)
+            .await?,
     ))
 }
 
@@ -38,7 +41,7 @@ pub(crate) async fn list_members(
 )]
 pub(crate) async fn create_shared(
     State(state): State<AppState>,
-    _admin: AdminSession,
+    _admin: Session,
     Json(input): Json<CreateSharedFolder>,
 ) -> Result<(StatusCode, Json<Root>), AppError> {
     let folder = state.services.users.create_shared(input).await?;
@@ -46,15 +49,45 @@ pub(crate) async fn create_shared(
 }
 
 #[utoipa::path(
+    get,
+    path = "/admin/roots",
+    responses((status = 200, description = "Every root folder", body = Vec<Root>))
+)]
+pub(crate) async fn list_all(
+    State(state): State<AppState>,
+    _admin: Session,
+) -> Result<Json<Vec<Root>>, AppError> {
+    Ok(Json(state.services.users.list_all_roots().await?))
+}
+
+#[utoipa::path(
+    put,
+    path = "/roots/{root_id}",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    request_body = UpdateRoot,
+    responses((status = 200, description = "Root name and quota updated", body = Root))
+)]
+pub(crate) async fn update_root(
+    State(state): State<AppState>,
+    _admin: Session,
+    Path(root_id): Path<Uuid>,
+    Json(input): Json<UpdateRoot>,
+) -> Result<Json<Root>, AppError> {
+    Ok(Json(
+        state.services.users.update_root(root_id, input).await?,
+    ))
+}
+
+#[utoipa::path(
     put,
     path = "/roots/{root_id}/quota",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = SetQuota,
-    responses((status = 200, description = "Quota updated on every assignment"))
+    responses((status = 200, description = "Quota updated"))
 )]
 pub(crate) async fn set_quota(
     State(state): State<AppState>,
-    _admin: AdminSession,
+    _admin: Session,
     Path(root_id): Path<Uuid>,
     Json(input): Json<SetQuota>,
 ) -> Result<StatusCode, AppError> {
@@ -73,7 +106,7 @@ pub(crate) async fn set_quota(
 )]
 pub(crate) async fn assign(
     State(state): State<AppState>,
-    _admin: AdminSession,
+    _admin: Session,
     Path((root_id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
     state.services.users.assign(root_id, user_id).await?;
@@ -91,7 +124,7 @@ pub(crate) async fn assign(
 )]
 pub(crate) async fn unassign(
     State(state): State<AppState>,
-    _admin: AdminSession,
+    _admin: Session,
     Path((root_id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
     state.services.users.unassign(root_id, user_id).await?;
