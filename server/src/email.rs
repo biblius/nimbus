@@ -22,7 +22,20 @@ impl EmailSender {
         from_name: String,
         frontend_url: String,
     ) -> Self {
-        let from = mailbox(&address, &from_name);
+        let parsed = if address.is_empty() {
+            "nimbus@localhost".parse()
+        } else {
+            address.parse()
+        };
+
+        let from = match parsed {
+            Ok(email) => Mailbox::new(Some(from_name), email),
+            Err(error) => {
+                tracing::error!(%error, "invalid gmail from address; email is disabled");
+                Mailbox::new(None, "nimbus@localhost".parse().expect("static mailbox"))
+            }
+        };
+
         let mailer = if address.is_empty() || app_password.is_empty() {
             tracing::info!("gmail is not configured; outbound email is disabled");
             None
@@ -108,21 +121,6 @@ impl EmailSender {
             AppError::Internal
         })?;
         Ok(())
-    }
-}
-
-fn mailbox(address: &str, name: &str) -> Mailbox {
-    let parsed = if address.is_empty() {
-        "nimbus@localhost".parse()
-    } else {
-        address.parse()
-    };
-    match parsed {
-        Ok(email) => Mailbox::new(Some(name.to_string()), email),
-        Err(error) => {
-            tracing::error!(%error, "invalid gmail from address; email is disabled");
-            Mailbox::new(None, "nimbus@localhost".parse().expect("static mailbox"))
-        }
     }
 }
 

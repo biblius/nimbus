@@ -1,118 +1,216 @@
-#![allow(unused_imports)]
+//! Test suites and harness.
+//!
+//! The database engine follows the crate features: `postgres` starts a Postgres
+//! container, `sqlite` uses a temporary file. The cache follows `valkey` or
+//! `memory-cache` the same way.
+//!
+//! Keep [`TestState`] alive in suitest [`before_all`](suitest::before_all) so
+//! containers are not dropped mid-suite.
 
-use chrono::{Duration, Utc};
-use uuid::Uuid;
+mod auth;
+mod files;
+mod smoke;
 
 use crate::{
-    auth::{
-        model::{LoginCredentials, LoginResult, PasswordChange},
-        service::AuthenticationService,
-        token::TokenStore,
-    },
-    cache::MemoryCache,
+    auth::{service::AuthenticationService, token::TokenStore},
+    cache::Cache,
     db::{
-        self, FileRepository, SessionRepository, Transactor, UserFolderRepository, UserRepository,
+        self, DbPool, FileRepository, SessionRepository, Transactor, UserFolderRepository,
+        UserRepository,
     },
     email::EmailSender,
-    file::{service::FileService, storage::Storage},
-    user::{
-        model::{CreateSharedFolder, CreateUser, Role},
-        service::UserService,
-    },
+    error::AppError,
+    file::{model::FileEntry, service::FileService, storage::Storage},
+    state::ServiceState,
+    user::{model::User, service::UserService},
 };
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
-#[tokio::test]
-async fn memory_cache_roundtrip() {
-    let cache = MemoryCache::new();
-    cache.set_ex("k", "v", 60).await.unwrap();
-    assert_eq!(cache.get_del("k").await.unwrap().as_deref(), Some("v"));
-    assert_eq!(cache.get_del("k").await.unwrap(), None);
+#[cfg(any(feature = "postgres", feature = "valkey"))]
+use testcontainers::{ContainerAsync, GenericImage, ImageExt, runners::AsyncRunner};
+
+#[cfg(feature = "postgres")]
+type PostgresContainer = ContainerAsync<GenericImage>;
+
+#[cfg(feature = "valkey")]
+type ValkeyContainer = ContainerAsync<GenericImage>;
+
+/// Application services plus the resources that keep the suite's database alive.
+pub struct TestState {
+    pub services: ServiceState,
+    pub pool: DbPool,
+    pub cache: Cache,
+    storage_dir: PathBuf,
+    #[cfg(feature = "postgres")]
+    _postgres: PostgresContainer,
+    #[cfg(feature = "valkey")]
+    _valkey: ValkeyContainer,
 }
 
-#[cfg(all(feature = "sqlite", feature = "memory-cache"))]
-struct Harness {
-    auth: AuthenticationService,
-    users: UserService,
-    files: FileService,
-    dir: std::path::PathBuf,
-}
-
-#[cfg(all(feature = "sqlite", feature = "memory-cache"))]
-impl Harness {
-    async fn new() -> Self {
+impl TestState {
+    pub async fn init() -> Self {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
-        let dir = std::env::temp_dir().join(format!("nimbus-{}", Uuid::new_v4()));
-        tokio::fs::create_dir_all(dir.join("db")).await.unwrap();
-        let url = format!(
-            "sqlite://{}?mode=rwc",
-            dir.join("db").join("nimbus.db").display()
-        );
-        let pool = db::connect(&url).await.unwrap();
-        db::migrate(&pool).await.unwrap();
 
-        let cache = MemoryCache::new();
-        let email = EmailSender::new(
-            String::new(),
-            String::new(),
-            "Nimbus".into(),
-            "http://localhost".into(),
-        );
-        let users = UserRepository::new(pool.clone());
-        let sessions = SessionRepository::new(pool.clone());
-        let folders = UserFolderRepository::new(pool.clone());
-        let files_repo = FileRepository::new(pool.clone());
-        let auth = AuthenticationService::new(
-            users.clone(),
-            sessions.clone(),
-            TokenStore::new(cache),
-            email.clone(),
-        );
-        let user_service = UserService::new(
-            users,
-            files_repo.clone(),
-            folders.clone(),
-            sessions,
-            email,
-            Transactor::new(pool.clone()),
-        );
-        let storage = Storage::new(dir.join("storage"), 1024 * 1024);
-        let files = FileService::new(files_repo, folders, storage, 30, Transactor::new(pool));
-        files.prepare().await.unwrap();
-        user_service.ensure_initial_admin().await.unwrap();
+        let storage_dir = std::env::temp_dir().join(format!("nimbus-{uuid}", uuid = Uuid::new_v4()));
+        tokio::fs::create_dir_all(&storage_dir).await.unwrap();
+
+        #[cfg(feature = "sqlite")]
+        let pool = init_sqlite(&storage_dir).await;
+
+        #[cfg(feature = "postgres")]
+        let (pool, postgres) = init_postgres().await;
+
+        #[cfg(feature = "memory-cache")]
+        let cache = Cache::new();
+
+        #[cfg(feature = "valkey")]
+        let (cache, valkey) = init_valkey().await;
+
+        let services = build_services(pool.clone(), cache.clone(), &storage_dir).await;
 
         Self {
-            auth,
-            users: user_service,
-            files,
-            dir,
+            services,
+            pool,
+            cache,
+            storage_dir,
+            #[cfg(feature = "postgres")]
+            _postgres: postgres,
+            #[cfg(feature = "valkey")]
+            _valkey: valkey,
         }
     }
-}
 
-#[cfg(all(feature = "sqlite", feature = "memory-cache"))]
-impl Drop for Harness {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
+    pub fn storage_dir(&self) -> &Path {
+        &self.storage_dir
     }
 }
 
-#[cfg(all(feature = "sqlite", feature = "memory-cache"))]
-#[tokio::test]
-async fn admin_seed_groups_quota_and_dedup() {
-    let harness = Harness::new().await;
+impl Drop for TestState {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.storage_dir);
+    }
+}
 
-    let login = harness
+#[cfg(feature = "sqlite")]
+async fn init_sqlite(dir: &Path) -> DbPool {
+    tokio::fs::create_dir_all(dir.join("db")).await.unwrap();
+    let url = format!(
+        "sqlite://{}?mode=rwc",
+        dir.join("db").join("nimbus.db").display()
+    );
+    let pool = db::connect(&url).await.unwrap();
+    db::migrate(&pool).await.unwrap();
+    pool
+}
+
+#[cfg(feature = "postgres")]
+async fn init_postgres() -> (DbPool, PostgresContainer) {
+    use testcontainers::core::{IntoContainerPort, WaitFor};
+
+    let postgres = GenericImage::new("postgres", "17")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stdout(
+            "database system is ready to accept connections",
+        ))
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_DB", "nimbus")
+        .with_env_var("POSTGRES_USER", "nimbus")
+        .with_env_var("POSTGRES_PASSWORD", "nimbus")
+        .start()
+        .await
+        .expect("postgres container error");
+
+    let host = postgres.get_host().await.unwrap();
+    let port = postgres.get_host_port_ipv4(5432).await.unwrap();
+    let url = format!("postgres://nimbus:nimbus@{host}:{port}/nimbus");
+
+    let pool = db::connect(&url).await.expect("test postgres connection");
+    db::migrate(&pool).await.expect("test postgres migration");
+
+    (pool, postgres)
+}
+
+#[cfg(feature = "valkey")]
+async fn init_valkey() -> (Cache, ValkeyContainer) {
+    use testcontainers::core::{IntoContainerPort, WaitFor};
+
+    let valkey = GenericImage::new("valkey/valkey", "8")
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await
+        .expect("valkey container error");
+
+    let host = valkey.get_host().await.unwrap();
+    let port = valkey.get_host_port_ipv4(6379).await.unwrap();
+    let url = format!("redis://{host}:{port}");
+    let cache = Cache::connect(&url).expect("test valkey connection");
+
+    (cache, valkey)
+}
+
+async fn build_services(pool: DbPool, cache: Cache, storage_dir: &Path) -> ServiceState {
+    let email = EmailSender::new(
+        String::new(),
+        String::new(),
+        "Nimbus".into(),
+        "http://localhost".into(),
+    );
+    let users = UserRepository::new(pool.clone());
+    let sessions = SessionRepository::new(pool.clone());
+    let folders = UserFolderRepository::new(pool.clone());
+    let files_repo = FileRepository::new(pool.clone());
+    let auth = AuthenticationService::new(
+        users.clone(),
+        sessions.clone(),
+        TokenStore::new(cache),
+        email.clone(),
+    );
+    let user_service = UserService::new(
+        users,
+        files_repo.clone(),
+        folders.clone(),
+        sessions,
+        email,
+        Transactor::new(pool.clone()),
+    );
+    let storage = Storage::new(storage_dir.join("storage"), 1024 * 1024);
+    let files = FileService::new(
+        files_repo,
+        folders,
+        storage,
+        30,
+        Transactor::new(pool),
+    );
+    files.prepare().await.unwrap();
+    user_service.ensure_initial_admin().await.unwrap();
+
+    ServiceState {
+        auth,
+        users: user_service,
+        files,
+    }
+}
+
+pub async fn login(state: &TestState, username: &str, password: &str) -> crate::auth::session::Session {
+    use crate::auth::model::{LoginCredentials, LoginResult};
+
+    let login = state
+        .services
         .auth
         .login(
             LoginCredentials {
-                username: "admin".into(),
-                password: "admin".into(),
+                username: username.into(),
+                password: password.into(),
                 remember: false,
             },
-            Some("127.0.0.1".into()),
+            None,
             None,
         )
         .await
@@ -120,214 +218,76 @@ async fn admin_seed_groups_quota_and_dedup() {
     let LoginResult::Session { session } = login else {
         panic!("expected a session");
     };
-    assert_eq!(session.user.role, Role::Admin);
-    assert!(session.first_login);
-    let admin_session = harness.auth.get_session_by_id(session.id).await.unwrap();
-    assert_eq!(admin_session.user.role, Role::Admin);
-    assert!(admin_session.user.password.is_some());
-
-    let ada = harness
-        .users
-        .create_user(CreateUser {
-            username: "ada".into(),
-            password: "temporary".into(),
-            email: None,
-            role: Role::User,
-        })
-        .await
-        .unwrap();
-    let _bob = harness
-        .users
-        .create_user(CreateUser {
-            username: "bob".into(),
-            password: "temporary".into(),
-            email: None,
-            role: Role::User,
-        })
-        .await
-        .unwrap();
-
-    let shared_root = harness
-        .users
-        .create_shared(CreateSharedFolder {
-            name: "family".into(),
-            quota_bytes: 10,
-            members: vec![ada.id],
-        })
-        .await
-        .unwrap();
-
-    let ada_login = harness
+    state
+        .services
         .auth
-        .login(
-            LoginCredentials {
-                username: "ada".into(),
-                password: "temporary".into(),
-                remember: true,
-            },
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-    let LoginResult::Session { session: ada_view } = ada_login else {
-        panic!("expected ada session");
-    };
-    let ada_session = harness.auth.get_session_by_id(ada_view.id).await.unwrap();
-
-    let private_root = harness
-        .files
-        .folders(&ada_session.user)
+        .get_session_by_id(session.id)
         .await
         .unwrap()
-        .private_folder
-        .root
-        .id;
-    let stored = submit(
-        &harness,
-        &ada_session.user,
-        private_root,
-        vec![("a.txt", b"abc".as_slice()), ("b.txt", b"abc".as_slice())],
-    )
-    .await;
-    let first = stored[0].as_ref().unwrap();
-    let second = stored[1].as_ref().unwrap();
-    assert_eq!(first.hash, second.hash);
-    assert_eq!(blob_count(&harness.dir), 1);
-
-    let private_extra = upload(&harness, &ada_session.user, private_root, "c.txt", b"12345").await;
-    assert!(private_extra.hash.is_some());
-    assert_eq!(blob_count(&harness.dir), 2);
-
-    let shared = upload(
-        &harness,
-        &ada_session.user,
-        shared_root.id,
-        "shared.txt",
-        b"abc",
-    )
-    .await;
-    assert_eq!(shared.hash, first.hash);
-    assert_eq!(blob_count(&harness.dir), 2);
-
-    let overflow = submit(
-        &harness,
-        &ada_session.user,
-        shared_root.id,
-        vec![("big.txt", b"12345678".as_slice())],
-    )
-    .await;
-    assert!(matches!(
-        overflow[0],
-        Err(crate::error::AppError::QuotaExceeded)
-    ));
-
-    let bob_login = harness
-        .auth
-        .login(
-            LoginCredentials {
-                username: "bob".into(),
-                password: "temporary".into(),
-                remember: false,
-            },
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-    let LoginResult::Session { session: bob_view } = bob_login else {
-        panic!("expected bob session");
-    };
-    let bob_session = harness.auth.get_session_by_id(bob_view.id).await.unwrap();
-    let forbidden = submit(
-        &harness,
-        &bob_session.user,
-        shared_root.id,
-        vec![("nope.txt", b"zzz".as_slice())],
-    )
-    .await;
-    assert!(matches!(
-        forbidden[0],
-        Err(crate::error::AppError::Forbidden(_))
-    ));
-
-    harness
-        .files
-        .delete(&ada_session.user, first.id)
-        .await
-        .unwrap();
-    harness
-        .files
-        .delete(&ada_session.user, private_extra.id)
-        .await
-        .unwrap();
-    assert!(matches!(
-        harness.files.content(&ada_session.user, first.id).await,
-        Err(crate::error::AppError::ResourceMissing(_))
-    ));
-    assert_eq!(blob_count(&harness.dir), 2);
-
-    harness
-        .files
-        .delete(&ada_session.user, second.id)
-        .await
-        .unwrap();
-    harness
-        .files
-        .delete(&ada_session.user, shared.id)
-        .await
-        .unwrap();
-    harness
-        .files
-        .purge_deleted_before(Utc::now() + Duration::seconds(5))
-        .await
-        .unwrap();
-    assert_eq!(blob_count(&harness.dir), 0);
-
-    let weak = harness
-        .auth
-        .change_password(
-            ada_session,
-            PasswordChange {
-                current_password: "temporary".into(),
-                new_password: "admin".into(),
-            },
-        )
-        .await;
-    assert!(matches!(weak, Err(crate::error::AppError::Validation(_))));
 }
 
-#[cfg(all(feature = "sqlite", feature = "memory-cache"))]
-async fn upload(
-    harness: &Harness,
-    user: &crate::user::model::User,
-    parent: Uuid,
+pub async fn private_root(state: &TestState, user: &User) -> Uuid {
+    state
+        .services
+        .files
+        .list_roots(user)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|root| root.primary)
+        .expect("user has a private root")
+        .id
+}
+
+pub async fn upload(
+    state: &TestState,
+    user: &User,
+    root: Uuid,
     name: &str,
     bytes: &[u8],
-) -> crate::file::model::FileEntry {
-    let stored = submit(harness, user, parent, vec![(name, bytes)]).await;
-    stored.into_iter().next().unwrap().unwrap()
+) -> FileEntry {
+    submit(state, user, root, vec![(name, bytes)])
+        .await
+        .into_iter()
+        .next()
+        .unwrap()
+        .unwrap()
 }
 
-#[cfg(all(feature = "sqlite", feature = "memory-cache"))]
-async fn submit(
-    harness: &Harness,
-    user: &crate::user::model::User,
-    parent: Uuid,
+pub async fn submit(
+    state: &TestState,
+    user: &User,
+    root: Uuid,
     files: Vec<(&str, &[u8])>,
-) -> Vec<Result<crate::file::model::FileEntry, crate::error::AppError>> {
+) -> Vec<Result<FileEntry, AppError>> {
     let mut stored = Vec::with_capacity(files.len());
     for (name, bytes) in files {
-        let mut writer = harness.files.start_upload(name.to_string()).await.unwrap();
+        let mut writer = match state
+            .services
+            .files
+            .start_upload(user, root, None, name.to_string())
+            .await
+        {
+            Ok(writer) => writer,
+            Err(error) => {
+                stored.push(Err(error));
+                continue;
+            }
+        };
         writer.write(bytes).await.unwrap();
         let file = writer.finish().await.unwrap();
-        stored.push(harness.files.finish_upload(user, parent, file).await);
+        stored.push(
+            state
+                .services
+                .files
+                .finish_upload(user, root, None, file)
+                .await,
+        );
     }
     stored
 }
 
-#[cfg(all(feature = "sqlite", feature = "memory-cache"))]
-fn blob_count(dir: &std::path::Path) -> usize {
+pub fn blob_count(dir: &Path) -> usize {
     let root = dir.join("storage").join("data");
     if !root.exists() {
         return 0;
@@ -335,8 +295,7 @@ fn blob_count(dir: &std::path::Path) -> usize {
     walk(&root)
 }
 
-#[cfg(all(feature = "sqlite", feature = "memory-cache"))]
-fn walk(path: &std::path::Path) -> usize {
+fn walk(path: &Path) -> usize {
     let mut count = 0;
     for entry in std::fs::read_dir(path).unwrap() {
         let entry = entry.unwrap();

@@ -84,7 +84,7 @@ impl UserFolderRepository {
             root_id,
             user_id,
         )
-        .fetch_one(&self.pool)
+        .fetch_optional(&self.pool)
         .await?;
         Ok(found.is_some())
     }

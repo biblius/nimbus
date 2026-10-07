@@ -7,7 +7,8 @@ use crate::{
     },
 };
 use chrono::{DateTime, Utc};
-use sqlx::Executor;
+use sqlx::FromRow;
+use sqlx::{Executor, QueryBuilder};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -19,6 +20,11 @@ pub struct NewRoot {
     pub id: Uuid,
     pub name: String,
     pub quota: i64,
+}
+
+#[derive(FromRow)]
+struct DeletedHash {
+    hash: Option<String>,
 }
 
 pub struct NewFile {
@@ -318,19 +324,23 @@ impl FileRepository {
     }
 
     pub async fn soft_delete(&self, ids: &[Uuid]) -> Result<(), AppError> {
-        let now = Utc::now();
+        if ids.is_empty() {
+            return Ok(());
+        }
 
-        let result = sqlx::query!(
-            r#"
-            UPDATE files
-            SET deleted_at = $1, updated_at = $1
-            WHERE id IN ($2) AND deleted_at IS NULL
-            "#,
-            now,
-            ids as _
-        )
-        .execute(&self.pool)
-        .await?;
+        let now = Utc::now();
+        let mut query = QueryBuilder::<Db>::new("UPDATE files SET deleted_at = ");
+        query.push_bind(now);
+        query.push(", updated_at = ");
+        query.push_bind(now);
+        query.push(" WHERE deleted_at IS NULL AND id IN (");
+        let mut separated = query.separated(", ");
+        for id in ids {
+            separated.push_bind(*id);
+        }
+        separated.push_unseparated(")");
+
+        let result = query.build().execute(&self.pool).await?;
 
         if result.rows_affected() == 0 {
             tracing::warn!("soft delete did not touch any rows");
@@ -396,16 +406,21 @@ impl FileRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        let hashes = sqlx::query!(
-            r#"
-            DELETE FROM files
-            WHERE id IN ($1)
-            RETURNING hash
-            "#,
-            ids as _
-        )
-        .fetch_all(executor)
-        .await?;
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query = QueryBuilder::<Db>::new("DELETE FROM files WHERE id IN (");
+        let mut separated = query.separated(", ");
+        for id in ids {
+            separated.push_bind(*id);
+        }
+        separated.push_unseparated(") RETURNING hash");
+
+        let hashes = query
+            .build_query_as::<DeletedHash>()
+            .fetch_all(executor)
+            .await?;
 
         Ok(hashes
             .into_iter()
