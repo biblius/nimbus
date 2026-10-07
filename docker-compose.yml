@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: nimbus
+      POSTGRES_PASSWORD: nimbus
+      POSTGRES_DB: nimbus
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nimbus -d nimbus"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  valkey:
+    image: valkey/valkey:8
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      # server:
+      #   build:
+      #     context: .
+      #     dockerfile: server/Dockerfile
+      #   depends_on:
+      #     postgres:
+      #       condition: service_healthy
+      #     valkey:
+      #       condition: service_healthy
+      #   environment:
+      #     ADDRESS: 0.0.0.0:8080
+      #     RUST_LOG: info
+      #     DATABASE_URL: postgres://nimbus:nimbus@postgres:5432/nimbus
+      #     VALKEY_URL: redis://valkey:6379
+      #     UPLOAD_DIR: /var/lib/nimbus
+      #     COOKIE_SECURE: "false"
+      #     COOKIE_DOMAIN: ""
+      #     FRONTEND_URL: http://localhost:5173
+      #     CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:1420,http://tauri.localhost,https://tauri.localhost,tauri://localhost
+      #     GMAIL_ADDRESS: ${GMAIL_ADDRESS:-}
+      #     GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      #     MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Nimbus}
+      #   ports:
+      #     - "8080:8080"
+      #   volumes:
+      #     - nimbus-data:/var/lib/nimbus
+volumes:
+  pgdata:
+
+# nimbus-data:

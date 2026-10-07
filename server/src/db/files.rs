@@ -1,0 +1,415 @@
+use crate::{
+    db::{Db, DbPool},
+    error::AppError,
+    file::{
+        format::{FileFamily, FileFormat},
+        model::{FileEntry, FileKind, Root},
+    },
+};
+use chrono::{DateTime, Utc};
+use sqlx::Executor;
+use uuid::Uuid;
+
+#[derive(Clone)]
+pub struct FileRepository {
+    pool: DbPool,
+}
+
+pub struct NewRoot {
+    pub id: Uuid,
+    pub name: String,
+    pub quota: i64,
+}
+
+pub struct NewFile {
+    pub id: Uuid,
+    pub root_id: Uuid,
+    pub created_by: Uuid,
+    pub kind: FileKind,
+    pub name: String,
+    /// `None` for an entry that sits directly in the root.
+    pub parent: Option<Uuid>,
+    pub family: Option<FileFamily>,
+    pub format: Option<FileFormat>,
+    pub hash: Option<String>,
+    pub size_bytes: i64,
+}
+
+impl FileRepository {
+    pub fn new(pool: DbPool) -> Self {
+        Self { pool }
+    }
+
+    pub async fn insert_root<'e, E>(&self, executor: E, root: NewRoot) -> Result<Root, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        let now = Utc::now();
+
+        sqlx::query_as!(
+            Root,
+            r#"
+            INSERT INTO roots (
+                id,
+                name,
+                quota_bytes,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $4)
+            RETURNING 
+                id,
+                name,
+                quota_bytes AS quota,
+                created_at,
+                updated_at
+            "#,
+            root.id,
+            root.name,
+            root.quota,
+            now
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn get_root(&self, id: Uuid) -> Result<Option<Root>, AppError> {
+        sqlx::query_as!(
+            Root,
+            r#"
+            SELECT 
+                id,
+                name,
+                quota_bytes AS quota,
+                created_at,
+                updated_at 
+            FROM roots WHERE id = $1"#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// Quota on this user's assignment. `0` is unlimited.
+    pub async fn root_quota(&self, root_id: Uuid) -> Result<i64, AppError> {
+        sqlx::query_scalar!(
+            r#"
+            SELECT quota_bytes 
+            FROM roots 
+            WHERE id = $1 
+            "#,
+            root_id
+        )
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| {
+            tracing::error!(%root_id, "quota requested without an assignment");
+            AppError::Internal
+        })
+    }
+
+    pub async fn get_live(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
+        sqlx::query_as!(
+            FileEntry,
+            r#"
+            SELECT
+                id,
+                root_id,
+                created_by,
+                "type" AS "kind: FileKind",
+                name,
+                parent,
+                family AS "family: FileFamily",
+                format AS "format: FileFormat",
+                hash,
+                size_bytes,
+                created_at,
+                updated_at,
+                deleted_at
+            FROM files
+            WHERE 
+                id = $1
+            AND deleted_at IS NULL
+            "#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn create(&self, node: NewFile) -> Result<FileEntry, AppError> {
+        self.insert(&self.pool, node).await
+    }
+
+    pub async fn insert<'e, E>(&self, executor: E, file: NewFile) -> Result<FileEntry, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        let now = Utc::now();
+
+        sqlx::query_as!(
+            FileEntry,
+            r#"
+            INSERT INTO files (
+                id,
+                root_id,
+                created_by,
+                "type",
+                name,
+                parent,
+                family,
+                format,
+                hash,
+                size_bytes,
+                created_at,
+                updated_at,
+                deleted_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, NULL)
+            RETURNING
+                id,
+                root_id,
+                created_by,
+                "type" AS "kind: FileKind",
+                name,
+                parent,
+                family AS "family: FileFamily",
+                format AS "format: FileFormat",
+                hash,
+                size_bytes,
+                created_at,
+                updated_at,
+                deleted_at
+            "#,
+            file.id,
+            file.root_id,
+            file.created_by,
+            file.kind as _,
+            file.name,
+            file.parent,
+            file.family.map(|f| f.to_string()),
+            file.format.map(|f| f.to_string()),
+            file.hash,
+            file.size_bytes,
+            now
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// Live children of a directory.
+    pub async fn list_files(
+        &self,
+        root: Uuid,
+        parent: Option<Uuid>,
+    ) -> Result<Vec<FileEntry>, AppError> {
+        sqlx::query_as!(
+            FileEntry,
+            r#"
+            SELECT
+                id,
+                root_id,
+                created_by,
+                "type" AS "kind: FileKind",
+                name,
+                parent,
+                family AS "family: FileFamily",
+                format AS "format: FileFormat",
+                hash,
+                size_bytes,
+                created_at,
+                updated_at,
+                deleted_at
+            FROM files
+            WHERE
+                root_id = $1
+            AND parent = $2
+            AND deleted_at IS NULL
+            ORDER BY CASE WHEN "type" = 'd' THEN 0 ELSE 1 END, name
+            "#,
+            root,
+            parent
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// Every child of a directory, including soft-deleted rows.
+    pub async fn list_all_children<'e, E>(
+        &self,
+        executor: E,
+        parent: Uuid,
+    ) -> Result<Vec<FileEntry>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query_as!(
+            FileEntry,
+            r#"
+            SELECT
+                id,
+                root_id,
+                created_by,
+                "type" AS "kind: FileKind",
+                name,
+                parent,
+                family AS "family: FileFamily",
+                format AS "format: FileFormat",
+                hash,
+                size_bytes,
+                created_at,
+                updated_at,
+                deleted_at
+            FROM files
+            WHERE parent = $1
+            "#,
+            parent
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// `parent` is null when checking the top level of a root.
+    pub async fn name_taken(
+        &self,
+        root_id: Uuid,
+        parent: Option<Uuid>,
+        name: &str,
+    ) -> Result<bool, AppError> {
+        let found = sqlx::query_scalar!(
+            r#"
+            SELECT id
+            FROM files
+            WHERE root_id = $1
+              AND name = $2
+              AND deleted_at IS NULL
+              AND parent IS NOT DISTINCT FROM $3
+            "#,
+            root_id,
+            name,
+            parent
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(found.is_some())
+    }
+
+    /// Bytes stored in a root. Directory rows are excluded.
+    pub async fn root_quota_usage(&self, root_id: Uuid) -> Result<i64, AppError> {
+        sqlx::query_scalar!(
+            r#"
+            SELECT CAST(COALESCE(SUM(size_bytes), 0) AS BIGINT) AS "usage!"
+            FROM files
+            WHERE root_id = $1
+              AND "type" = 'f'
+              AND deleted_at IS NULL
+            "#,
+            root_id
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn soft_delete(&self, ids: &[Uuid]) -> Result<(), AppError> {
+        let now = Utc::now();
+
+        let result = sqlx::query!(
+            r#"
+            UPDATE files
+            SET deleted_at = $1, updated_at = $1
+            WHERE id IN ($2) AND deleted_at IS NULL
+            "#,
+            now,
+            ids as _
+        )
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            tracing::warn!("soft delete did not touch any rows");
+        }
+
+        Ok(())
+    }
+
+    pub async fn count_hash<'e, E>(&self, executor: E, hash: &str) -> Result<i64, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query_scalar!(
+            r#"
+            SELECT COUNT(*) AS "count!"
+            FROM files
+            WHERE hash = $1
+            "#,
+            hash
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// Soft-deleted rows past the retention cutoff.
+    pub async fn list_pending_deletion<'e, E>(
+        &self,
+        executor: E,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<FileEntry>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query_as!(
+            FileEntry,
+            r#"
+            SELECT
+                id,
+                root_id,
+                created_by,
+                "type" AS "kind: FileKind",
+                name,
+                parent,
+                family AS "family: FileFamily",
+                format AS "format: FileFormat",
+                hash,
+                size_bytes,
+                created_at,
+                updated_at,
+                deleted_at
+            FROM files
+            WHERE deleted_at < $1
+            "#,
+            cutoff
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn delete<'e, E>(&self, executor: E, ids: &[Uuid]) -> Result<Vec<String>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        let hashes = sqlx::query!(
+            r#"
+            DELETE FROM files
+            WHERE id IN ($1)
+            RETURNING hash
+            "#,
+            ids as _
+        )
+        .fetch_all(executor)
+        .await?;
+
+        Ok(hashes
+            .into_iter()
+            .filter_map(|record| record.hash)
+            .collect())
+    }
+}

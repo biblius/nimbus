@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+.env
+/data
+/node_modules
+
+client/**/node_modules
+client/**/dist
+client/**/.svelte-kit
+client/app/src-tauri/target
+client/app/src-tauri/gen

@@ -1,0 +1,48 @@
+<script lang="ts">
+  import { createClient, type NimbusClient } from "@nimbus/shared/api";
+  import SessionApp from "@nimbus/shared/components/SessionApp.svelte";
+  import { onMount } from "svelte";
+  import { loadEndpoint, saveEndpoint } from "./settings";
+
+  let endpoint = $state("http://localhost:42069");
+  let draft = $state("http://localhost:42069");
+  let client = $state<NimbusClient | null>(null);
+
+  onMount(async () => {
+    endpoint = await loadEndpoint();
+    draft = endpoint;
+    client = createClient(endpoint);
+  });
+
+  async function apply(event: SubmitEvent) {
+    event.preventDefault();
+    endpoint = draft.trim();
+    await saveEndpoint(endpoint);
+    client = createClient(endpoint);
+  }
+</script>
+
+<div class="border-b bg-card px-6 py-3">
+  <form class="mx-auto flex max-w-5xl items-center gap-2" onsubmit={apply}>
+    <label class="text-sm text-muted-foreground" for="endpoint">Server</label>
+    <input
+      id="endpoint"
+      class="h-9 flex-1 rounded-md border bg-background px-3 text-sm"
+      bind:value={draft}
+    />
+    <button
+      class="h-9 rounded-md bg-primary px-3 text-sm text-primary-foreground"
+      type="submit"
+    >
+      Save
+    </button>
+  </form>
+</div>
+
+{#if client}
+  {#key endpoint}
+    <SessionApp {client} />
+  {/key}
+{:else}
+  <p class="p-6 text-sm text-muted-foreground">Loading client settings…</p>
+{/if}

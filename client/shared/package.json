@@ -1,0 +1,25 @@
+{
+  "name": "@nimbus/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./api": "./src/lib/api.ts",
+    "./types": "./src/lib/types.ts",
+    "./styles.css": "./src/styles.css",
+    "./components/SessionApp.svelte": "./src/lib/components/SessionApp.svelte",
+    "./components/LoginPanel.svelte": "./src/lib/components/LoginPanel.svelte",
+    "./components/FileBrowser.svelte": "./src/lib/components/FileBrowser.svelte"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.3.1",
+    "tailwind-variants": "^1.0.0"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "svelte": "^5.39.6",
+    "typescript": "^5.9.2"
+  }
+}

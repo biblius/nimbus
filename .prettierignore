@@ -1,0 +1,11 @@
+node_modules
+dist
+.svelte-kit
+
+# Rust build output and generated Tauri files
+target
+client/app/src-tauri/target
+client/app/src-tauri/gen
+
+package-lock.json
+data
