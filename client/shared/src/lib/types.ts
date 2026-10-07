@@ -28,15 +28,41 @@ export type LoginResult =
 export interface Root {
   id: string;
   name: string;
+  primary: boolean;
+  quota: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface FolderSpace {
-  root: Root;
-  primary: boolean;
-  quotaBytes: number;
-}
+export type FileFamily =
+  "Image" | "Audio" | "Video" | "Text" | "Doc" | "Unknown";
+
+export type FileFormat =
+  | "Jpg"
+  | "Png"
+  | "Wav"
+  | "Mp3"
+  | "Avi"
+  | "Mp4"
+  | "Txt"
+  | "Json"
+  | "Html"
+  | "Xml"
+  | "Md"
+  | "Csv"
+  | "Css"
+  | "Rtf"
+  | "Doc"
+  | "Docx"
+  | "Odt"
+  | "Ods"
+  | "Odp"
+  | "Pdf"
+  | "Xls"
+  | "Xlsx"
+  | "Ppt"
+  | "Pptx"
+  | { Other: string };
 
 export interface FileEntry {
   id: string;
@@ -45,17 +71,11 @@ export interface FileEntry {
   kind: "file" | "directory";
   name: string;
   parent: string | null;
-  family: string | null;
-  format: string | null;
+  family: FileFamily | null;
+  format: FileFormat | null;
   hash: string | null;
   sizeBytes: number;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
 }
-
-export interface Folders {
-  privateFolder: FolderSpace;
-  shared: FolderSpace[];
-}
-

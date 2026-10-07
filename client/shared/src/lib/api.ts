@@ -1,4 +1,4 @@
-import type { FileEntry, Folders, LoginResult, UserView } from "./types";
+import type { FileEntry, LoginResult, Root, UserView } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -10,19 +10,32 @@ export class ApiError extends Error {
 }
 
 export interface NimbusClient {
-  login(username: string, password: string, remember: boolean): Promise<LoginResult>;
+  login(
+    username: string,
+    password: string,
+    remember: boolean,
+  ): Promise<LoginResult>;
   loginOtp(token: string, otpCode: string): Promise<LoginResult>;
   me(): Promise<UserView>;
   logout(): Promise<void>;
   changePassword(currentPassword: string, newPassword: string): Promise<void>;
   resetPassword(token: string, newPassword: string): Promise<void>;
-  folders(): Promise<Folders>;
-  list(parent: string): Promise<FileEntry[]>;
-  createDirectory(parent: string, name: string): Promise<FileEntry>;
+  roots(): Promise<Root[]>;
+  list(rootId: string, parent: string | null): Promise<FileEntry[]>;
+  createDirectory(
+    rootId: string,
+    parent: string | null,
+    name: string,
+  ): Promise<FileEntry>;
   /** Upload one file. `onProgress` reports bytes sent so far and the total body size. */
-  upload(parent: string, file: File, onProgress?: UploadProgress): Promise<FileEntry>;
-  remove(id: string): Promise<void>;
-  contentUrl(id: string): string;
+  upload(
+    rootId: string,
+    parent: string | null,
+    file: File,
+    onProgress?: UploadProgress,
+  ): Promise<FileEntry>;
+  remove(rootId: string, id: string): Promise<void>;
+  download(rootId: string, id: string, name: string): Promise<void>;
 }
 
 export type UploadProgress = (loaded: number, total: number) => void;
@@ -33,7 +46,11 @@ export function createClient(baseUrl: string): NimbusClient {
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
     headers.set("X-NIMBUS-CSRF", "1");
-    if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+    if (
+      init.body &&
+      !(init.body instanceof FormData) &&
+      !headers.has("Content-Type")
+    ) {
       headers.set("Content-Type", "application/json");
     }
 
@@ -82,22 +99,27 @@ export function createClient(baseUrl: string): NimbusClient {
         method: "POST",
         body: JSON.stringify({ newPassword }),
       }),
-    folders: () => request<Folders>("/folders"),
-    list: (parent) => request<FileEntry[]>(`/files?parent=${parent}`),
-    createDirectory: (parent, name) =>
-      request<FileEntry>("/files/directories", {
+    roots: () => request<Root[]>("/roots"),
+    list: (rootId, parent) => {
+      const query = parent ? `?parent=${encodeURIComponent(parent)}` : "";
+      return request<FileEntry[]>(
+        `/roots/${encodeURIComponent(rootId)}${query}`,
+      );
+    },
+    createDirectory: (rootId, parent, name) =>
+      request<FileEntry>(`/roots/${encodeURIComponent(rootId)}/directories`, {
         method: "POST",
         body: JSON.stringify({ parent, name }),
       }),
-    upload: (parent, file, onProgress) => {
+    upload: (rootId, parent, file, onProgress) => {
       const body = new FormData();
-      body.set("parent", parent);
+      if (parent) body.set("parent", parent);
       body.set("file", file);
 
       // fetch has no upload progress events, so this one call uses XMLHttpRequest.
       return new Promise<FileEntry>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", `${root}/files`);
+        xhr.open("POST", `${root}/roots/${encodeURIComponent(rootId)}`);
         xhr.withCredentials = true;
         xhr.setRequestHeader("X-NIMBUS-CSRF", "1");
 
@@ -112,7 +134,12 @@ export function createClient(baseUrl: string): NimbusClient {
           } catch {
             payload = null;
           }
-          if (xhr.status >= 200 && xhr.status < 300 && Array.isArray(payload) && payload[0]) {
+          if (
+            xhr.status >= 200 &&
+            xhr.status < 300 &&
+            Array.isArray(payload) &&
+            payload[0]
+          ) {
             onProgress?.(file.size, file.size);
             resolve(payload[0] as FileEntry);
           } else {
@@ -120,12 +147,41 @@ export function createClient(baseUrl: string): NimbusClient {
           }
         };
         xhr.onerror = () => reject(new TypeError("network error"));
-        xhr.onabort = () => reject(new DOMException("upload aborted", "AbortError"));
+        xhr.onabort = () =>
+          reject(new DOMException("upload aborted", "AbortError"));
 
         xhr.send(body);
       });
     },
-    remove: (id) => request<void>(`/files/${id}`, { method: "DELETE" }),
-    contentUrl: (id) => `${root}/files/${id}/content`,
+    remove: (rootId, id) =>
+      request<void>(
+        `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      ),
+    download: async (rootId, id, name) => {
+      const response = await fetch(
+        `${root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/download`,
+        {
+          credentials: "include",
+          headers: { "X-NIMBUS-CSRF": "1" },
+        },
+      );
+      if (!response.ok) {
+        let body: unknown = null;
+        try {
+          body = await response.json();
+        } catch {
+          body = null;
+        }
+        throw new ApiError(response.status, body);
+      }
+
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = name;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    },
   };
 }

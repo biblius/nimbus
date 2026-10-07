@@ -24,9 +24,8 @@
   const PARALLEL_UPLOADS = 10;
 
   interface Location {
-    id: string;
+    id: string | null;
     name: string;
-    parent: string | null;
   }
 
   let entries = $state<FileEntry[]>([]);
@@ -37,14 +36,14 @@
   let nextUploadId = 0;
 
   $effect(() => {
-    current = { id: folder.id, name: folder.name, parent: null };
-    void load(folder.id);
+    current = { id: null, name: folder.name };
+    void load(null);
   });
 
-  async function load(parent: string) {
+  async function load(parent: string | null) {
     error = "";
     try {
-      entries = await client.list(parent);
+      entries = await client.list(folder.id, parent);
     } catch (cause) {
       error =
         cause instanceof ApiError
@@ -88,9 +87,13 @@
     if (current?.id === parent) await load(parent);
   }
 
-  async function uploadOne(parent: string, file: File, item: PendingUpload) {
+  async function uploadOne(
+    parent: string | null,
+    file: File,
+    item: PendingUpload,
+  ) {
     try {
-      await client.upload(parent, file, (loaded, total) => {
+      await client.upload(folder.id, parent, file, (loaded, total) => {
         item.loaded = loaded;
         item.total = total;
       });
@@ -130,7 +133,7 @@
     if (!current || !directoryName.trim()) return;
     error = "";
     try {
-      await client.createDirectory(current.id, directoryName.trim());
+      await client.createDirectory(folder.id, current.id, directoryName.trim());
       directoryName = "";
       await load(current.id);
     } catch (cause) {
@@ -145,7 +148,7 @@
     if (!current) return;
     error = "";
     try {
-      await client.remove(entry.id);
+      await client.remove(folder.id, entry.id);
       await load(current.id);
     } catch (cause) {
       error =
@@ -155,8 +158,20 @@
     }
   }
 
+  async function download(entry: FileEntry) {
+    error = "";
+    try {
+      await client.download(folder.id, entry.id, entry.name);
+    } catch (cause) {
+      error =
+        cause instanceof ApiError
+          ? "Could not download that file"
+          : "The server could not be reached";
+    }
+  }
+
   function openDirectory(entry: FileEntry) {
-    current = { id: entry.id, name: entry.name, parent: entry.parent };
+    current = { id: entry.id, name: entry.name };
     void load(entry.id);
   }
 </script>
@@ -222,13 +237,13 @@
       </ul>
     {/if}
 
-    {#if current.parent}
+    {#if current.id}
       <Button
         variant="ghost"
         size="sm"
         onclick={() => {
-          current = { id: folder.id, name: folder.name, parent: null };
-          void load(folder.id);
+          current = { id: null, name: folder.name };
+          void load(null);
         }}
       >
         Back to root
@@ -249,7 +264,12 @@
                 {entry.name}
               </button>
             {:else}
-              <span class="text-sm">{entry.name}</span>
+              <button
+                class="text-left text-sm hover:underline"
+                onclick={() => download(entry)}
+              >
+                {entry.name}
+              </button>
             {/if}
             <Button variant="ghost" size="sm" onclick={() => remove(entry)}
               >Delete</Button

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { ApiError, type NimbusClient } from "../api";
-  import type { Folders, Root, UserView } from "../types";
+  import type { Root, UserView } from "../types";
   import FileBrowser from "./FileBrowser.svelte";
   import LoginPanel from "./LoginPanel.svelte";
   import Button from "./ui/button/button.svelte";
@@ -11,7 +11,7 @@
 
   let user = $state<UserView | null>(null);
   let firstLogin = $state(false);
-  let folders = $state<Folders | null>(null);
+  let roots = $state<Root[]>([]);
   let active = $state<Root | null>(null);
   let currentPassword = $state("");
   let newPassword = $state("");
@@ -20,8 +20,8 @@
 
   async function loadSpace(profile: UserView) {
     user = profile;
-    folders = await client.folders();
-    active = folders.privateFolder.root;
+    roots = await client.roots();
+    active = roots.find((root) => root.primary) ?? roots[0] ?? null;
   }
 
   onMount(async () => {
@@ -43,7 +43,7 @@
   async function logout() {
     await client.logout();
     user = null;
-    folders = null;
+    roots = [];
     active = null;
   }
 
@@ -67,7 +67,7 @@
 
 {#if !ready}
   <p class="p-8 text-sm text-muted-foreground">Loading…</p>
-{:else if !user || !folders || !active}
+{:else if !user}
   <main class="flex min-h-screen items-center justify-center p-6">
     <LoginPanel {client} onSuccess={signedIn} />
   </main>
@@ -109,25 +109,23 @@
       <p class="text-sm">{notice}</p>
     {/if}
 
-    <nav class="flex flex-wrap gap-2">
-      <Button
-        variant={active.id === folders.privateFolder.root.id
-          ? "default"
-          : "outline"}
-        onclick={() => (active = folders?.privateFolder.root ?? active)}
-      >
-        Private
-      </Button>
-      {#each folders.shared as space (space.root.id)}
-        <Button
-          variant={active.id === space.root.id ? "default" : "outline"}
-          onclick={() => (active = space.root)}
-        >
-          {space.root.name}
-        </Button>
-      {/each}
-    </nav>
+    {#if active}
+      <nav class="flex flex-wrap gap-2">
+        {#each roots as root (root.id)}
+          <Button
+            variant={active.id === root.id ? "default" : "outline"}
+            onclick={() => (active = root)}
+          >
+            {root.primary ? "Private" : root.name}
+          </Button>
+        {/each}
+      </nav>
 
-    <FileBrowser {client} folder={active} />
+      <FileBrowser {client} folder={active} />
+    {:else}
+      <p class="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+        No storage roots are assigned to this account.
+      </p>
+    {/if}
   </main>
 {/if}
