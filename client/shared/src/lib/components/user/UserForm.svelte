@@ -2,6 +2,7 @@
   import type { Role, UserData, UserView } from "../../types";
   import type { AdminContext } from "../admin/categories";
   import Button from "../ui/button/button.svelte";
+  import Notice from "../ui/notice/notice.svelte";
   import Input from "../ui/input/input.svelte";
   import Label from "../ui/label/label.svelte";
 
@@ -18,7 +19,7 @@
     title: string;
     description: string;
     user?: UserView;
-    save: (user: UserData, userId?: string) => Promise<void>;
+    save: (user: UserData) => Promise<void>;
     remove?: (userId: string) => void;
     cancel?: () => void;
   } = $props();
@@ -38,7 +39,7 @@
     busy = true;
     error = "";
     try {
-      await save({ username, email, role, password }, user?.id);
+      await save({ username, email, role, password });
       if (user) {
         password = "";
       } else {
@@ -130,7 +131,7 @@
     <p class="text-sm text-destructive">{error}</p>
   {/if}
   {#if notice}
-    <p class="text-sm">{notice}</p>
+    <Notice message={notice} />
   {/if}
 
   <div class="flex flex-wrap items-center gap-2">

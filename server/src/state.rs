@@ -87,6 +87,7 @@ impl AppState {
             sessions,
             email,
             transactor.clone(),
+            storage.clone(),
         );
 
         let file_service = FileService::new(

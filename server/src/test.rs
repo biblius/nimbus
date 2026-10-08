@@ -163,6 +163,7 @@ async fn build_services(pool: DbPool, cache: Cache, storage_dir: &Path) -> Servi
         "Nimbus".into(),
         "http://localhost".into(),
     );
+    let storage = Storage::new(storage_dir.join("storage"), 1024 * 1024);
     let users = UserRepository::new(pool.clone());
     let sessions = SessionRepository::new(pool.clone());
     let folders = UserFolderRepository::new(pool.clone());
@@ -180,8 +181,8 @@ async fn build_services(pool: DbPool, cache: Cache, storage_dir: &Path) -> Servi
         sessions,
         email,
         Transactor::new(pool.clone()),
+        storage.clone(),
     );
-    let storage = Storage::new(storage_dir.join("storage"), 1024 * 1024);
     let files = FileService::new(files_repo, folders, storage, 30, Transactor::new(pool));
     files.prepare().await.unwrap();
     user_service.ensure_initial_admin().await.unwrap();

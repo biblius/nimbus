@@ -296,23 +296,13 @@ impl UserRepository {
         Ok(())
     }
 
-    pub async fn soft_delete(&self, id: Uuid) -> Result<(), AppError> {
-        let now = Utc::now();
-
-        let result = sqlx::query!(
-            r#"
-            UPDATE users 
-            SET 
-                deleted_at = $1,
-                updated_at = $1 
-            WHERE 
-                id = $2 
-            AND deleted_at IS NULL"#,
-            now,
-            id
-        )
-        .execute(&self.pool)
-        .await?;
+    pub async fn delete_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        let result = sqlx::query!(r#"DELETE FROM users WHERE id = $1"#, id)
+            .execute(executor)
+            .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::ResourceMissing("user does not exist".into()));

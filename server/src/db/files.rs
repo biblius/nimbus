@@ -80,7 +80,7 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    pub async fn list_all(&self) -> Result<Vec<Root>, AppError> {
+    pub async fn list_all_roots(&self) -> Result<Vec<Root>, AppError> {
         sqlx::query_as!(
             Root,
             r#"
@@ -173,6 +173,36 @@ impl FileRepository {
             id
         )
         .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn get_private_root_with<'e, E>(
+        &self,
+        executor: E,
+        user_id: Uuid,
+    ) -> Result<Root, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query_as!(
+            Root,
+            r#"
+            SELECT 
+                r.id,
+                r.name,
+                r.quota_bytes AS quota,
+                r.created_at,
+                r.updated_at 
+            FROM user_folders uf 
+            JOIN roots r ON r.id = uf.root_id
+            WHERE 
+                user_id = $1
+            AND uf."primary"
+            "#,
+            user_id
+        )
+        .fetch_one(executor)
         .await
         .map_err(AppError::from)
     }
@@ -286,12 +316,24 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    /// Live children of a directory.
     pub async fn list_files(
         &self,
         root: Uuid,
         parent: Option<Uuid>,
     ) -> Result<Vec<FileEntry>, AppError> {
+        self.list_files_with(&self.pool, root, parent).await
+    }
+
+    /// Live children of a directory.
+    pub async fn list_files_with<'e, E>(
+        &self,
+        executor: E,
+        root: Uuid,
+        parent: Option<Uuid>,
+    ) -> Result<Vec<FileEntry>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
         let mut query = QueryBuilder::new(
             r#"
             SELECT
@@ -324,9 +366,44 @@ impl FileRepository {
 
         query
             .build_query_as::<FileEntry>()
-            .fetch_all(&self.pool)
+            .fetch_all(executor)
             .await
             .map_err(AppError::from)
+    }
+
+    pub async fn list_all_files_with<'e, E>(
+        &self,
+        executor: E,
+        root: Uuid,
+    ) -> Result<Vec<FileEntry>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query_as!(
+            FileEntry,
+            r#"
+            SELECT
+                id,
+                root_id,
+                created_by,
+                "type" AS "kind: FileKind",
+                name,
+                parent,
+                family AS "family: FileFamily",
+                format AS "format: FileFormat",
+                hash,
+                size_bytes,
+                created_at,
+                updated_at,
+                deleted_at
+            FROM files
+            WHERE root_id = $1
+            "#,
+            root
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)
     }
 
     /// Every child of a directory, including soft-deleted rows.
@@ -515,5 +592,20 @@ impl FileRepository {
             .into_iter()
             .filter_map(|record| record.hash)
             .collect())
+    }
+
+    pub async fn delete_root_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        let result = sqlx::query!(r#"DELETE FROM roots WHERE id = $1"#, id)
+            .execute(executor)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::ResourceMissing("root does not exist".into()));
+        }
+
+        Ok(())
     }
 }

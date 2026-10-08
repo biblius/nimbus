@@ -1,15 +1,18 @@
 <script lang="ts">
+  import { Pencil, Trash } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { ApiError } from "../../api";
   import { formatWhen } from "../../format";
   import type { UserData, UserViewFull } from "../../types";
   import Button from "../ui/button/button.svelte";
+  import Notice from "../ui/notice/notice.svelte";
+  import ConfirmDialog from "../ui/confirm-dialog/confirm-dialog.svelte";
   import type { AdminContext } from "./categories";
   import UserForm from "../user/UserForm.svelte";
 
   let { context }: { context: AdminContext } = $props();
 
-  let accounts = $state<UserViewFull[]>([]);
+  let users = $state<UserViewFull[]>([]);
 
   let selectedId = $state<string | null>(null);
   let editing = $state(false);
@@ -17,6 +20,8 @@
 
   let error = $state("");
   let notice = $state("");
+  let deleteUser = $state<UserViewFull | null>(null);
+  let deleting = $state(false);
 
   function blank() {
     selectedId = null;
@@ -49,7 +54,7 @@
   }
 
   async function refresh() {
-    accounts = await context.client.listUsers();
+    users = await context.client.listUsers();
   }
 
   onMount(() => {
@@ -130,9 +135,15 @@
     }
   }
 
+  function askDelete(user: UserViewFull) {
+    error = "";
+    deleteUser = user;
+  }
+
   async function remove(userId: string) {
     try {
       await context.client.deleteUser(userId);
+      deleteUser = null;
       blank();
       notice = "User removed.";
       await refresh();
@@ -146,11 +157,18 @@
           : "The server could not be reached";
     }
   }
+
+  async function confirmDelete() {
+    if (!deleteUser || deleting) return;
+    deleting = true;
+    await remove(deleteUser.id);
+    deleting = false;
+  }
 </script>
 
 <div class="space-y-3">
   <div
-    class="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-1.5"
+    class="flex items-center justify-between gap-3 rounded-lg border-b px-3 py-1.5"
   >
     <h2 class="text-sm font-medium">Users</h2>
     <Button
@@ -182,24 +200,26 @@
   {/if}
 
   {#if notice}
-    <p class="text-sm">{notice}</p>
+    <Notice message={notice} />
   {/if}
 
   {#if creating}
-    <UserForm
-      {context}
-      title="Add user"
-      description="A private folder is created with the account."
-      save={(data) => createUser(data)}
-      cancel={blank}
-    />
+    <div class="mx-auto max-w-lg">
+      <UserForm
+        {context}
+        title="Add user"
+        description="A private folder will be created with the account."
+        save={(data) => createUser(data)}
+        cancel={blank}
+      />
+    </div>
   {/if}
 
-  {#if accounts.length === 0}
+  {#if users.length === 0}
     <p class="text-sm text-muted-foreground">No users yet.</p>
   {:else}
     <ul class="divide-y overflow-hidden rounded-lg border">
-      {#each accounts as user (user.id)}
+      {#each users as user (user.id)}
         <li>
           <button
             type="button"
@@ -242,45 +262,65 @@
           {#if selectedId === user.id}
             <div class="border-t bg-muted/30 p-3">
               {#if editing}
-                <UserForm
-                  {context}
-                  {user}
-                  title="Edit user"
-                  description="Leave the password blank to keep the current one."
-                  save={(data) => updateUser(data, user.id)}
-                  remove={(userId) => remove(userId)}
-                  cancel={stopEdit}
-                />
+                <div class="mx-auto max-w-lg">
+                  <UserForm
+                    {context}
+                    {user}
+                    title="Edit user"
+                    description="Leave the password blank to keep the current one."
+                    save={(data) => updateUser(data, user.id)}
+                    remove={(userId) => remove(userId)}
+                    cancel={stopEdit}
+                  />
+                </div>
               {:else}
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                  <dl
-                    class="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm"
-                  >
-                    <dt class="text-muted-foreground">ID</dt>
-                    <dd class="truncate font-mono text-xs leading-5">
-                      {user.id}
-                    </dd>
-                    <dt class="text-muted-foreground">Username</dt>
-                    <dd class="truncate">{user.username}</dd>
-                    <dt class="text-muted-foreground">Email</dt>
-                    <dd class="truncate">{user.email ?? "-"}</dd>
-                    <dt class="text-muted-foreground">Role</dt>
-                    <dd class="capitalize">{user.role}</dd>
-                    <dt class="text-muted-foreground">Two-factor</dt>
-                    <dd>{user.otpEnabled ? "Enabled" : "Disabled"}</dd>
-                    <dt class="text-muted-foreground">Created</dt>
-                    <dd>{formatWhen(user.createdAt)}</dd>
-                    <dt class="text-muted-foreground">Updated</dt>
-                    <dd>{formatWhen(user.updatedAt)}</dd>
-                  </dl>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onclick={startEdit}
-                  >
-                    Edit
-                  </Button>
+                <div class="flex justify-between">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <dl
+                      class="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm"
+                    >
+                      <dt class="text-muted-foreground">ID</dt>
+                      <dd class="truncate font-mono text-xs leading-5">
+                        {user.id}
+                      </dd>
+                      <dt class="text-muted-foreground">Username</dt>
+                      <dd class="truncate">{user.username}</dd>
+                      <dt class="text-muted-foreground">Email</dt>
+                      <dd class="truncate">{user.email ?? "-"}</dd>
+                      <dt class="text-muted-foreground">Role</dt>
+                      <dd class="capitalize">{user.role}</dd>
+                      <dt class="text-muted-foreground">Two-factor</dt>
+                      <dd>{user.otpEnabled ? "Enabled" : "Disabled"}</dd>
+                      <dt class="text-muted-foreground">Created</dt>
+                      <dd>{formatWhen(user.createdAt)}</dd>
+                      <dt class="text-muted-foreground">Updated</dt>
+                      <dd>{formatWhen(user.updatedAt)}</dd>
+                    </dl>
+                  </div>
+                  <div class="flex flex-col self-stretch">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      class="size-8 p-0"
+                      aria-label="Edit user"
+                      title="Edit user"
+                      onclick={startEdit}
+                    >
+                      <Pencil size={16} />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      class="mt-auto size-8 p-0"
+                      aria-label="Delete user"
+                      title="Delete user"
+                      onclick={() => askDelete(user)}
+                    >
+                      <Trash size={16} />
+                    </Button>
+                  </div>
                 </div>
               {/if}
             </div>
@@ -290,3 +330,22 @@
     </ul>
   {/if}
 </div>
+
+<ConfirmDialog
+  open={deleteUser !== null}
+  title="Delete user"
+  description={deleteUser
+    ? deleteUser.id === context.currentUserId
+      ? `Delete ${deleteUser.username}? You will be signed out.`
+      : `Delete ${deleteUser.username}? This cannot be undone.`
+    : ""}
+  confirmLabel={deleteUser?.id === context.currentUserId
+    ? "Delete and sign out"
+    : "Delete"}
+  busy={deleting}
+  {error}
+  onCancel={() => {
+    if (!deleting) deleteUser = null;
+  }}
+  onConfirm={confirmDelete}
+/>

@@ -16,6 +16,7 @@ use crate::{
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use thotp::encoding::data_encoding::BASE32;
+use tracing::instrument;
 use uuid::Uuid;
 use validify::Validify;
 
@@ -55,6 +56,7 @@ impl AuthenticationService {
     ///
     /// No session is created until login actually succeeds. Users with 2FA enabled
     /// get [`LoginResult::TwoFactorRequired`].
+    #[instrument(skip(self, credentials), fields(username = %credentials.username), err(Debug))]
     pub async fn login(
         &self,
         mut credentials: LoginCredentials,
@@ -99,6 +101,7 @@ impl AuthenticationService {
     }
 
     /// Finish a 2FA login.
+    #[instrument(skip(self, otp), err(Debug))]
     pub async fn login_with_otp(
         &self,
         mut otp: Otp,
@@ -140,6 +143,7 @@ impl AuthenticationService {
     }
 
     /// Get a session by its ID.
+    #[instrument(skip_all, err(Debug))]
     pub async fn get_session_by_id(&self, id: Uuid) -> Result<Session, AppError> {
         let record = self
             .sessions
@@ -153,11 +157,17 @@ impl AuthenticationService {
     }
 
     /// Expire the session under the given ID.
+    #[instrument(skip_all, err(Debug))]
     pub async fn logout(&self, session_id: Uuid) -> Result<(), AppError> {
         self.sessions.expire(session_id).await
     }
 
     /// Update the user's password.
+    #[instrument(
+        skip(self, session, change),
+        fields(user_id = %session.user.id),
+        err(Debug)
+    )]
     pub async fn change_password(
         &self,
         session: Session,
@@ -192,6 +202,7 @@ impl AuthenticationService {
 
     /// Send a password reset token to the user found by the email.
     /// If no user is found, returns OK to prevent exposing emails.
+    #[instrument(skip(self), err(Debug))]
     pub async fn start_password_reset(
         &self,
         mut data: PasswordResetRequest,
@@ -222,6 +233,7 @@ impl AuthenticationService {
 
     /// Consume the token sent by [Self::start_password_reset] and reset the user's password to
     /// the given one.
+    #[instrument(skip(self, token, data), err(Debug))]
     pub async fn finish_password_reset(
         &self,
         token: Uuid,
@@ -254,6 +266,7 @@ impl AuthenticationService {
     }
 
     /// Cache a TOTP secret and return the QR code that registers it.
+    #[instrument(skip(self, session), fields(user_id = %session.user.id), err(Debug))]
     pub async fn start_otp_setup(&self, session: Session) -> Result<GeneratedOtp, AppError> {
         let secret = thotp::generate_secret(160);
 
@@ -284,6 +297,7 @@ impl AuthenticationService {
     }
 
     /// Consume the OTP token created by [Self::start_otp_setup] and update the user's OTP secret.
+    #[instrument(skip(self, session, otp), fields(user_id = %session.user.id), err(Debug))]
     pub async fn finish_otp_setup(&self, session: Session, mut otp: Otp) -> Result<(), AppError> {
         otp.validify()?;
 
@@ -304,6 +318,7 @@ impl AuthenticationService {
             .await
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     async fn create_session(
         &self,
         user: User,
@@ -332,6 +347,7 @@ impl AuthenticationService {
         Ok(Session::from_record(record, user, first_login))
     }
 
+    #[instrument(skip_all, fields(user_id = %user.id), err(Debug))]
     fn validate_password(&self, user: &User, password: &str) -> Result<(), AppError> {
         if user.deleted_at.is_some() {
             return Err(AppError::Auth(AuthFailure::AccountDeactivated));

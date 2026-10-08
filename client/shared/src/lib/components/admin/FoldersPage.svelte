@@ -4,6 +4,7 @@
   import { formatQuota, formatWhen } from "../../format";
   import type { Folder } from "../../types";
   import Button from "../ui/button/button.svelte";
+  import Notice from "../ui/notice/notice.svelte";
   import Input from "../ui/input/input.svelte";
   import Label from "../ui/label/label.svelte";
   import type { AdminContext } from "./categories";
@@ -173,7 +174,7 @@
         <p class="text-sm text-destructive">{error}</p>
       {/if}
       {#if notice}
-        <p class="text-sm">{notice}</p>
+        <Notice message={notice} />
       {/if}
 
       <Button type="submit" disabled={busy}>Save</Button>

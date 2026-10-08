@@ -1,8 +1,5 @@
-import type { Component } from "svelte";
 import type { NimbusClient } from "../../api";
 import type { UserView } from "../../types";
-import FoldersPage from "./FoldersPage.svelte";
-import UsersPage from "./UsersPage.svelte";
 
 /** Bumped each time an admin opens a root from the file browser. */
 export interface EditRequest {
@@ -21,14 +18,13 @@ export interface AdminContext {
 export interface AdminSidebarEntry {
   id: string;
   label: string;
-  component: Component<{ context: AdminContext }>;
 }
 
 /**
  * Sidebar entries for the admin panel.
- * Add a category by appending a page component here.
+ * Add a category here, then render it from the matching branch in AdminPanel.
  */
 export const ADMIN_SIDEBAR_ENTRIES: AdminSidebarEntry[] = [
-  { id: "users", label: "Users", component: UsersPage },
-  { id: "folders", label: "Folders", component: FoldersPage },
+  { id: "users", label: "Users" },
+  { id: "folders", label: "Folders" },
 ];

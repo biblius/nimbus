@@ -5,6 +5,7 @@ use super::{
 };
 use crate::{
     db::{
+        Db,
         files::{FileRepository, NewFile},
         tx::Transactor,
         user_folders::UserFolderRepository,
@@ -14,7 +15,9 @@ use crate::{
     user::model::{Role, User},
 };
 use chrono::{Duration, Utc};
+use sqlx::Transaction;
 use std::collections::VecDeque;
+use tracing::instrument;
 use uuid::Uuid;
 use validify::Validify;
 
@@ -44,14 +47,17 @@ impl FileService {
         }
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn prepare(&self) -> Result<(), AppError> {
         self.storage.prepare().await
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn list_roots(&self, user: &User) -> Result<Vec<RootView>, AppError> {
         self.folders.list_roots(user.id).await
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn list_directory(
         &self,
         user: &User,
@@ -66,10 +72,12 @@ impl FileService {
         self.files.list_files(root_id, dir_id).await
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn metadata(&self, user: &User, id: Uuid) -> Result<FileEntry, AppError> {
         self.readable(user, id).await
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn create_directory(
         &self,
         user: &User,
@@ -100,6 +108,7 @@ impl FileService {
     }
 
     /// Validate the parameters of a file upload and return the writer if valid.
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn start_upload(
         &self,
         user: &User,
@@ -112,6 +121,7 @@ impl FileService {
     }
 
     /// Store the uploaded bytes, then insert the fully-described file row.
+    #[instrument(skip(self, user, file), fields(user_id = %user.id, name = %file.name), err(Debug))]
     pub async fn finish_upload(
         &self,
         user: &User,
@@ -160,6 +170,7 @@ impl FileService {
         Ok(entry)
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn content(
         &self,
         user: &User,
@@ -191,16 +202,19 @@ impl FileService {
         Ok((file, path, mime))
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn delete(&self, user: &User, id: Uuid) -> Result<(), AppError> {
         let file = self.readable(user, id).await?;
         self.files.soft_delete(&[file.id]).await
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn purge_expired(&self) -> Result<(), AppError> {
         let cutoff = Utc::now() - Duration::days(self.retention_days as i64);
         self.purge_deleted_before(cutoff).await
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn purge_deleted_before(
         &self,
         cutoff: chrono::DateTime<Utc>,
@@ -209,9 +223,22 @@ impl FileService {
 
         let pending = self.files.list_pending_deletion(&mut *tx, cutoff).await?;
 
+        let tx = Self::delete_recursive(&self.files, &self.storage, tx, pending).await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_recursive<'tx>(
+        files: &FileRepository,
+        storage: &Storage,
+        mut tx: Transaction<'tx, Db>,
+        entries: Vec<FileEntry>,
+    ) -> Result<Transaction<'tx, Db>, AppError> {
         let mut ids = vec![];
 
-        let mut queue = VecDeque::from(pending);
+        let mut queue = VecDeque::from(entries);
 
         while let Some(file) = queue.pop_front() {
             ids.push(file.id);
@@ -220,7 +247,7 @@ impl FileService {
                 continue;
             }
 
-            let children = self.files.list_all_children(&mut *tx, file.id).await?;
+            let children = files.list_all_children(&mut *tx, file.id).await?;
 
             for child in children {
                 queue.push_back(child);
@@ -229,12 +256,12 @@ impl FileService {
 
         tracing::info!("removing {} files that are pending deletion", ids.len());
 
-        let deleted = self.files.delete(&mut *tx, &ids).await?;
+        let deleted = files.delete(&mut *tx, &ids).await?;
 
         for hash in deleted {
-            let remaining = self.files.count_hash(&mut *tx, &hash).await?;
+            let remaining = files.count_hash(&mut *tx, &hash).await?;
             if remaining == 0 {
-                match self.storage.remove(&hash).await {
+                match storage.remove(&hash).await {
                     Ok(()) => {
                         tracing::info!("deleted file {hash}")
                     }
@@ -246,11 +273,10 @@ impl FileService {
             }
         }
 
-        tx.commit().await?;
-
-        Ok(())
+        Ok(tx)
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     async fn readable(&self, user: &User, id: Uuid) -> Result<FileEntry, AppError> {
         let file = self
             .files
@@ -267,6 +293,7 @@ impl FileService {
         Ok(file)
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     async fn writable(
         &self,
         user: &User,

@@ -1,6 +1,8 @@
 <script lang="ts">
   import PanelShell from "../PanelShell.svelte";
   import { ADMIN_SIDEBAR_ENTRIES, type AdminContext } from "./categories";
+  import FoldersPage from "./FoldersPage.svelte";
+  import UsersPage from "./UsersPage.svelte";
 
   let {
     menuOpen = $bindable(false),
@@ -16,8 +18,6 @@
     ADMIN_SIDEBAR_ENTRIES.find((entry) => entry.id === selectedEntry) ??
       ADMIN_SIDEBAR_ENTRIES[0],
   );
-
-  const Page = $derived(active.component);
 
   function choose(id: string) {
     selectedEntry = id;
@@ -50,6 +50,12 @@
   {/snippet}
 
   <div class="p-4 sm:p-6">
-    <Page {context} />
+    <div class="mx-auto max-w-5xl">
+      {#if active.id === "users"}
+        <UsersPage {context} />
+      {:else if active.id === "folders"}
+        <FoldersPage {context} />
+      {/if}
+    </div>
   </div>
 </PanelShell>

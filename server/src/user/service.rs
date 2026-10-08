@@ -9,12 +9,17 @@ use crate::{
     },
     email::EmailSender,
     error::AppError,
-    file::model::{FileEntry, Root, RootAssignment},
+    file::{
+        model::{FileEntry, Root, RootAssignment},
+        service::FileService,
+        storage::Storage,
+    },
     user::model::{
         CreateSharedFolder, CreateUser, Role, SetQuota, UpdateRoot, UpdateUser, User, UserView,
         UserViewFull,
     },
 };
+use tracing::instrument;
 use uuid::Uuid;
 use validify::{Validate, Validify};
 
@@ -26,6 +31,7 @@ pub struct UserService {
     sessions: SessionRepository,
     email: EmailSender,
     tx: Transactor,
+    storage: Storage,
 }
 
 impl UserService {
@@ -36,6 +42,7 @@ impl UserService {
         sessions: SessionRepository,
         email: EmailSender,
         tx: Transactor,
+        storage: Storage,
     ) -> Self {
         Self {
             users,
@@ -44,9 +51,11 @@ impl UserService {
             sessions,
             email,
             tx,
+            storage,
         }
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn ensure_initial_admin(&self) -> Result<(), AppError> {
         if self.users.count().await? > 0 {
             return Ok(());
@@ -65,6 +74,7 @@ impl UserService {
         Ok(())
     }
 
+    #[instrument(skip(self, input), fields(username = %input.username), err(Debug))]
     pub async fn create_user(&self, mut input: CreateUser) -> Result<UserViewFull, AppError> {
         input.validify()?;
 
@@ -120,10 +130,12 @@ impl UserService {
         Ok(user.into())
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn list_users(&self) -> Result<Vec<UserViewFull>, AppError> {
         self.users.list_active().await
     }
 
+    #[instrument(skip(self, input), fields(user_id = %user_id, role = ?input.role), err(Debug))]
     pub async fn update_user(
         &self,
         user_id: Uuid,
@@ -181,6 +193,7 @@ impl UserService {
         Ok(user)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn delete_user(&self, id: Uuid) -> Result<(), AppError> {
         let user = self.users.get_active_by_id(id).await?;
 
@@ -194,13 +207,29 @@ impl UserService {
             }
         }
 
-        self.users.soft_delete(id).await?;
+        let mut tx = self.tx.begin().await?;
 
-        self.sessions.expire_all(id).await?;
+        let private_root = self.files.get_private_root_with(&mut *tx, id).await?;
+
+        let files = self
+            .files
+            .list_all_files_with(&mut *tx, private_root.id)
+            .await?;
+
+        let mut tx = FileService::delete_recursive(&self.files, &self.storage, tx, files).await?;
+
+        self.files
+            .delete_root_with(&mut *tx, private_root.id)
+            .await?;
+
+        self.users.delete_with(&mut *tx, id).await?;
+
+        tx.commit().await?;
 
         Ok(())
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn create_shared(&self, mut input: CreateSharedFolder) -> Result<Root, AppError> {
         input.validify()?;
 
@@ -247,10 +276,12 @@ impl UserService {
         Ok(root)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn list_all_roots(&self) -> Result<Vec<Root>, AppError> {
-        self.files.list_all().await
+        self.files.list_all_roots().await
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn update_root(&self, id: Uuid, mut input: UpdateRoot) -> Result<Root, AppError> {
         input.validify()?;
         FileEntry::valid_name(&input.name)?;
@@ -259,6 +290,7 @@ impl UserService {
             .await
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn set_quota(&self, folder_id: Uuid, input: SetQuota) -> Result<(), AppError> {
         input.validate()?;
 
@@ -267,6 +299,7 @@ impl UserService {
         Ok(())
     }
 
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn list_members(
         &self,
         user: &User,
@@ -281,6 +314,7 @@ impl UserService {
         self.folders.list_users_in(folder_id).await
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn assign(&self, user_id: Uuid, root_id: Uuid) -> Result<(), AppError> {
         if self.files.get_root(root_id).await?.is_none() {
             return Err(AppError::ResourceMissing("folder does not exist".into()));
@@ -297,6 +331,7 @@ impl UserService {
             .await
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn unassign(&self, folder_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
         if self.folders.is_primary(folder_id, user_id).await? {
             return Err(AppError::Forbidden(
