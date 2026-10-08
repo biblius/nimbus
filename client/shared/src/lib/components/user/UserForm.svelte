@@ -1,9 +1,9 @@
 <script lang="ts">
+  import { ApiError, ValidationError } from "../../api";
+  import { toastError } from "../../toast";
   import type { Role, UserData, UserView } from "../../types";
   import Button from "../ui/button/button.svelte";
-  import Notice from "../ui/notice/notice.svelte";
-  import Input from "../ui/input/input.svelte";
-  import Label from "../ui/label/label.svelte";
+  import Field from "../ui/field/field.svelte";
 
   let {
     title,
@@ -25,32 +25,35 @@
   let password = $state("");
 
   let busy = $state(false);
-  let error = $state("");
-  let notice = $state("");
+  let validation = $state<ValidationError | undefined>();
 
   async function onSubmit(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    error = "";
+    validation = undefined;
     try {
       await save({ username, email, role, password });
-      if (user) {
-        password = "";
-      } else {
-        reset();
+      if (!user) {
+        username = "";
+        email = "";
+        role = "user";
       }
+      password = "";
     } catch (cause) {
-      error = typeof cause === "string" ? cause : "Could not save the user";
+      if (cause instanceof ValidationError) {
+        validation = cause;
+      } else {
+        toastError(
+          cause instanceof TypeError
+            ? "The server could not be reached"
+            : cause instanceof ApiError && cause.status === 409
+              ? "That username or email is already in use"
+              : "Could not save the user",
+        );
+      }
     } finally {
       busy = false;
     }
-  }
-
-  function reset() {
-    username = "";
-    email = "";
-    role = "user";
-    password = "";
   }
 </script>
 
@@ -59,67 +62,49 @@
   onsubmit={onSubmit}
 >
   <div>
-    <h3 class="text-base font-medium">
-      {title}
-      <!-- {editing ? "Edit user" : "Add user"} -->
-    </h3>
-    <p class="text-sm text-muted-foreground">
-      {description}
-      <!-- {editing
-        ? "Leave the password blank to keep the current one."
-        : "A private folder is created with the account."}
-      -->
-    </p>
+    <h3 class="text-base font-medium">{title}</h3>
+    <p class="text-sm text-muted-foreground">{description}</p>
   </div>
 
-  <div class="space-y-2">
-    <Label for="account-username">Username</Label>
-    <Input
-      id="account-username"
-      bind:value={username}
-      autocomplete="off"
-      required
-    />
-  </div>
+  <Field
+    label="Username"
+    id="account-username"
+    bind:value={username}
+    error={validation?.field("username")}
+    autocomplete="off"
+    required
+  />
 
-  <div class="space-y-2">
-    <Label for="account-email">Email</Label>
-    <Input
-      id="account-email"
-      type="email"
-      bind:value={email}
-      autocomplete="off"
-    />
-  </div>
+  <Field
+    label="Email"
+    id="account-email"
+    type="email"
+    bind:value={email}
+    error={validation?.field("email")}
+    autocomplete="off"
+  />
 
-  <div class="space-y-2">
-    <Label for="account-role">Role</Label>
-    <select
-      id="account-role"
-      class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      bind:value={role}
-    >
-      <option value="user">User</option>
-      <option value="admin">Admin</option>
-    </select>
-  </div>
+  <Field label="Role" id="account-role">
+    {#snippet children()}
+      <select
+        id="account-role"
+        class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        bind:value={role}
+      >
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </select>
+    {/snippet}
+  </Field>
 
-  <div class="space-y-2">
-    <Label for="account-password">Password</Label>
-    <Input
-      id="account-password"
-      type="password"
-      bind:value={password}
-      autocomplete="new-password"
-    />
-  </div>
-
-  {#if error}
-    <p class="text-sm text-destructive">{error}</p>
-  {/if}
-  {#if notice}
-    <Notice message={notice} />
-  {/if}
+  <Field
+    label="Password"
+    id="account-password"
+    type="password"
+    bind:value={password}
+    error={validation?.field("password")}
+    autocomplete="new-password"
+  />
 
   <div class="flex flex-wrap items-center gap-2">
     <Button type="submit" disabled={busy}>Confirm</Button>

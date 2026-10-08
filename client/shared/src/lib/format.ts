@@ -13,9 +13,11 @@ export function formatQuota(bytes: number): string {
   return `${shown} ${units[unit]}`;
 }
 
-export function formatWhen(iso: string): string {
+export function formatDatetime(iso: string): string {
   const date = new Date(iso);
+
   if (Number.isNaN(date.getTime())) return iso;
+
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",

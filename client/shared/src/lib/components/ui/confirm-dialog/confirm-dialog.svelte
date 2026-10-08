@@ -7,7 +7,6 @@
     description,
     confirmLabel = "Delete",
     busy = false,
-    error = "",
     onCancel,
     onConfirm,
   }: {
@@ -16,7 +15,6 @@
     description: string;
     confirmLabel?: string;
     busy?: boolean;
-    error?: string;
     onCancel: () => void;
     onConfirm: () => void;
   } = $props();
@@ -53,9 +51,6 @@
     >
       <h2 id="confirm-dialog-title" class="text-base font-medium">{title}</h2>
       <p class="mt-2 text-sm text-muted-foreground">{description}</p>
-      {#if error}
-        <p class="mt-3 text-sm text-destructive">{error}</p>
-      {/if}
       <div class="mt-5 flex justify-end gap-2">
         <Button
           type="button"

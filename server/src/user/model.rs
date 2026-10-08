@@ -2,64 +2,9 @@ use std::fmt::Display;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validify::{Validate, ValidationError, Validify, field_err};
-
-use crate::db::Db;
-
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    Admin,
-    #[default]
-    User,
-}
-
-impl Role {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Admin => "admin",
-            Self::User => "user",
-        }
-    }
-}
-
-impl Display for Role {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl Type<Db> for Role {
-    fn type_info() -> <Db as Database>::TypeInfo {
-        <str as Type<Db>>::type_info()
-    }
-
-    fn compatible(ty: &<Db as Database>::TypeInfo) -> bool {
-        <str as Type<Db>>::compatible(ty)
-    }
-}
-
-impl<'q> Encode<'q, Db> for Role {
-    fn encode_by_ref(
-        &self,
-        buf: &mut <Db as Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
-        <&'q str as Encode<'q, Db>>::encode_by_ref(&self.as_str(), buf)
-    }
-}
-
-impl<'r> Decode<'r, Db> for Role {
-    fn decode(value: <Db as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
-        match <&'r str as Decode<'r, Db>>::decode(value)? {
-            "admin" => Ok(Self::Admin),
-            "user" => Ok(Self::User),
-            other => Err(format!("unknown role stored in the database: {other:?}").into()),
-        }
-    }
-}
 
 /// User row, including secrets. Never serialize this to a client.
 #[derive(Debug, Clone)]
@@ -125,22 +70,49 @@ impl From<User> for UserView {
     }
 }
 
+#[derive(
+    Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type,
+)]
+#[sqlx(type_name = "text", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    Admin,
+    #[default]
+    User,
+}
+
+impl Role {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Admin => "admin",
+            Self::User => "user",
+        }
+    }
+}
+
+impl Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUser {
     #[modify(trim, lowercase)]
-    #[validate(length(min = 1, max = 64))]
+    #[validate(length(min = 1, message = "Username cannot be empty"))]
+    #[validate(length(max = 64, message = "Username too long"))]
     #[validate(custom(function = valid_username))]
     pub username: String,
 
-    #[validate(length(min = 1, max = 256))]
+    #[validate(length(min = 1, message = "Password cannot be empty"))]
+    #[validate(length(max = 256, message = "Password too long"))]
     pub password: String,
 
     #[modify(trim, lowercase)]
-    #[validate(email)]
+    #[validate(email(message = "Not a valid email"))]
     pub email: Option<String>,
 
-    #[serde(default)]
     pub role: Role,
 }
 
@@ -150,45 +122,39 @@ pub struct CreateUser {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUser {
     #[modify(trim, lowercase)]
-    #[validate(length(min = 1, max = 64))]
+    #[validate(length(min = 1, message = "Username cannot be empty"))]
+    #[validate(length(max = 64, message = "Username too long"))]
     #[validate(custom(function = valid_username))]
     pub username: Option<String>,
 
+    #[validate(length(min = 1, message = "Password cannot be empty"))]
+    #[validate(length(max = 256, message = "Password too long"))]
+    pub password: Option<String>,
+
     #[modify(trim, lowercase)]
-    #[validate(email)]
+    #[validate(email(message = "Not a valid email"))]
     pub email: Option<String>,
 
     pub role: Role,
-
-    #[serde(default)]
-    #[validate(length(min = 1, max = 256))]
-    pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetQuota {
     /// `0` means the folder is unlimited.
-    #[validate(range(min = 0.))]
-    pub quota_bytes: i64,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct FolderQuota {
-    pub root_id: Uuid,
+    #[validate(range(min = 0., message = "Quota must be 0 (unlimited) or higher"))]
     pub quota_bytes: i64,
 }
 
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSharedFolder {
-    #[modify(trim)]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(length(min = 1, message = "Name cannot be empty"))]
+    #[validate(length(max = 256, message = "Name too long"))]
     pub name: String,
 
     /// `0` means the shared folder is unlimited.
-    #[validate(range(min = 0.))]
+    #[validate(range(min = 0., message = "Quota must be 0 (unlimited) or higher"))]
     pub quota_bytes: i64,
 
     #[serde(default)]
@@ -199,12 +165,12 @@ pub struct CreateSharedFolder {
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRoot {
-    #[modify(trim)]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(length(min = 1, message = "Name cannot be empty"))]
+    #[validate(length(max = 256, message = "Name too long"))]
     pub name: String,
 
     /// `0` means the folder is unlimited.
-    #[validate(range(min = 0.))]
+    #[validate(range(min = 0., message = "Quota must be 0 (unlimited) or higher"))]
     pub quota_bytes: i64,
 }
 
@@ -215,5 +181,8 @@ fn valid_username(username: &str) -> Result<(), ValidationError> {
     {
         return Ok(());
     }
-    Err(field_err!("username"))
+    Err(field_err!(
+        "username",
+        "Username must consist of only letters, numbers, underscores (_), dots (.), or hyphens (-)"
+    ))
 }

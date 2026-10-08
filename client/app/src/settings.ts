@@ -4,9 +4,10 @@ const CONNECTION = "sqlite:nimbus.db";
 
 export async function loadEndpoint(): Promise<string> {
   const db = await Database.load(CONNECTION);
-  const rows = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = $1", [
-    "endpoint",
-  ]);
+  const rows = await db.select<{ value: string }[]>(
+    "SELECT value FROM settings WHERE key = $1",
+    ["endpoint"],
+  );
   return rows[0]?.value ?? "http://localhost:42069";
 }
 

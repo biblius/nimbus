@@ -149,7 +149,7 @@ impl UserService {
             let admins = self.users.count_active_admins().await?;
             if admins <= 1 {
                 return Err(AppError::Forbidden(
-                    "the last admin cannot be demoted".into(),
+                    "Cannot delete last administrator".into(),
                 ));
             }
         }
@@ -158,16 +158,16 @@ impl UserService {
             && *username != user.username
             && self.users.exists(username).await?
         {
-            return Err(AppError::ResourceConflict(format!(
-                "username {username} is already in use",
-            )));
+            return Err(AppError::ResourceConflict(
+                "Username is already in use".into(),
+            ));
         }
 
         if let Some(email) = input.email.as_deref()
             && let Some(owner) = self.users.get_by_email(email).await?
             && owner.id != user_id
         {
-            return Err(AppError::ResourceConflict("email is already in use".into()));
+            return Err(AppError::ResourceConflict("Email is already in use".into()));
         }
 
         let password = match input.password.as_deref() {
@@ -202,7 +202,7 @@ impl UserService {
 
             if admins <= 1 {
                 return Err(AppError::Forbidden(
-                    "the last admin cannot be deleted".into(),
+                    "Cannot delete last administrator".into(),
                 ));
             }
         }

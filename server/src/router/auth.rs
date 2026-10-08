@@ -20,7 +20,7 @@ use crate::{
             GeneratedOtp, LoginCredentials, LoginResult, Otp, PasswordChange, PasswordReset,
             PasswordResetRequest,
         },
-        session::{Session, SessionView},
+        session::Session,
     },
     error::AppError,
     router::middleware::RemoteAddress,
@@ -45,11 +45,13 @@ pub(crate) async fn credentials_login(
     Json(credentials): Json<LoginCredentials>,
 ) -> Result<Response, AppError> {
     let user_agent = user_agent.map(|TypedHeader(agent)| agent.as_str().to_owned());
+
     let result = state
         .services
         .auth
         .login(credentials, Some(remote_address), user_agent)
         .await?;
+
     Ok(login_response(result, &state.http_config))
 }
 
@@ -70,11 +72,13 @@ pub(crate) async fn otp_login(
     Json(otp): Json<Otp>,
 ) -> Result<Response, AppError> {
     let user_agent = user_agent.map(|TypedHeader(agent)| agent.as_str().to_owned());
+
     let result = state
         .services
         .auth
         .login_with_otp(otp, Some(remote_address), user_agent)
         .await?;
+
     Ok(login_response(result, &state.http_config))
 }
 
@@ -89,6 +93,7 @@ pub(crate) async fn start_password_reset(
     Json(data): Json<PasswordResetRequest>,
 ) -> Result<StatusCode, AppError> {
     state.services.auth.start_password_reset(data).await?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -109,6 +114,7 @@ pub(crate) async fn finish_password_reset(
         .auth
         .finish_password_reset(token, data)
         .await?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -131,8 +137,28 @@ pub(crate) async fn logout(
     session: Session,
 ) -> Result<Response, AppError> {
     state.services.auth.logout(session.id).await?;
+
+    let mut cookie = Cookie::build((state.http_config.cookie_name.to_string(), String::new()))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .secure(state.http_config.cookie_secure)
+        .max_age(time::Duration::ZERO)
+        .build();
+
+    if !state.http_config.cookie_domain.is_empty() {
+        cookie.set_domain(state.http_config.cookie_domain.to_string());
+    }
+
     let mut response = StatusCode::NO_CONTENT.into_response();
-    append_cookie(&mut response, expired_session_cookie(&state.http_config));
+
+    match HeaderValue::from_str(&cookie.to_string()) {
+        Ok(value) => {
+            response.headers_mut().append(header::SET_COOKIE, value);
+        }
+        Err(error) => tracing::error!(%error, "unable to create session cookie header"),
+    }
+
     Ok(response)
 }
 
@@ -148,6 +174,7 @@ pub(crate) async fn change_password(
     Json(change): Json<PasswordChange>,
 ) -> Result<StatusCode, AppError> {
     state.services.auth.change_password(session, change).await?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -175,64 +202,49 @@ pub(crate) async fn finish_otp_setup(
     Json(otp): Json<Otp>,
 ) -> Result<StatusCode, AppError> {
     state.services.auth.finish_otp_setup(session, otp).await?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
 fn login_response(result: LoginResult, config: &HttpConfiguration) -> Response {
-    let cookie = match &result {
-        LoginResult::Session { session } => Some(session_cookie(session, config)),
-        LoginResult::TwoFactorRequired { .. } => None,
-    };
-    let mut response = Json(result).into_response();
-    if let Some(cookie) = cookie {
-        append_cookie(&mut response, cookie);
-    }
-    response
-}
+    let cookie = match result {
+        LoginResult::Session { ref session } => {
+            let mut cookie =
+                Cookie::build((config.cookie_name.to_string(), session.id.to_string()))
+                    .path("/")
+                    .http_only(true)
+                    .same_site(SameSite::Lax)
+                    .secure(config.cookie_secure)
+                    .build();
 
-fn append_cookie(response: &mut Response, cookie: Cookie<'_>) {
+            if !config.cookie_domain.is_empty() {
+                cookie.set_domain(config.cookie_domain.to_string());
+            }
+
+            match session.expires_at {
+                Some(expires_at) => {
+                    cookie.set_expires(
+                        OffsetDateTime::from_unix_timestamp(expires_at.timestamp()).ok(),
+                    );
+                }
+                None => cookie.make_permanent(),
+            }
+
+            cookie
+        }
+        LoginResult::TwoFactorRequired { .. } => {
+            return Json(result).into_response();
+        }
+    };
+
+    let mut response = Json(result).into_response();
+
     match HeaderValue::from_str(&cookie.to_string()) {
         Ok(value) => {
             response.headers_mut().append(header::SET_COOKIE, value);
         }
         Err(error) => tracing::error!(%error, "unable to create session cookie header"),
     }
-}
 
-fn session_cookie(session: &SessionView, config: &HttpConfiguration) -> Cookie<'static> {
-    let mut cookie = Cookie::build((config.cookie_name.to_string(), session.id.to_string()))
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Lax)
-        .secure(config.cookie_secure)
-        .build();
-
-    if !config.cookie_domain.is_empty() {
-        cookie.set_domain(config.cookie_domain.to_string());
-    }
-
-    match session.expires_at {
-        Some(expires_at) => {
-            cookie.set_expires(OffsetDateTime::from_unix_timestamp(expires_at.timestamp()).ok());
-        }
-        None => cookie.make_permanent(),
-    }
-
-    cookie
-}
-
-fn expired_session_cookie(config: &HttpConfiguration) -> Cookie<'static> {
-    let mut cookie = Cookie::build((config.cookie_name.to_string(), String::new()))
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Lax)
-        .secure(config.cookie_secure)
-        .max_age(time::Duration::ZERO)
-        .build();
-
-    if !config.cookie_domain.is_empty() {
-        cookie.set_domain(config.cookie_domain.to_string());
-    }
-
-    cookie
+    response
 }

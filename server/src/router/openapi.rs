@@ -9,8 +9,8 @@ use crate::{
     file::model::{CreateDirectory, FileEntry, Root, RootView},
     router::{auth, files, folders, users},
     user::model::{
-        CreateSharedFolder, CreateUser, FolderQuota, Role, SetQuota, UpdateRoot, UpdateUser,
-        UserView, UserViewFull,
+        CreateSharedFolder, CreateUser, Role, SetQuota, UpdateRoot, UpdateUser, UserView,
+        UserViewFull,
     },
 };
 
@@ -63,7 +63,6 @@ use crate::{
         Role,
         CreateUser,
         CreateSharedFolder,
-        FolderQuota,
         Root,
         RootView,
         UserView,

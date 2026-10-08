@@ -9,13 +9,67 @@ import type {
   UserData,
 } from "./types";
 
+/** JSON body of every `AppError` response. */
+export interface ErrorBody<T = unknown> {
+  message: string | null;
+  code: number;
+  body: T | null;
+}
+
+/** One `validify::ValidationError::Field` inside an `ErrorBody`. */
+export interface ValidationField {
+  field: string | null;
+  code: string;
+  params: Record<string, unknown>;
+  message: string | null;
+  location: string;
+}
+
+/** One `validify::ValidationError::Schema` inside an `ErrorBody`. */
+export interface ValidationSchema {
+  code: string;
+  message: string | null;
+  location: string;
+}
+
+/** `validify::ValidationErrors`, serialized as an externally tagged enum array. */
+export type ValidationItem =
+  { Field: ValidationField } | { Schema: ValidationSchema };
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
-    readonly body: unknown,
+    readonly body: ErrorBody | null,
   ) {
-    super(`HTTP ${status}`);
+    super(body?.message ?? `HTTP ${status}`);
   }
+}
+
+/** `AppError::Validation`: code 4 with a list of field errors. */
+export class ValidationError extends Error {
+  constructor(readonly body: ErrorBody<ValidationItem[]>) {
+    super(body.message ?? "Validation error");
+  }
+
+  /**
+   * Returns the validation error for the given field, if any.
+   *
+   */
+  field(name: string): ValidationField | undefined {
+    for (const item of this.body.body ?? []) {
+      if ("Field" in item && item.Field.field === name) return item.Field;
+    }
+  }
+}
+
+/** `AppError::Validation`. `Unprocessable` uses the same code with no field list. */
+const VALIDATION_CODE = 4;
+
+function parseError(status: number, payload: ErrorBody | null): Error {
+  if (payload?.code === VALIDATION_CODE && payload.body) {
+    return new ValidationError(payload as ErrorBody<ValidationItem[]>);
+  }
+  return new ApiError(status, payload);
 }
 
 export type UploadProgress = (loaded: number, total: number) => void;
@@ -107,14 +161,19 @@ export class NimbusClient {
     onProgress?: UploadProgress,
   ): Promise<FileEntry> {
     const body = new FormData();
+
     if (parent) body.set("parent", parent);
+
     body.set("file", file);
 
     // fetch has no upload progress events, so this one call uses XMLHttpRequest.
     return new Promise<FileEntry>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+
       xhr.open("POST", `${this.#root}/roots/${encodeURIComponent(rootId)}`);
+
       xhr.withCredentials = true;
+
       xhr.setRequestHeader("X-NIMBUS-CSRF", "1");
 
       xhr.upload.onprogress = (event) => {
@@ -122,12 +181,16 @@ export class NimbusClient {
       };
 
       xhr.onload = () => {
-        let payload: unknown = null;
+        let payload: ErrorBody | null = null;
+
         try {
-          payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+          payload = xhr.responseText
+            ? (JSON.parse(xhr.responseText) as ErrorBody)
+            : null;
         } catch {
           payload = null;
         }
+
         if (
           xhr.status >= 200 &&
           xhr.status < 300 &&
@@ -137,10 +200,12 @@ export class NimbusClient {
           onProgress?.(file.size, file.size);
           resolve(payload[0] as FileEntry);
         } else {
-          reject(new ApiError(xhr.status, payload));
+          reject(parseError(xhr.status, payload));
         }
       };
+
       xhr.onerror = () => reject(new TypeError("network error"));
+
       xhr.onabort = () =>
         reject(new DOMException("upload aborted", "AbortError"));
 
@@ -164,13 +229,13 @@ export class NimbusClient {
       },
     );
     if (!response.ok) {
-      let body: unknown = null;
+      let body: ErrorBody | null = null;
       try {
-        body = await response.json();
+        body = (await response.json()) as ErrorBody;
       } catch {
         body = null;
       }
-      throw new ApiError(response.status, body);
+      throw parseError(response.status, body);
     }
 
     const url = URL.createObjectURL(await response.blob());
@@ -236,13 +301,13 @@ export class NimbusClient {
     });
 
     if (!response.ok) {
-      let body: unknown = null;
+      let body: ErrorBody | null = null;
       try {
-        body = await response.json();
+        body = (await response.json()) as ErrorBody;
       } catch {
         body = null;
       }
-      throw new ApiError(response.status, body);
+      throw parseError(response.status, body);
     }
 
     if (response.status === 204) {

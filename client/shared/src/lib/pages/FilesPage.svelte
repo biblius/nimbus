@@ -1,32 +1,27 @@
 <script lang="ts">
-  import type { NimbusClient } from "../../api";
-  import type { Root } from "../../types";
-  import FileBrowser from "../FileBrowser.svelte";
-  import PanelShell from "../PanelShell.svelte";
+  import { onMount } from "svelte";
+  import FileBrowser from "../components/FileBrowser.svelte";
+  import PanelShell from "../components/PanelShell.svelte";
+  import { navigate } from "../router";
+  import { session } from "../session.svelte";
+  import { toastError } from "../toast";
+  import type { Root } from "../types";
 
-  let {
-    client,
-    roots,
-    active = $bindable(),
-    menuOpen = $bindable(false),
-    admin,
-    onEditRoot,
-  }: {
-    client: NimbusClient;
-    roots: Root[];
-    active: Root | null;
-    menuOpen?: boolean;
-    admin: boolean;
-    onEditRoot: (root: Root) => void;
-  } = $props();
+  let roots = $state<Root[]>([]);
 
-  function choose(root: Root) {
-    active = root;
-    menuOpen = false;
-  }
+  let active = $state<Root | null>(null);
+
+  onMount(async () => {
+    try {
+      roots = await session.client.roots();
+      active = roots.find((root) => root.primary) ?? roots[0] ?? null;
+    } catch {
+      toastError("Could not load your folders");
+    }
+  });
 </script>
 
-<PanelShell bind:open={menuOpen} label="Roots">
+<PanelShell bind:open={session.menuOpen} label="Roots">
   {#snippet sidebar()}
     <nav class="flex flex-col gap-1 p-3" aria-label="Roots">
       <p
@@ -45,7 +40,10 @@
               ? 'bg-accent font-medium text-accent-foreground'
               : 'hover:bg-accent'}"
             aria-current={active?.id === root.id ? "page" : undefined}
-            onclick={() => choose(root)}
+            onclick={() => {
+              active = root;
+              session.menuOpen = false;
+            }}
           >
             <span class="truncate">{root.name}</span>
           </button>
@@ -60,10 +58,11 @@
         {@const folder = active}
         {#key folder.id}
           <FileBrowser
-            {client}
+            client={session.client}
             {folder}
-            {admin}
-            onEditRoot={() => onEditRoot(folder)}
+            admin={session.user?.role === "admin"}
+            onEditRoot={() =>
+              navigate("/admin/folders", { search: { id: folder.id } })}
           />
         {/key}
       {:else}

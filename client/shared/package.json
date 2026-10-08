@@ -4,15 +4,17 @@
   "type": "module",
   "exports": {
     "./api": "./src/lib/api.ts",
+    "./router": "./src/lib/router.ts",
+    "./session": "./src/lib/session.svelte.ts",
+    "./toast": "./src/lib/toast.ts",
     "./types": "./src/lib/types.ts",
-    "./styles.css": "./src/styles.css",
-    "./components/SessionApp.svelte": "./src/lib/components/SessionApp.svelte",
-    "./components/LoginPanel.svelte": "./src/lib/components/LoginPanel.svelte",
-    "./components/FileBrowser.svelte": "./src/lib/components/FileBrowser.svelte"
+    "./styles.css": "./src/styles.css"
   },
   "dependencies": {
     "@lucide/svelte": "^1.53.0",
+    "@zerodevx/svelte-toast": "^0.9.6",
     "clsx": "^2.1.1",
+    "sv-router": "^0.19.0",
     "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^1.0.0"
   },

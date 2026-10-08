@@ -18,6 +18,23 @@
   --input: oklch(0.9 0.01 247);
   --ring: oklch(0.55 0.08 230);
   --radius: 0.7rem;
+  --toastContainerTop: auto;
+  --toastContainerRight: 1rem;
+  --toastContainerBottom: 1rem;
+  --toastContainerLeft: auto;
+  --toastWidth: 22rem;
+  --toastMinHeight: 3rem;
+  --toastMargin: 0 0 0.5rem 0;
+  --toastPadding: 0;
+  --toastMsgPadding: 0.75rem 0.875rem;
+  --toastBackground: var(--card);
+  --toastColor: var(--card-foreground);
+  --toastBorder: 1px solid var(--border);
+  --toastBorderRadius: var(--radius);
+  --toastBoxShadow: 0 8px 24px oklch(0.21 0.02 256 / 0.12);
+  --toastBarHeight: 3px;
+  --toastBarBackground: var(--primary);
+  --toastBtnFont: 0.875rem "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 }
 
 @theme inline {

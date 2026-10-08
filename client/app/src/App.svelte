@@ -1,6 +1,10 @@
 <script lang="ts">
   import { NimbusClient } from "@nimbus/shared/api";
-  import SessionApp from "@nimbus/shared/components/SessionApp.svelte";
+  import "@nimbus/shared/router";
+  import { session } from "@nimbus/shared/session";
+  import { SvelteToast } from "@zerodevx/svelte-toast";
+  import { toastOptions } from "@nimbus/shared/toast";
+  import { Router } from "sv-router";
   import { onMount } from "svelte";
   import { loadEndpoint, saveEndpoint } from "./settings";
 
@@ -11,14 +15,16 @@
   onMount(async () => {
     endpoint = await loadEndpoint();
     draft = endpoint;
-    client = new NimbusClient(endpoint);
+    session.client = new NimbusClient(endpoint);
+    client = session.client;
   });
 
   async function apply(event: SubmitEvent) {
     event.preventDefault();
     endpoint = draft.trim();
     await saveEndpoint(endpoint);
-    client = new NimbusClient(endpoint);
+    session.client = new NimbusClient(endpoint);
+    client = session.client;
   }
 </script>
 
@@ -39,9 +45,11 @@
   </form>
 </div>
 
+<SvelteToast options={toastOptions} />
+
 {#if client}
   {#key endpoint}
-    <SessionApp {client} />
+    <Router />
   {/key}
 {:else}
   <p class="p-6 text-sm text-muted-foreground">Loading client settings…</p>

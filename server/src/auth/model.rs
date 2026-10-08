@@ -2,7 +2,7 @@ use super::session::SessionView;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
-use validify::{Validify, field_err};
+use validify::{ValidationError, Validify};
 
 /// Successful password check: either a real session, or 2FA still required.
 #[derive(Debug, Serialize, ToSchema)]
@@ -18,9 +18,10 @@ pub enum LoginResult {
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 pub struct LoginCredentials {
     #[modify(trim, lowercase)]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Username cannot be empty"))]
     pub username: String,
-    #[validate(length(min = 1))]
+
+    #[validate(length(min = 1, message = "Password cannot be empty"))]
     pub password: String,
     #[serde(default)]
     pub remember: bool,
@@ -31,6 +32,7 @@ pub struct LoginCredentials {
 pub struct GeneratedOtp {
     /// SVG QR code that contains the secret.
     pub qr: String,
+
     /// Token to present when confirming the OTP.
     pub token: Uuid,
 }
@@ -44,21 +46,21 @@ pub struct Otp {
 
     /// The OTP 6 digit code.
     #[modify(trim, lowercase)]
-    #[validate(length(equal = 6))]
+    #[validate(length(equal = 6, message = "Invalid code"))]
     pub otp_code: String,
 }
 
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 pub struct PasswordResetRequest {
     #[modify(lowercase, trim)]
-    #[validate(email)]
+    #[validate(email(message = "Not a valid email"))]
     pub email: String,
 }
 
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PasswordReset {
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Password cannot be empty"))]
     #[validate(custom(function = strong_password))]
     pub new_password: String,
 }
@@ -66,16 +68,23 @@ pub struct PasswordReset {
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PasswordChange {
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Password cannot be empty"))]
     pub current_password: String,
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Password cannot be empty"))]
     #[validate(custom(function = strong_password))]
     pub new_password: String,
 }
 
 fn strong_password(password: &str) -> Result<(), validify::ValidationError> {
-    if zxcvbn::zxcvbn(password, &[]).score() < zxcvbn::Score::Three {
-        return Err(field_err!("weak_password"));
+    let score = zxcvbn::zxcvbn(password, &[]).score();
+    if score < zxcvbn::Score::Three {
+        return Err(
+            ValidationError::new_field("weak_password").with_message(format!(
+                "The password is too weak (score {}/{})",
+                score,
+                zxcvbn::Score::Three
+            )),
+        );
     }
     Ok(())
 }

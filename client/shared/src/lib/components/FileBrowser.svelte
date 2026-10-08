@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { ApiError, type NimbusClient } from "../api";
-  import { formatQuota, formatWhen } from "../format";
+  import { ApiError, ValidationError, type NimbusClient } from "../api";
+  import { formatQuota, formatDatetime } from "../format";
+  import { toastError } from "../toast";
   import type { FileEntry, Root } from "../types";
   import Button from "./ui/button/button.svelte";
-  import Input from "./ui/input/input.svelte";
+  import Field from "./ui/field/field.svelte";
 
   let {
     client,
@@ -35,7 +36,7 @@
 
   let entries = $state<FileEntry[]>([]);
   let directoryName = $state("");
-  let error = $state("");
+  let directoryError = $state<ValidationError | undefined>();
   let pending = $state<PendingUpload[]>([]);
   let nextUploadId = 0;
   let ticket = 0;
@@ -55,7 +56,6 @@
 
   async function load(rootId: string, parent: string | null) {
     const currentTicket = ++ticket;
-    error = "";
     try {
       const next = await client.list(rootId, parent);
       if (currentTicket !== ticket) return;
@@ -63,10 +63,11 @@
     } catch (cause) {
       if (currentTicket !== ticket) return;
       entries = [];
-      error =
-        cause instanceof ApiError
-          ? "Could not list this folder"
-          : "The server could not be reached";
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not list this folder",
+      );
     }
   }
 
@@ -75,7 +76,6 @@
     const files = [...(input.files ?? [])];
     input.value = "";
     if (files.length === 0) return;
-    error = "";
 
     const rootId = folder.id;
     const parent = here.id;
@@ -97,50 +97,37 @@
       async () => {
         while (queue.length > 0) {
           const { file, item } = queue.shift()!;
-          await uploadOne(rootId, parent, file, item);
+          try {
+            const created = await client.upload(
+              rootId,
+              parent,
+              file,
+              (loaded, total) => {
+                item.loaded = loaded;
+                item.total = total;
+              },
+            );
+            pending = pending.filter((entry) => entry.id !== item.id);
+            if (folder.id === rootId && here.id === parent) {
+              entries = [...entries, created];
+            }
+          } catch (cause) {
+            if (cause instanceof TypeError) {
+              item.error = "The server could not be reached";
+            } else if (cause instanceof ApiError && cause.status === 409) {
+              item.error = "A file with this name already exists";
+            } else if (cause instanceof ApiError && cause.status === 413) {
+              item.error = "Not enough space";
+            } else if (cause instanceof ApiError && cause.status === 403) {
+              item.error = "You cannot upload here";
+            } else {
+              item.error = "Upload failed";
+            }
+          }
         }
       },
     );
     await Promise.all(workers);
-
-    if (folder.id === rootId && here.id === parent) await load(rootId, parent);
-  }
-
-  async function uploadOne(
-    rootId: string,
-    parent: string | null,
-    file: File,
-    item: PendingUpload,
-  ) {
-    try {
-      await client.upload(rootId, parent, file, (loaded, total) => {
-        item.loaded = loaded;
-        item.total = total;
-      });
-      pending = pending.filter((entry) => entry.id !== item.id);
-    } catch (cause) {
-      item.error =
-        cause instanceof ApiError
-          ? describeUploadError(cause)
-          : "The server could not be reached";
-    }
-  }
-
-  function describeUploadError(cause: ApiError) {
-    switch (cause.status) {
-      case 409:
-        return "A file with this name already exists";
-      case 413:
-        return "Not enough space";
-      case 403:
-        return "You cannot upload here";
-      default:
-        return "Upload failed";
-    }
-  }
-
-  function dismiss(item: PendingUpload) {
-    pending = pending.filter((entry) => entry.id !== item.id);
   }
 
   function percent(item: PendingUpload) {
@@ -150,61 +137,59 @@
 
   async function mkdir(event: SubmitEvent) {
     event.preventDefault();
-    if (!directoryName.trim()) return;
-    error = "";
+    directoryError = undefined;
     const rootId = folder.id;
     const parent = here.id;
     try {
-      await client.createDirectory(rootId, parent, directoryName.trim());
+      const created = await client.createDirectory(
+        rootId,
+        parent,
+        directoryName.trim(),
+      );
       directoryName = "";
-      if (folder.id === rootId && here.id === parent)
-        await load(rootId, parent);
+      if (folder.id === rootId && here.id === parent) {
+        entries = [...entries, created];
+      }
     } catch (cause) {
-      error =
-        cause instanceof ApiError
-          ? "Could not create the folder"
-          : "The server could not be reached";
+      if (cause instanceof ValidationError) {
+        directoryError = cause;
+        return;
+      }
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not create the folder",
+      );
     }
   }
 
   async function remove(entry: FileEntry) {
-    error = "";
     const rootId = folder.id;
     const parent = here.id;
     try {
       await client.remove(rootId, entry.id);
-      if (folder.id === rootId && here.id === parent)
-        await load(rootId, parent);
+      if (folder.id === rootId && here.id === parent) {
+        entries = entries.filter((item) => item.id !== entry.id);
+      }
     } catch (cause) {
-      error =
-        cause instanceof ApiError
-          ? "Could not delete that item"
-          : "The server could not be reached";
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not delete that item",
+      );
     }
   }
 
   async function download(entry: FileEntry) {
-    error = "";
     try {
       await client.download(folder.id, entry.id, entry.name);
     } catch (cause) {
-      error =
-        cause instanceof ApiError
-          ? "Could not download that file"
-          : "The server could not be reached";
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not download that file",
+      );
     }
-  }
-
-  function openDirectory(entry: FileEntry) {
-    descendants = [...descendants, { id: entry.id, name: entry.name }];
-    void load(folder.id, entry.id);
-  }
-
-  function go(index: number) {
-    const crumb = trail[index];
-    if (!crumb || index === trail.length - 1) return;
-    descendants = descendants.slice(0, index);
-    void load(folder.id, crumb.id);
   }
 </script>
 
@@ -244,7 +229,7 @@
       <p class="text-xs text-muted-foreground">
         {folder.primary ? "Private" : "Shared"}
         · {formatQuota(folder.quota)}
-        · Updated {formatWhen(folder.updatedAt)}
+        · Updated {formatDatetime(folder.updatedAt)}
       </p>
     </div>
     {#if admin && onEditRoot}
@@ -273,7 +258,10 @@
         <button
           type="button"
           class="max-w-40 truncate rounded-md px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground hover:underline sm:max-w-none"
-          onclick={() => go(index)}
+          onclick={() => {
+            descendants = descendants.slice(0, index);
+            void load(folder.id, crumb.id);
+          }}
         >
           {crumb.name}
         </button>
@@ -284,8 +272,15 @@
   <div
     class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
   >
-    <form class="flex min-w-0 flex-1 gap-2" onsubmit={mkdir}>
-      <Input bind:value={directoryName} placeholder="New folder" />
+    <form class="flex min-w-0 flex-1 items-end gap-2" onsubmit={mkdir}>
+      <div class="min-w-0 flex-1">
+        <Field
+          label="New folder"
+          id="directory-name"
+          bind:value={directoryName}
+          error={directoryError?.field("name")}
+        />
+      </div>
       <Button type="submit" variant="outline">Create</Button>
     </form>
     <label class="text-sm">
@@ -293,10 +288,6 @@
       <input type="file" multiple onchange={upload} />
     </label>
   </div>
-
-  {#if error}
-    <p class="text-sm text-destructive">{error}</p>
-  {/if}
 
   {#if pending.length > 0}
     <ul class="space-y-2 rounded-lg border bg-card p-3">
@@ -310,7 +301,8 @@
                 <button
                   type="button"
                   class="text-xs underline"
-                  onclick={() => dismiss(item)}
+                  onclick={() =>
+                    (pending = pending.filter((entry) => entry.id !== item.id))}
                 >
                   Dismiss
                 </button>
@@ -351,7 +343,13 @@
             <button
               type="button"
               class="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium"
-              onclick={() => openDirectory(entry)}
+              onclick={() => {
+                descendants = [
+                  ...descendants,
+                  { id: entry.id, name: entry.name },
+                ];
+                void load(folder.id, entry.id);
+              }}
             >
               {@render entryIcon(true)}
               <span class="truncate">{entry.name}</span>

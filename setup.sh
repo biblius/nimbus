@@ -40,7 +40,7 @@ if [[ -e .env ]]; then
 	source .env
 	set +a
 	docker compose up -d
-	until pg_isready -h localhost -p 5432 -U cerebro -q; do
+	until pg_isready -h localhost -p 5434 -U nimbus -q; do
 		echo "Waiting for Postgres..."
 		sleep 1
 	done

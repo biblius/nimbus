@@ -13,13 +13,13 @@
     sidebar: Snippet;
     children: Snippet;
   } = $props();
-
-  function onKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape" && open) open = false;
-  }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window
+  onkeydown={(event) => {
+    if (event.key === "Escape" && open) open = false;
+  }}
+/>
 
 <div class="flex min-h-0 flex-1">
   {#if open}
