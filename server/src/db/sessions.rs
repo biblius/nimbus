@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::{auth::session::SessionRecord, db::DbPool, error::AppError};
@@ -22,6 +23,7 @@ impl SessionRepository {
         Self { pool }
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn count_for_user(&self, user_id: Uuid) -> Result<i64, AppError> {
         sqlx::query_scalar!(
             r#"
@@ -36,6 +38,7 @@ impl SessionRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self, session), fields(user_id = %session.user_id), err(Debug))]
     pub async fn insert(&self, session: NewSession) -> Result<SessionRecord, AppError> {
         sqlx::query_as!(
             SessionRecord,
@@ -71,6 +74,7 @@ impl SessionRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip_all, err(Debug))]
     pub async fn get(&self, id: Uuid) -> Result<Option<SessionRecord>, AppError> {
         sqlx::query_as!(
             SessionRecord,
@@ -93,6 +97,7 @@ impl SessionRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip_all, err(Debug))]
     pub async fn expire(&self, id: Uuid) -> Result<(), AppError> {
         let now = Utc::now();
 
@@ -117,6 +122,7 @@ impl SessionRepository {
         Ok(())
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn expire_all(&self, user_id: Uuid) -> Result<(), AppError> {
         let now = Utc::now();
 
@@ -139,6 +145,7 @@ impl SessionRepository {
         Ok(())
     }
 
+    #[instrument(skip(self, keep), fields(user_id = %user_id), err(Debug))]
     pub async fn expire_others(&self, user_id: Uuid, keep: Uuid) -> Result<(), AppError> {
         let now = Utc::now();
 

@@ -1,4 +1,5 @@
 use sqlx::Executor;
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::{
@@ -18,10 +19,12 @@ impl UserFolderRepository {
         Self { pool }
     }
 
+    #[instrument(skip(self, assignment), fields(root_id = %assignment.root_id, user_id = %assignment.user_id), err(Debug))]
     pub async fn assign(&self, assignment: RootAssignment) -> Result<(), AppError> {
         self.insert(&self.pool, assignment).await
     }
 
+    #[instrument(skip(self, executor, assignment), fields(root_id = %assignment.root_id, user_id = %assignment.user_id), err(Debug))]
     pub async fn insert<'e, E>(
         &self,
         executor: E,
@@ -49,6 +52,7 @@ impl UserFolderRepository {
         Ok(())
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn list_roots(&self, user_id: Uuid) -> Result<Vec<RootView>, AppError> {
         sqlx::query_as!(
             RootView,
@@ -72,6 +76,7 @@ impl UserFolderRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn can_access(&self, user_id: Uuid, root_id: Uuid) -> Result<bool, AppError> {
         let found = sqlx::query_scalar!(
             r#"
@@ -89,6 +94,7 @@ impl UserFolderRepository {
         Ok(found.is_some())
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn list_users_in(&self, root_id: Uuid) -> Result<Vec<UserView>, AppError> {
         sqlx::query_as!(
             UserView,
@@ -111,6 +117,7 @@ impl UserFolderRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn is_primary(&self, root_id: Uuid, user_id: Uuid) -> Result<bool, AppError> {
         let found: Option<bool> = sqlx::query_scalar(
             r#"SELECT "primary" FROM user_folders WHERE root_id = $1 AND user_id = $2"#,
@@ -122,6 +129,7 @@ impl UserFolderRepository {
         Ok(found.unwrap_or(false))
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn remove(&self, root_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
         let result = sqlx::query(
             r#"

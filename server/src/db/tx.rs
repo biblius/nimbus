@@ -1,5 +1,6 @@
 use crate::{db::DbPool, error::AppError};
 use sqlx::Transaction;
+use tracing::instrument;
 
 use super::Db;
 
@@ -14,6 +15,7 @@ impl Transactor {
         Self { pool }
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn begin(&self) -> Result<Transaction<'static, Db>, AppError> {
         self.pool.begin().await.map_err(AppError::from)
     }

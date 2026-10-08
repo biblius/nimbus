@@ -1,5 +1,6 @@
 use chrono::Utc;
 use sqlx::Executor;
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::{
@@ -18,6 +19,7 @@ impl UserRepository {
         Self { pool }
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn count(&self) -> Result<i64, AppError> {
         sqlx::query_scalar!(
             r#"
@@ -30,6 +32,7 @@ impl UserRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn count_active_admins(&self) -> Result<i64, AppError> {
         sqlx::query_scalar!(
             r#"
@@ -44,6 +47,7 @@ impl UserRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn exists(&self, username: &str) -> Result<bool, AppError> {
         let count = sqlx::query_scalar!(
             r#"
@@ -57,6 +61,7 @@ impl UserRepository {
         Ok(count > 0)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn get_active_by_id(&self, id: Uuid) -> Result<User, AppError> {
         let user = sqlx::query_as!(
             User,
@@ -85,6 +90,7 @@ impl UserRepository {
         }
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn get_by_username(&self, username: &str) -> Result<Option<User>, AppError> {
         sqlx::query_as!(
             User,
@@ -109,6 +115,7 @@ impl UserRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn get_by_email(&self, email: &str) -> Result<Option<User>, AppError> {
         sqlx::query_as!(
             User,
@@ -133,6 +140,7 @@ impl UserRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn list_active(&self) -> Result<Vec<UserViewFull>, AppError> {
         sqlx::query_as!(
             UserViewFull,
@@ -155,6 +163,7 @@ impl UserRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self, executor, user), fields(user_id = %id, username = %user.username), err(Debug))]
     pub async fn insert<'e, E>(
         &self,
         executor: E,
@@ -202,6 +211,7 @@ impl UserRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self, password), err(Debug))]
     pub async fn update(
         &self,
         id: Uuid,
@@ -243,6 +253,7 @@ impl UserRepository {
         user.ok_or_else(|| AppError::ResourceMissing("user does not exist".into()))
     }
 
+    #[instrument(skip(self, password), fields(user_id = %id), err(Debug))]
     pub async fn update_password(&self, id: Uuid, password: &str) -> Result<(), AppError> {
         let now = Utc::now();
 
@@ -269,6 +280,7 @@ impl UserRepository {
         Ok(())
     }
 
+    #[instrument(skip(self, secret), fields(user_id = %id), err(Debug))]
     pub async fn update_otp_secret(&self, id: Uuid, secret: &str) -> Result<(), AppError> {
         let now = Utc::now();
 
@@ -296,6 +308,7 @@ impl UserRepository {
         Ok(())
     }
 
+    #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Db>,

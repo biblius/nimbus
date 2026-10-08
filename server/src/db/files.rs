@@ -9,6 +9,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use sqlx::{Executor, QueryBuilder};
+use tracing::instrument;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -46,6 +47,7 @@ impl FileRepository {
         Self { pool }
     }
 
+    #[instrument(skip(self, executor, root), fields(root_id = %root.id, name = %root.name), err(Debug))]
     pub async fn insert_root<'e, E>(&self, executor: E, root: NewRoot) -> Result<Root, AppError>
     where
         E: Executor<'e, Database = Db>,
@@ -80,6 +82,7 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn list_all_roots(&self) -> Result<Vec<Root>, AppError> {
         sqlx::query_as!(
             Root,
@@ -99,6 +102,7 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn update_root(
         &self,
         id: Uuid,
@@ -133,6 +137,7 @@ impl FileRepository {
         .ok_or_else(|| AppError::ResourceMissing("folder does not exist".into()))
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn set_quota(&self, root_id: Uuid, quota_bytes: i64) -> Result<(), AppError> {
         let now = Utc::now();
 
@@ -159,6 +164,7 @@ impl FileRepository {
         Ok(())
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn get_root(&self, id: Uuid) -> Result<Option<Root>, AppError> {
         sqlx::query_as!(
             Root,
@@ -177,6 +183,7 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self, executor), err(Debug))]
     pub async fn get_private_root_with<'e, E>(
         &self,
         executor: E,
@@ -208,6 +215,7 @@ impl FileRepository {
     }
 
     /// Quota on this user's assignment. `0` is unlimited.
+    #[instrument(skip(self), err(Debug))]
     pub async fn root_quota(&self, root_id: Uuid) -> Result<i64, AppError> {
         sqlx::query_scalar!(
             r#"
@@ -225,6 +233,7 @@ impl FileRepository {
         })
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn get_live(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
         sqlx::query_as!(
             FileEntry,
@@ -255,10 +264,12 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self, node), fields(file_id = %node.id, root_id = %node.root_id, name = %node.name), err(Debug))]
     pub async fn create(&self, node: NewFile) -> Result<FileEntry, AppError> {
         self.insert(&self.pool, node).await
     }
 
+    #[instrument(skip(self, executor, file), fields(file_id = %file.id, root_id = %file.root_id, name = %file.name), err(Debug))]
     pub async fn insert<'e, E>(&self, executor: E, file: NewFile) -> Result<FileEntry, AppError>
     where
         E: Executor<'e, Database = Db>,
@@ -316,6 +327,7 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn list_files(
         &self,
         root: Uuid,
@@ -325,6 +337,7 @@ impl FileRepository {
     }
 
     /// Live children of a directory.
+    #[instrument(skip(self, executor), err(Debug))]
     pub async fn list_files_with<'e, E>(
         &self,
         executor: E,
@@ -371,6 +384,7 @@ impl FileRepository {
             .map_err(AppError::from)
     }
 
+    #[instrument(skip(self, executor), err(Debug))]
     pub async fn list_all_files_with<'e, E>(
         &self,
         executor: E,
@@ -407,6 +421,7 @@ impl FileRepository {
     }
 
     /// Every child of a directory, including soft-deleted rows.
+    #[instrument(skip(self, executor), err(Debug))]
     pub async fn list_all_children<'e, E>(
         &self,
         executor: E,
@@ -443,6 +458,7 @@ impl FileRepository {
     }
 
     /// `parent` is null when checking the top level of a root.
+    #[instrument(skip(self), err(Debug))]
     pub async fn name_taken(
         &self,
         root_id: Uuid,
@@ -468,6 +484,7 @@ impl FileRepository {
     }
 
     /// Bytes stored in a root. Directory rows are excluded.
+    #[instrument(skip(self), err(Debug))]
     pub async fn root_quota_usage(&self, root_id: Uuid) -> Result<i64, AppError> {
         sqlx::query_scalar!(
             r#"
@@ -484,6 +501,7 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
     pub async fn soft_delete(&self, ids: &[Uuid]) -> Result<(), AppError> {
         if ids.is_empty() {
             return Ok(());
@@ -515,6 +533,7 @@ impl FileRepository {
         Ok(())
     }
 
+    #[instrument(skip(self, executor), err(Debug))]
     pub async fn count_hash<'e, E>(&self, executor: E, hash: &str) -> Result<i64, AppError>
     where
         E: Executor<'e, Database = Db>,
@@ -533,6 +552,7 @@ impl FileRepository {
     }
 
     /// Soft-deleted rows past the retention cutoff.
+    #[instrument(skip(self, executor), err(Debug))]
     pub async fn list_pending_deletion<'e, E>(
         &self,
         executor: E,
@@ -568,6 +588,7 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete<'e, E>(&self, executor: E, ids: &[Uuid]) -> Result<Vec<String>, AppError>
     where
         E: Executor<'e, Database = Db>,
@@ -577,10 +598,13 @@ impl FileRepository {
         }
 
         let mut query = QueryBuilder::<Db>::new("DELETE FROM files WHERE id IN (");
+
         let mut separated = query.separated(", ");
+
         for id in ids {
             separated.push_bind(*id);
         }
+
         separated.push_unseparated(") RETURNING hash");
 
         let hashes = query
@@ -594,6 +618,7 @@ impl FileRepository {
             .collect())
     }
 
+    #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_root_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Db>,

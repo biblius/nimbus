@@ -149,7 +149,7 @@ impl From<sqlx::Error> for AppError {
 pub fn map_sqlx(error: sqlx::Error) -> AppError {
     if let Some(db) = error.as_database_error() {
         if db.is_unique_violation() {
-            return AppError::ResourceConflict("that record already exists".into());
+            return AppError::ResourceConflict("entry already exists".into());
         }
         if db.is_foreign_key_violation() {
             return AppError::ResourceMissing("a related record does not exist".into());

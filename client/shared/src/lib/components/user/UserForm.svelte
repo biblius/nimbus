@@ -1,26 +1,21 @@
 <script lang="ts">
   import type { Role, UserData, UserView } from "../../types";
-  import type { AdminContext } from "../admin/categories";
   import Button from "../ui/button/button.svelte";
   import Notice from "../ui/notice/notice.svelte";
   import Input from "../ui/input/input.svelte";
   import Label from "../ui/label/label.svelte";
 
   let {
-    context = $bindable(),
     title,
     description,
     user = $bindable(),
     save,
-    remove,
     cancel,
   }: {
-    context: AdminContext;
     title: string;
     description: string;
     user?: UserView;
     save: (user: UserData) => Promise<void>;
-    remove?: (userId: string) => void;
     cancel?: () => void;
   } = $props();
 
@@ -32,7 +27,6 @@
   let busy = $state(false);
   let error = $state("");
   let notice = $state("");
-  let confirmDelete = $state(false);
 
   async function onSubmit(event: SubmitEvent) {
     event.preventDefault();
@@ -50,13 +44,6 @@
     } finally {
       busy = false;
     }
-  }
-
-  function onDelete() {
-    if (!user) {
-      return;
-    }
-    remove?.(user.id);
   }
 
   function reset() {
@@ -138,35 +125,6 @@
     <Button type="submit" disabled={busy}>Confirm</Button>
     {#if cancel}
       <Button type="button" variant="outline" onclick={cancel}>Cancel</Button>
-    {/if}
-    {#if user && remove}
-      {#if confirmDelete}
-        <Button
-          type="button"
-          variant="destructive"
-          disabled={busy}
-          onclick={() => onDelete()}
-        >
-          {user.id === context.currentUserId
-            ? "Delete and sign out"
-            : "Confirm delete"}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onclick={() => (confirmDelete = false)}
-        >
-          Keep user
-        </Button>
-      {:else}
-        <Button
-          type="button"
-          variant="ghost"
-          onclick={() => (confirmDelete = true)}
-        >
-          Delete
-        </Button>
-      {/if}
     {/if}
   </div>
 </form>

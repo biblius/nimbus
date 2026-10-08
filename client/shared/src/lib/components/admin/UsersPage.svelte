@@ -206,7 +206,6 @@
   {#if creating}
     <div class="mx-auto max-w-lg">
       <UserForm
-        {context}
         title="Add user"
         description="A private folder will be created with the account."
         save={(data) => createUser(data)}
@@ -264,12 +263,10 @@
               {#if editing}
                 <div class="mx-auto max-w-lg">
                   <UserForm
-                    {context}
                     {user}
                     title="Edit user"
                     description="Leave the password blank to keep the current one."
                     save={(data) => updateUser(data, user.id)}
-                    remove={(userId) => remove(userId)}
                     cancel={stopEdit}
                   />
                 </div>
