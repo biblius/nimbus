@@ -101,7 +101,8 @@ pub fn router(state: AppState) -> Router {
             "/users/{id}",
             delete(users::delete_user).patch(users::update_user),
         )
-        .route("/admin/roots", get(folders::list_all))
+        .route("/admin/roots/private", get(folders::list_private))
+        .route("/admin/roots/shared", get(folders::list_shared))
         .route(
             "/roots/{root_id}",
             put(folders::update_root).delete(folders::delete_root),

@@ -66,14 +66,26 @@ pub(crate) async fn create_shared(
 
 #[utoipa::path(
     get,
-    path = "/admin/roots",
-    responses((status = 200, description = "Every root folder, private ones first", body = Vec<RootView>))
+    path = "/admin/roots/private",
+    responses((status = 200, description = "Private root folders", body = Vec<RootView>))
 )]
-pub(crate) async fn list_all(
+pub(crate) async fn list_private(
     State(state): State<AppState>,
     _admin: Session,
 ) -> Result<Json<Vec<RootView>>, AppError> {
-    Ok(Json(state.services.users.list_all_roots().await?))
+    Ok(Json(state.services.users.list_private_roots().await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/admin/roots/shared",
+    responses((status = 200, description = "Shared root folders", body = Vec<RootView>))
+)]
+pub(crate) async fn list_shared(
+    State(state): State<AppState>,
+    _admin: Session,
+) -> Result<Json<Vec<RootView>>, AppError> {
+    Ok(Json(state.services.users.list_shared_roots().await?))
 }
 
 #[utoipa::path(

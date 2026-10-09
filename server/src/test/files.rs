@@ -419,9 +419,32 @@ mod files_service {
             .list_members(&session.user, root)
             .await
             .unwrap();
-        assert_eq!(members.len(), 1);
-        assert!(members[0].primary);
-        assert_eq!(members[0].id, ada.id);
+        assert!(members.is_empty());
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM user_folders WHERE root_id = $1",
+                root
+            ),
+            0
+        );
+
+        let renamed = state
+            .services
+            .users
+            .update_root(
+                root,
+                UpdateRoot {
+                    name: "ada-renamed".into(),
+                    quota_bytes: 128,
+                    members: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(renamed.name, "ada-renamed");
+        assert_eq!(renamed.quota, 128);
+        assert_eq!(renamed.owner, Some(ada.id));
     }
 
     async fn upload_in(

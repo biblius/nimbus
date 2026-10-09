@@ -32,19 +32,14 @@
   let validation = $state<ValidationError | undefined>();
   let busy = $state(false);
 
-  const privateFolder = $derived(folder?.primary ?? false);
+  const privateFolder = $derived(folder?.owner != null);
 
   const quotaPreview = $derived.by(() => {
     if (!/^\d+$/.test(quota.trim())) return "";
     return formatQuota(Number(quota));
   });
 
-  function locked(id: string) {
-    return members.some((member) => member.id === id && member.primary);
-  }
-
   function toggle(id: string) {
-    if (locked(id)) return;
     selected = selected.includes(id)
       ? selected.filter((memberId) => memberId !== id)
       : [...selected, id];
@@ -64,11 +59,7 @@
       await save({
         name: name.trim(),
         quotaBytes: Number(quota),
-        members: privateFolder
-          ? members
-              .filter((member) => member.primary)
-              .map((member) => member.id)
-          : selected,
+        members: privateFolder ? [] : selected,
       });
     } catch (cause) {
       if (cause instanceof ValidationError) {
@@ -136,13 +127,9 @@
                 <input
                   type="checkbox"
                   checked={selected.includes(user.id)}
-                  disabled={locked(user.id)}
                   onchange={() => toggle(user.id)}
                 />
                 <span class="truncate">{user.username}</span>
-                {#if locked(user.id)}
-                  <span class="text-xs text-muted-foreground">Owner</span>
-                {/if}
               </label>
             </li>
           {/each}

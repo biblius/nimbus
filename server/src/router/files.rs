@@ -95,18 +95,18 @@ pub(crate) async fn upload(
 
     while let Some(mut field) = multipart.next_field().await.map_err(|error| {
         tracing::error!(%error, "multipart read failed");
-        AppError::Unprocessable("invalid upload".into())
+        AppError::Unprocessable("Invalid upload".into())
     })? {
         match field.name() {
             Some("parent") => {
                 let text = field
                     .text()
                     .await
-                    .map_err(|_| AppError::Unprocessable("parent must be text".into()))?;
+                    .map_err(|_| AppError::Unprocessable("Parent must be text".into()))?;
 
                 parent = Some(
                     text.parse::<Uuid>()
-                        .map_err(|_| AppError::Unprocessable("parent must be a uuid".into()))?,
+                        .map_err(|_| AppError::Unprocessable("Parent must be a uuid".into()))?,
                 );
             }
             Some("file") => {
@@ -123,7 +123,7 @@ pub(crate) async fn upload(
 
                 while let Some(chunk) = field.chunk().await.map_err(|error| {
                     tracing::error!(%error, "multipart chunk failed");
-                    AppError::Unprocessable("invalid upload".into())
+                    AppError::Unprocessable("Invalid upload".into())
                 })? {
                     if let Err(error) = writer.write(&chunk).await {
                         tracing::error!(%error, "unable to write to writer");
@@ -148,7 +148,7 @@ pub(crate) async fn upload(
     }
 
     if uploaded.is_empty() {
-        return Err(AppError::Unprocessable("file is required".into()));
+        return Err(AppError::Unprocessable("File is required".into()));
     }
 
     let mut stored = Vec::with_capacity(uploaded.len());

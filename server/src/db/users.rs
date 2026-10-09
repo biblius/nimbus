@@ -244,7 +244,7 @@ impl UserRepository {
         .fetch_optional(&self.pool)
         .await?;
 
-        user.ok_or_else(|| AppError::ResourceMissing("user does not exist".into()))
+        user.ok_or_else(|| AppError::ResourceMissing("User does not exist".into()))
     }
 
     #[instrument(skip(self, password), fields(user_id = %id), err(Debug))]
@@ -267,7 +267,7 @@ impl UserRepository {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::ResourceMissing("user does not exist".into()));
+            return Err(AppError::ResourceMissing("User does not exist".into()));
         }
 
         Ok(())
@@ -294,7 +294,7 @@ impl UserRepository {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::ResourceMissing("user does not exist".into()));
+            return Err(AppError::ResourceMissing("User does not exist".into()));
         }
 
         Ok(())
@@ -310,7 +310,7 @@ impl UserRepository {
             .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::ResourceMissing("user does not exist".into()));
+            return Err(AppError::ResourceMissing("User does not exist".into()));
         }
 
         Ok(())

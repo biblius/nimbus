@@ -234,7 +234,7 @@ pub async fn private_root(state: &TestState, user: &User) -> Uuid {
         .await
         .unwrap()
         .into_iter()
-        .find(|root| root.primary)
+        .find(|root| root.owner == Some(user.id))
         .expect("user has a private root")
         .id
 }

@@ -14,7 +14,10 @@
   onMount(async () => {
     try {
       roots = await session.client.roots();
-      active = roots.find((root) => root.primary) ?? roots[0] ?? null;
+      active =
+        roots.find((root) => root.owner === session.user?.id) ??
+        roots[0] ??
+        null;
     } catch {
       toastError("Could not load your folders");
     }

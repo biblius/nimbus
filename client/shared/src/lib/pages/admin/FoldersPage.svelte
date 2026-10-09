@@ -12,6 +12,7 @@
 
   let folders = $state<Root[]>([]);
   let users = $state<UserViewFull[]>([]);
+  let kind = $state<"private" | "shared">("private");
   let selectedId = $state<string | null>(null);
   let members = $state<Member[]>([]);
   let membersLoaded = $state(false);
@@ -43,10 +44,17 @@
     membersLoaded = true;
   }
 
+  function ownerName(id: string | null) {
+    if (!id) return "";
+    return users.find((user) => user.id === id)?.username ?? "Owner";
+  }
+
   function usageText(id: string) {
     if (!(id in usage)) return "…";
+
     const bytes = usage[id];
-    return bytes == null ? "—" : formatBytes(bytes);
+
+    return bytes == null ? "-" : formatBytes(bytes);
   }
 
   function loadUsage(roots: Root[]) {
@@ -66,7 +74,9 @@
 
   async function load() {
     const [roots, people] = await Promise.all([
-      session.client.listFolders(),
+      kind === "private"
+        ? session.client.listPrivateFolders()
+        : session.client.listSharedFolders(),
       session.client.listUsers(),
     ]);
 
@@ -80,7 +90,28 @@
       return;
     }
 
-    if (selectedId) await showMembers(selectedId);
+    const selected = roots.find((folder) => folder.id === selectedId);
+    if (!selected) return;
+    if (selected.owner) {
+      members = [];
+      membersLoaded = true;
+      return;
+    }
+
+    await showMembers(selected.id);
+  }
+
+  function choose(next: "private" | "shared") {
+    if (kind === next) return;
+    kind = next;
+    reset();
+    load().catch((cause) => {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not load folders",
+      );
+    });
   }
 
   async function refresh() {
@@ -134,9 +165,6 @@
         email: user.email,
         role: user.role,
         createdAt: user.createdAt,
-        primary: members.some(
-          (member) => member.id === user.id && member.primary,
-        ),
       }));
 
     editing = false;
@@ -187,31 +215,56 @@
         <RefreshCw size={16} class={refreshing ? "animate-spin" : ""} />
       </Button>
     </div>
+    {#if kind === "shared"}
+      <Button
+        type="button"
+        variant={creating ? "outline" : "ghost"}
+        size="sm"
+        class="size-9 p-0"
+        aria-label={creating ? "Close new folder form" : "Add folder"}
+        aria-expanded={creating}
+        title="Add folder"
+        onclick={() => {
+          const next = !creating;
+          reset();
+          creating = next;
+        }}
+      >
+        <svg
+          viewBox="0 0 20 20"
+          class="size-4 transition-transform {creating ? 'rotate-45' : ''}"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M10 4v12M4 10h12" />
+        </svg>
+      </Button>
+    {/if}
+  </div>
+
+  <div class="flex gap-1" role="tablist" aria-label="Folder kinds">
     <Button
       type="button"
-      variant={creating ? "outline" : "ghost"}
+      variant={kind === "private" ? "default" : "outline"}
       size="sm"
-      class="size-9 p-0"
-      aria-label={creating ? "Close new folder form" : "Add folder"}
-      aria-expanded={creating}
-      title="Add folder"
-      onclick={() => {
-        const next = !creating;
-        reset();
-        creating = next;
-      }}
+      role="tab"
+      aria-selected={kind === "private"}
+      onclick={() => choose("private")}
     >
-      <svg
-        viewBox="0 0 20 20"
-        class="size-4 transition-transform {creating ? 'rotate-45' : ''}"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.75"
-        stroke-linecap="round"
-        aria-hidden="true"
-      >
-        <path d="M10 4v12M4 10h12" />
-      </svg>
+      Private
+    </Button>
+    <Button
+      type="button"
+      variant={kind === "shared" ? "default" : "outline"}
+      size="sm"
+      role="tab"
+      aria-selected={kind === "shared"}
+      onclick={() => choose("shared")}
+    >
+      Shared
     </Button>
   </div>
 
@@ -228,7 +281,11 @@
   {/if}
 
   {#if folders.length === 0}
-    <p class="text-sm text-muted-foreground">No folders yet.</p>
+    <p class="text-sm text-muted-foreground">
+      {kind === "private"
+        ? "No private folders yet."
+        : "No shared folders yet."}
+    </p>
   {:else}
     <ul class="divide-y overflow-hidden rounded-lg border">
       {#each folders as folder (folder.id)}
@@ -245,9 +302,14 @@
               reset();
               selectedId = next;
               if (next) {
-                showMembers(next).catch(() => {
-                  toastError("Could not load members");
-                });
+                if (folder.owner) {
+                  members = [];
+                  membersLoaded = true;
+                } else {
+                  showMembers(next).catch(() => {
+                    toastError("Could not load members");
+                  });
+                }
               }
             }}
           >
@@ -256,8 +318,10 @@
                 >{folder.name}</span
               >
               <span class="block truncate text-xs text-muted-foreground">
-                {folder.primary ? "Private" : "Shared"}
-                · {usageText(folder.id)} / {formatQuota(folder.quota)}
+                {#if folder.owner}
+                  {ownerName(folder.owner)} ·
+                {/if}
+                {usageText(folder.id)} / {formatQuota(folder.quota)}
               </span>
             </span>
 
@@ -287,7 +351,7 @@
                     {users}
                     {members}
                     title="Edit folder"
-                    description={folder.primary
+                    description={folder.owner
                       ? "A private folder stays with its owner."
                       : "Choose who can use this shared folder."}
                     save={(data) => updateRoot(data, folder)}
@@ -297,28 +361,31 @@
               {:else}
                 <div class="flex justify-between gap-3">
                   <div class="min-w-0 flex-1 space-y-4">
-                    <RootInfo {folder} usage={usageText(folder.id)} />
-                    <div>
-                      <p class="text-sm font-medium">Members</p>
-                      {#if !membersLoaded}
-                        <p class="text-sm text-muted-foreground">Loading…</p>
-                      {:else if members.length === 0}
-                        <p class="text-sm text-muted-foreground">No members.</p>
-                      {:else}
-                        <ul class="mt-1 space-y-1">
-                          {#each members as member (member.id)}
-                            <li class="truncate text-sm">
-                              {member.username}
-                              {#if member.primary}
-                                <span class="text-xs text-muted-foreground">
-                                  · Owner
-                                </span>
-                              {/if}
-                            </li>
-                          {/each}
-                        </ul>
-                      {/if}
-                    </div>
+                    <RootInfo
+                      {folder}
+                      usage={usageText(folder.id)}
+                      ownerName={ownerName(folder.owner)}
+                    />
+                    {#if !folder.owner}
+                      <div>
+                        <p class="text-sm font-medium">Members</p>
+                        {#if !membersLoaded}
+                          <p class="text-sm text-muted-foreground">Loading…</p>
+                        {:else if members.length === 0}
+                          <p class="text-sm text-muted-foreground">
+                            No members.
+                          </p>
+                        {:else}
+                          <ul class="mt-1 space-y-1">
+                            {#each members as member (member.id)}
+                              <li class="truncate text-sm">
+                                {member.username}
+                              </li>
+                            {/each}
+                          </ul>
+                        {/if}
+                      </div>
+                    {/if}
                   </div>
                   <div class="flex flex-col self-stretch">
                     <Button
@@ -328,7 +395,7 @@
                       class="size-8 p-0"
                       aria-label="Edit folder"
                       title="Edit folder"
-                      disabled={!membersLoaded}
+                      disabled={!folder.owner && !membersLoaded}
                       onclick={() => (editing = true)}
                     >
                       <Pencil size={16} />
@@ -358,7 +425,7 @@
 <ConfirmDialog
   open={deleteFolder !== null}
   title="Delete folder"
-  description={deleteFolder?.primary
+  description={deleteFolder?.owner
     ? `Delete ${deleteFolder.name}? This removes that user's private folder and everything in it.`
     : `Delete ${deleteFolder?.name}? This removes the folder and everything in it.`}
   busy={deleting}

@@ -54,14 +54,14 @@ impl FileService {
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn list_roots(&self, user: &User) -> Result<Vec<RootView>, AppError> {
-        self.folders.list_roots(user.id).await
+        self.files.list_accessible_roots(user.id).await
     }
 
     /// Bytes stored in a root. Directories are not counted.
     #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
     pub async fn usage(&self, user: &User, root_id: Uuid) -> Result<i64, AppError> {
         if self.files.get_root(root_id).await?.is_none() {
-            return Err(AppError::ResourceMissing("folder does not exist".into()));
+            return Err(AppError::ResourceMissing("Folder does not exist".into()));
         }
 
         if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
@@ -196,7 +196,7 @@ impl FileService {
 
         if file.kind != FileKind::File {
             return Err(AppError::Unprocessable(
-                "directories cannot be downloaded".into(),
+                "Directories cannot be downloaded".into(),
             ));
         }
 
@@ -298,7 +298,7 @@ impl FileService {
             .files
             .get_live(id)
             .await?
-            .ok_or_else(|| AppError::ResourceMissing("file does not exist".into()))?;
+            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
         if user.role != Role::Admin && !self.folders.can_access(user.id, file.root_id).await? {
             return Err(AppError::Forbidden(

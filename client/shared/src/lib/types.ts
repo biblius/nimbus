@@ -43,20 +43,20 @@ export type LoginResult =
 export type Root = {
   id: string;
   name: string;
-  primary: boolean;
   quota: number;
+  /** Set for a user's private root. Null for a shared root. */
+  owner: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-/** A user assigned to a root. `primary` is the owner of a private folder. */
+/** A user assigned to a shared root. */
 export type Member = {
   id: string;
   username: string;
   email: string | null;
   role: Role;
   createdAt: string;
-  primary: boolean;
 };
 
 export type RootData = {

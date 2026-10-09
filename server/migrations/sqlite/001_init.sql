@@ -17,14 +17,20 @@ WHERE
 
 -- A root is the quota and access boundary. It is not a file row: directories and
 -- files live in `files` and point back here with `root_id`.
+-- `owner` is set for a user's private root and null for a shared root.
+-- A user has at most one private root.
 CREATE TABLE roots (
   id BLOB PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
   quota_bytes INTEGER NOT NULL DEFAULT 0,
-  "primary" BOOLEAN NOT NULL,
+  owner BLOB REFERENCES users (id),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE UNIQUE INDEX roots_owner_idx ON roots (owner)
+WHERE
+  owner IS NOT NULL;
 
 CREATE TABLE files (
   id BLOB PRIMARY KEY NOT NULL,
@@ -72,16 +78,11 @@ CREATE TABLE sessions (
 
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);
 
--- A row grants access to a root. "primary" is the user's private space.
--- A user has one primary root.
+-- Membership of a shared root. Private roots are not recorded here.
 CREATE TABLE user_folders (
   root_id BLOB NOT NULL REFERENCES roots (id) ON DELETE CASCADE,
   user_id BLOB NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   UNIQUE (root_id, user_id)
 );
-
-CREATE UNIQUE INDEX user_folders_one_primary ON user_folders (user_id)
-WHERE
-  "primary" = 1;
 
 CREATE INDEX user_folders_user_idx ON user_folders (user_id);

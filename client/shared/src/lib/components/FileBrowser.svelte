@@ -227,7 +227,7 @@
     <div class="min-w-0">
       <p class="truncate text-sm font-medium">{folder.name}</p>
       <p class="text-xs text-muted-foreground">
-        {folder.primary ? "Private" : "Shared"}
+        {folder.owner ? "Private" : "Shared"}
         · {formatQuota(folder.quota)}
         · Updated {formatDatetime(folder.updatedAt)}
       </p>

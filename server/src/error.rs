@@ -48,10 +48,10 @@ pub enum AppError {
     #[error("{0}")]
     Unprocessable(String),
 
-    #[error("storage quota exceeded")]
+    #[error("Storage quota exceeded")]
     QuotaExceeded,
 
-    #[error("payload too large")]
+    #[error("Payload too large")]
     PayloadTooLarge,
 
     #[error("Validation error")]
@@ -109,12 +109,12 @@ impl AppError {
                 body: None,
             },
             AppError::QuotaExceeded => ErrorBody {
-                message: Some("storage quota exceeded".to_string()),
+                message: Some("Storage quota exceeded".to_string()),
                 code: 8,
                 body: None,
             },
             AppError::PayloadTooLarge => ErrorBody {
-                message: Some("payload too large".to_string()),
+                message: Some("Payload too large".to_string()),
                 code: 9,
                 body: None,
             },
@@ -148,10 +148,10 @@ impl From<sqlx::Error> for AppError {
 pub fn map_sqlx(error: sqlx::Error) -> AppError {
     if let Some(db) = error.as_database_error() {
         if db.is_unique_violation() {
-            return AppError::ResourceConflict("entry already exists".into());
+            return AppError::ResourceConflict("Entry already exists".into());
         }
         if db.is_foreign_key_violation() {
-            return AppError::ResourceMissing("a related record does not exist".into());
+            return AppError::ResourceMissing("A related record does not exist".into());
         }
     }
     tracing::error!(%error, "database error");

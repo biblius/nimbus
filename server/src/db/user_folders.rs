@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::{
     db::{Db, DbPool},
     error::AppError,
-    file::model::{RootAssignment, RootView},
+    file::model::RootAssignment,
     user::model::{Member, Role},
 };
 
@@ -37,15 +37,13 @@ impl UserFolderRepository {
             r#"
             INSERT INTO user_folders (
                 root_id,
-                user_id,
-                "primary"
+                user_id
             )
-            VALUES ($1, $2, $3)
+            VALUES ($1, $2)
             ON CONFLICT DO NOTHING
             "#,
             assignment.root_id,
             assignment.user_id,
-            assignment.primary,
         )
         .execute(executor)
         .await?;
@@ -53,38 +51,20 @@ impl UserFolderRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_roots(&self, user_id: Uuid) -> Result<Vec<RootView>, AppError> {
-        sqlx::query_as!(
-            RootView,
-            r#"
-            SELECT 
-                r.id,
-                r.name,
-                r.quota_bytes AS quota,
-                r.created_at,
-                r.updated_at,
-                uf."primary"
-            FROM user_folders uf
-            JOIN roots r ON r.id = uf.root_id
-            WHERE user_id = $1
-            ORDER BY "primary" DESC, root_id
-            "#,
-            user_id
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(AppError::from)
-    }
-
-    #[instrument(skip(self), err(Debug))]
     pub async fn can_access(&self, user_id: Uuid, root_id: Uuid) -> Result<bool, AppError> {
         let found = sqlx::query_scalar!(
             r#"
             SELECT 1
-            FROM user_folders 
-            WHERE 
-                root_id = $1 
-            AND user_id = $2
+            FROM roots
+            WHERE id = $1
+            AND (
+                owner = $2
+                OR EXISTS (
+                    SELECT 1
+                    FROM user_folders
+                    WHERE root_id = roots.id AND user_id = $2
+                )
+            )
             "#,
             root_id,
             user_id,
@@ -104,8 +84,7 @@ impl UserFolderRepository {
                 u.username,
                 u.email,
                 u.role AS "role: Role",
-                u.created_at,
-                uf."primary" AS "primary!"
+                u.created_at
             FROM user_folders uf
             JOIN users u ON uf.user_id = u.id
             WHERE root_id = $1
@@ -116,31 +95,6 @@ impl UserFolderRepository {
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)
-    }
-
-    #[instrument(skip(self), err(Debug))]
-    pub async fn is_primary(&self, root_id: Uuid) -> Result<bool, AppError> {
-        let private = sqlx::query_scalar(
-            r#"SELECT EXISTS (SELECT 1 FROM user_folders WHERE root_id = $1 AND "primary")"#,
-        )
-        .bind(root_id)
-        .fetch_one(&self.pool)
-        .await?;
-
-        Ok(private)
-    }
-
-    #[instrument(skip(self), err(Debug))]
-    pub async fn is_primary_of(&self, root_id: Uuid, user_id: Uuid) -> Result<bool, AppError> {
-        let found: Option<bool> = sqlx::query_scalar(
-            r#"SELECT "primary" FROM user_folders WHERE root_id = $1 AND user_id = $2"#,
-        )
-        .bind(root_id)
-        .bind(user_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(found.unwrap_or(false))
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -160,7 +114,7 @@ impl UserFolderRepository {
 
         if result.rows_affected() == 0 {
             return Err(AppError::ResourceMissing(
-                "that user is not assigned to this folder".into(),
+                "That user is not assigned to this folder".into(),
             ));
         }
 

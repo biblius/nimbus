@@ -7,7 +7,6 @@ use crate::{
     },
 };
 use chrono::{DateTime, Utc};
-use sqlx::FromRow;
 use sqlx::{Executor, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
@@ -15,17 +14,6 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct FileRepository {
     pool: DbPool,
-}
-
-pub struct NewRoot {
-    pub id: Uuid,
-    pub name: String,
-    pub quota: i64,
-}
-
-#[derive(FromRow)]
-struct DeletedHash {
-    hash: Option<String>,
 }
 
 pub struct NewFile {
@@ -47,8 +35,15 @@ impl FileRepository {
         Self { pool }
     }
 
-    #[instrument(skip(self, executor, root), fields(root_id = %root.id, name = %root.name), err(Debug))]
-    pub async fn insert_root<'e, E>(&self, executor: E, root: NewRoot) -> Result<Root, AppError>
+    #[instrument(skip(self, executor), fields(root_id = %id, name = %name), err(Debug))]
+    pub async fn insert_root<'e, E>(
+        &self,
+        executor: E,
+        id: Uuid,
+        name: &str,
+        quota: i64,
+        owner: Option<Uuid>,
+    ) -> Result<Root, AppError>
     where
         E: Executor<'e, Database = Db>,
     {
@@ -61,20 +56,23 @@ impl FileRepository {
                 id,
                 name,
                 quota_bytes,
+                owner,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $4)
+            VALUES ($1, $2, $3, $4, $5, $5)
             RETURNING 
                 id,
                 name,
                 quota_bytes AS quota,
+                owner,
                 created_at,
                 updated_at
             "#,
-            root.id,
-            root.name,
-            root.quota,
+            id,
+            name,
+            quota,
+            owner,
             now
         )
         .fetch_one(executor)
@@ -83,7 +81,7 @@ impl FileRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_all_roots(&self) -> Result<Vec<RootView>, AppError> {
+    pub async fn list_private_roots(&self) -> Result<Vec<RootView>, AppError> {
         sqlx::query_as!(
             RootView,
             r#"
@@ -91,16 +89,64 @@ impl FileRepository {
                 id,
                 name,
                 quota_bytes AS quota,
+                owner,
                 created_at,
-                updated_at,
-                EXISTS (
-                    SELECT 1
-                    FROM user_folders uf
-                    WHERE uf.root_id = roots.id AND uf."primary"
-                ) AS "primary!"
+                updated_at
             FROM roots
-            ORDER BY 6 DESC, name
+            WHERE owner IS NOT NULL
+            ORDER BY name
             "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_shared_roots(&self) -> Result<Vec<RootView>, AppError> {
+        sqlx::query_as!(
+            RootView,
+            r#"
+            SELECT
+                id,
+                name,
+                quota_bytes AS quota,
+                owner,
+                created_at,
+                updated_at
+            FROM roots
+            WHERE owner IS NULL
+            ORDER BY name
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// Private root plus every shared root this user belongs to. The private root comes first.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_accessible_roots(&self, user_id: Uuid) -> Result<Vec<RootView>, AppError> {
+        sqlx::query_as!(
+            RootView,
+            r#"
+            SELECT
+                id,
+                name,
+                quota_bytes AS quota,
+                owner,
+                created_at,
+                updated_at
+            FROM roots
+            WHERE owner = $1
+            OR id IN (
+                 SELECT root_id
+                 FROM user_folders
+                 WHERE user_id = $1
+            )
+            ORDER BY owner IS NULL, name
+            "#,
+            user_id
         )
         .fetch_all(&self.pool)
         .await
@@ -129,6 +175,7 @@ impl FileRepository {
                 id,
                 name,
                 quota_bytes AS quota,
+                owner,
                 created_at,
                 updated_at
             "#,
@@ -139,7 +186,7 @@ impl FileRepository {
         )
         .fetch_optional(&self.pool)
         .await?
-        .ok_or_else(|| AppError::ResourceMissing("folder does not exist".into()))
+        .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -163,7 +210,7 @@ impl FileRepository {
         .rows_affected();
 
         if updated == 0 {
-            return Err(AppError::ResourceMissing("folder does not exist".into()));
+            return Err(AppError::ResourceMissing("Folder does not exist".into()));
         }
 
         Ok(())
@@ -178,6 +225,7 @@ impl FileRepository {
                 id,
                 name,
                 quota_bytes AS quota,
+                owner,
                 created_at,
                 updated_at 
             FROM roots WHERE id = $1"#,
@@ -201,16 +249,14 @@ impl FileRepository {
             Root,
             r#"
             SELECT 
-                r.id,
-                r.name,
-                r.quota_bytes AS quota,
-                r.created_at,
-                r.updated_at 
-            FROM user_folders uf 
-            JOIN roots r ON r.id = uf.root_id
-            WHERE 
-                user_id = $1
-            AND uf."primary"
+                id,
+                name,
+                quota_bytes AS quota,
+                owner,
+                created_at,
+                updated_at 
+            FROM roots
+            WHERE owner = $1
             "#,
             user_id
         )
@@ -613,14 +659,11 @@ impl FileRepository {
         separated.push_unseparated(") RETURNING hash");
 
         let hashes = query
-            .build_query_as::<DeletedHash>()
+            .build_query_scalar::<Option<String>>()
             .fetch_all(executor)
             .await?;
 
-        Ok(hashes
-            .into_iter()
-            .filter_map(|record| record.hash)
-            .collect())
+        Ok(hashes.into_iter().flatten().collect())
     }
 
     #[instrument(skip(self, executor), err(Debug))]
@@ -633,7 +676,7 @@ impl FileRepository {
             .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::ResourceMissing("root does not exist".into()));
+            return Err(AppError::ResourceMissing("Root does not exist".into()));
         }
 
         Ok(())

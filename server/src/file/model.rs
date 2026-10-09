@@ -53,7 +53,7 @@ impl<'r> Decode<'r, Db> for FileKind {
     }
 }
 
-/// A private or shared root folder.
+/// A private or shared root folder. `owner` is set only for a private root.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Root {
@@ -61,29 +61,28 @@ pub struct Root {
     pub name: String,
     /// `0` means usage of this folder for the user is unlimited.
     pub quota: i64,
+    pub owner: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-/// Access to a root; An assignment in the user_folders and its corresponding root.
-/// If a user folder is `primary` it represents the user's private space.
+/// A root as returned to a client. `owner` is set only for a private root.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RootView {
     pub id: Uuid,
     pub name: String,
-    pub primary: bool,
     /// `0` means no quota.
     pub quota: i64,
+    pub owner: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-/// Data for creating a new [UserFolder].
+/// Membership of a shared root.
 pub struct RootAssignment {
     pub root_id: Uuid,
     pub user_id: Uuid,
-    pub primary: bool,
 }
 
 /// Application native model. `parent` is null for entries that sit directly in a root.
@@ -136,6 +135,6 @@ pub struct CreateDirectory {
 
     #[modify(trim)]
     #[validate(length(min = 1, message = "Directory name cannot be empty"))]
-    #[validate(length(min = 255, message = "Directory too long"))]
+    #[validate(length(max = 255, message = "Directory name too long"))]
     pub name: String,
 }

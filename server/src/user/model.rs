@@ -19,6 +19,21 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
 }
 
+impl User {
+    fn valid_username(username: &str) -> Result<(), ValidationError> {
+        if username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
+        {
+            return Ok(());
+        }
+        Err(field_err!(
+            "username",
+            "Username must consist of only letters, numbers, underscores (_), dots (.), or hyphens (-)"
+        ))
+    }
+}
+
 /// The view of the currently logged in user.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -101,7 +116,7 @@ pub struct CreateUser {
     #[modify(trim, lowercase)]
     #[validate(length(min = 1, message = "Username cannot be empty"))]
     #[validate(length(max = 63, message = "Username too long"))]
-    #[validate(custom(function = valid_username))]
+    #[validate(custom(function = User::valid_username))]
     pub username: String,
 
     #[validate(length(min = 1, message = "Password cannot be empty"))]
@@ -123,7 +138,7 @@ pub struct UpdateUser {
     #[modify(trim, lowercase)]
     #[validate(length(min = 1, message = "Username cannot be empty"))]
     #[validate(length(max = 63, message = "Username too long"))]
-    #[validate(custom(function = valid_username))]
+    #[validate(custom(function = User::valid_username))]
     pub username: Option<String>,
 
     #[validate(length(min = 1, message = "Password cannot be empty"))]
@@ -161,7 +176,7 @@ pub struct CreateSharedFolder {
 }
 
 /// Name, quota, and members of an existing root.
-/// A private root cannot gain members. Its owner stays assigned even if left out of `members`.
+/// Members apply only to a shared root. A private root cannot gain members.
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRoot {
@@ -177,7 +192,7 @@ pub struct UpdateRoot {
     pub members: Vec<Uuid>,
 }
 
-/// A user assigned to a root. `primary` marks the owner of a private folder.
+/// A user assigned to a shared root.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Member {
@@ -186,18 +201,4 @@ pub struct Member {
     pub email: Option<String>,
     pub role: Role,
     pub created_at: DateTime<Utc>,
-    pub primary: bool,
-}
-
-fn valid_username(username: &str) -> Result<(), ValidationError> {
-    if username
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
-    {
-        return Ok(());
-    }
-    Err(field_err!(
-        "username",
-        "Username must consist of only letters, numbers, underscores (_), dots (.), or hyphens (-)"
-    ))
 }

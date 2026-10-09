@@ -2,7 +2,11 @@
   import { formatDatetime, formatQuota } from "../../format";
   import type { Root } from "../../types";
 
-  let { folder, usage }: { folder: Root; usage: string } = $props();
+  let {
+    folder,
+    usage,
+    ownerName,
+  }: { folder: Root; usage: string; ownerName?: string } = $props();
 </script>
 
 <div class="flex flex-wrap items-start justify-between gap-3">
@@ -13,8 +17,13 @@
     <dd class="truncate font-mono text-xs leading-5">{folder.id}</dd>
     <dt class="text-muted-foreground">Name</dt>
     <dd class="truncate">{folder.name}</dd>
-    <dt class="text-muted-foreground">Type</dt>
-    <dd>{folder.primary ? "Private" : "Shared"}</dd>
+    {#if folder.owner}
+      <dt class="text-muted-foreground">Owner</dt>
+      <dd class="truncate">{ownerName}</dd>
+    {:else}
+      <dt class="text-muted-foreground">Type</dt>
+      <dd>Shared</dd>
+    {/if}
     <dt class="text-muted-foreground">Quota</dt>
     <dd>{formatQuota(folder.quota)}</dd>
     <dt class="text-muted-foreground">Usage</dt>

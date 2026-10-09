@@ -26,7 +26,7 @@
   <span class="min-w-0">
     <span class="block truncate text-sm font-medium">{folder.name}</span>
     <span class="block truncate text-xs text-muted-foreground">
-      {folder.primary ? "Private" : "Shared"}
+      {folder.owner ? "Private" : "Shared"}
       · {formatQuota(folder.quota)}
     </span>
     <span class="block truncate text-xs text-muted-foreground">

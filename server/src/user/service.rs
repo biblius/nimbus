@@ -1,11 +1,8 @@
 use crate::{
     auth::crypto::hash_password,
     db::{
-        Transactor,
-        files::{FileRepository, NewRoot},
-        sessions::SessionRepository,
-        user_folders::UserFolderRepository,
-        users::UserRepository,
+        Transactor, files::FileRepository, sessions::SessionRepository,
+        user_folders::UserFolderRepository, users::UserRepository,
     },
     email::EmailSender,
     error::AppError,
@@ -80,10 +77,7 @@ impl UserService {
         input.validify()?;
 
         if self.users.exists(&input.username).await? {
-            return Err(AppError::ResourceConflict(format!(
-                "username {} is already in use",
-                input.username
-            )));
+            return Err(AppError::ResourceConflict("Username already in use".into()));
         }
 
         input.password = hash_password(&input.password)?;
@@ -96,25 +90,7 @@ impl UserService {
         let user = self.users.insert(&mut *tx, user_id, &input).await?;
 
         self.files
-            .insert_root(
-                &mut *tx,
-                NewRoot {
-                    id: root_id,
-                    name: input.username.clone(),
-                    quota: 0,
-                },
-            )
-            .await?;
-
-        self.folders
-            .insert(
-                &mut *tx,
-                RootAssignment {
-                    root_id,
-                    user_id,
-                    primary: true,
-                },
-            )
+            .insert_root(&mut *tx, root_id, &input.username, 0, Some(user_id))
             .await?;
 
         tx.commit().await?;
@@ -249,14 +225,7 @@ impl UserService {
 
         let root = self
             .files
-            .insert_root(
-                &mut *tx,
-                NewRoot {
-                    id: root_id,
-                    name: input.name.clone(),
-                    quota: input.quota_bytes,
-                },
-            )
+            .insert_root(&mut *tx, root_id, &input.name, input.quota_bytes, None)
             .await?;
 
         for member_id in members {
@@ -266,7 +235,6 @@ impl UserService {
                     RootAssignment {
                         root_id,
                         user_id: member_id,
-                        primary: false,
                     },
                 )
                 .await?;
@@ -277,16 +245,21 @@ impl UserService {
         Ok(RootView {
             id: root.id,
             name: root.name,
-            primary: false,
             quota: root.quota,
+            owner: root.owner,
             created_at: root.created_at,
             updated_at: root.updated_at,
         })
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_all_roots(&self) -> Result<Vec<RootView>, AppError> {
-        self.files.list_all_roots().await
+    pub async fn list_private_roots(&self) -> Result<Vec<RootView>, AppError> {
+        self.files.list_private_roots().await
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_shared_roots(&self) -> Result<Vec<RootView>, AppError> {
+        self.files.list_shared_roots().await
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -294,22 +267,37 @@ impl UserService {
         input.validify()?;
         FileEntry::valid_name(&input.name)?;
 
-        let current = self.folders.list_users_in(id).await?;
+        let existing = self
+            .files
+            .get_root(id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))?;
 
-        let primary = current.iter().any(|member| member.primary);
+        if existing.owner.is_some() {
+            if !input.members.is_empty() {
+                return Err(AppError::Forbidden(
+                    "A private folder cannot be shared".into(),
+                ));
+            }
 
-        if primary {
-            debug_assert!(current.len() == 1);
-            return Err(AppError::Forbidden(
-                "Private folders cannot be shared".into(),
-            ));
+            let root = self
+                .files
+                .update_root(id, &input.name, input.quota_bytes)
+                .await?;
+
+            return Ok(RootView {
+                id: root.id,
+                name: root.name,
+                quota: root.quota,
+                owner: root.owner,
+                created_at: root.created_at,
+                updated_at: root.updated_at,
+            });
         }
 
+        let current = self.folders.list_users_in(id).await?;
         let have: HashSet<Uuid> = current.iter().map(|member| member.id).collect();
-        let mut want: HashSet<Uuid> = input.members.into_iter().collect();
-
-        want.extend(current.iter().map(|member| member.id));
-
+        let want: HashSet<Uuid> = input.members.into_iter().collect();
         let add: Vec<Uuid> = want.difference(&have).copied().collect();
         let remove: Vec<Uuid> = have.difference(&want).copied().collect();
 
@@ -327,7 +315,6 @@ impl UserService {
                 .assign(RootAssignment {
                     root_id: id,
                     user_id: *user_id,
-                    primary: false,
                 })
                 .await?;
         }
@@ -339,8 +326,8 @@ impl UserService {
         Ok(RootView {
             id: root.id,
             name: root.name,
-            primary,
             quota: root.quota,
+            owner: root.owner,
             created_at: root.created_at,
             updated_at: root.updated_at,
         })
@@ -349,7 +336,7 @@ impl UserService {
     #[instrument(skip(self), err(Debug))]
     pub async fn delete_root(&self, id: Uuid) -> Result<(), AppError> {
         if self.files.get_root(id).await?.is_none() {
-            return Err(AppError::ResourceMissing("folder does not exist".into()));
+            return Err(AppError::ResourceMissing("Folder does not exist".into()));
         }
 
         let mut tx = self.tx.begin().await?;
@@ -391,32 +378,36 @@ impl UserService {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn assign(&self, root_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-        if self.files.get_root(root_id).await?.is_none() {
-            return Err(AppError::ResourceMissing("Folder does not exist".into()));
-        }
+        let root = self
+            .files
+            .get_root(root_id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))?;
 
-        if self.folders.is_primary(root_id).await? {
+        if root.owner.is_some() {
             return Err(AppError::Forbidden(
-                "Private folder cannot be shared".into(),
+                "A private folder cannot be shared".into(),
             ));
         }
 
         self.users.get_by_id(user_id).await?;
 
         self.folders
-            .assign(RootAssignment {
-                root_id,
-                user_id,
-                primary: false,
-            })
+            .assign(RootAssignment { root_id, user_id })
             .await
     }
 
     #[instrument(skip(self), err(Debug))]
     pub async fn unassign(&self, folder_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-        if self.folders.is_primary_of(folder_id, user_id).await? {
+        let root = self
+            .files
+            .get_root(folder_id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))?;
+
+        if root.owner.is_some() {
             return Err(AppError::Forbidden(
-                "Private folders cannot be unassigned".into(),
+                "A private folder cannot be unassigned".into(),
             ));
         }
 

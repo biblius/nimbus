@@ -102,7 +102,7 @@ impl EmailSender {
 
         let to = to.parse::<Mailbox>().map_err(|error| {
             tracing::error!(%error, "invalid recipient address");
-            AppError::Unprocessable("invalid email address".into())
+            AppError::Unprocessable("Invalid email address".into())
         })?;
 
         let message = Message::builder()

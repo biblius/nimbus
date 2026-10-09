@@ -271,8 +271,12 @@ export class NimbusClient {
     });
   }
 
-  listFolders(): Promise<Root[]> {
-    return this.request<Root[]>("/admin/roots");
+  listPrivateFolders(): Promise<Root[]> {
+    return this.request<Root[]>("/admin/roots/private");
+  }
+
+  listSharedFolders(): Promise<Root[]> {
+    return this.request<Root[]>("/admin/roots/shared");
   }
 
   createFolder(input: RootData): Promise<Root> {
