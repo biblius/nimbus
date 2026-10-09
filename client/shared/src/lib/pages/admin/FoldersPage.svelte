@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { Pencil, RefreshCw, Trash } from "@lucide/svelte";
+  import { Pencil, Trash } from "@lucide/svelte";
   import { untrack } from "svelte";
   import MemberInfo from "../../components/folder/MemberInfo.svelte";
   import RootForm from "../../components/folder/RootForm.svelte";
   import RootInfo from "../../components/folder/RootInfo.svelte";
   import Button from "../../components/ui/button/button.svelte";
+  import Chevron from "../../components/ui/chevron/chevron.svelte";
   import Plus from "../../components/ui/plus/plus.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
   import { formatBytes, formatQuota } from "../../format";
@@ -23,8 +24,11 @@
   let creating = $state(false);
   let deleteFolder = $state<Root | null>(null);
   let deleting = $state(false);
-  let refreshing = $state(false);
-  /** Bytes stored in each root. Missing while the usage request is in flight; `null` if it failed. */
+
+  /**
+   * Usage of each root.in bytes.
+   * Missing while the usage request is in flight; `null` if it failed.
+   */
   let usage = $state<Record<string, number | null>>({});
 
   function reset() {
@@ -122,23 +126,6 @@
     });
   });
 
-  async function refresh() {
-    if (refreshing) return;
-
-    refreshing = true;
-
-    try {
-      await load();
-    } catch (cause) {
-      toastError(
-        cause instanceof TypeError
-          ? "The server could not be reached"
-          : "Could not load folders",
-      );
-    }
-    refreshing = false;
-  }
-
   async function createRoot(data: RootData) {
     const created = await session.client.createFolder(data);
 
@@ -195,42 +182,28 @@
 </script>
 
 <div class="space-y-3">
-  <div
-    class="flex items-center justify-between gap-3 rounded-lg border-b px-3 py-1.5"
-  >
-    <div class="flex items-center gap-1">
-      <h2 class="text-sm font-medium">{shared ? "Shared" : "Private"}</h2>
-      {#if shared}
-        <Button
-          type="button"
-          variant={creating ? "outline" : "ghost"}
-          size="sm"
-          class="size-9 p-0"
-          aria-label={creating ? "Close new folder form" : "Add folder"}
-          aria-expanded={creating}
-          title="Add folder"
-          onclick={() => {
-            const next = !creating;
-            reset();
-            creating = next;
-          }}
-        >
-          <Plus bind:rotated={creating} />
-        </Button>
-      {/if}
-    </div>
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      class="size-9 p-0"
-      aria-label="Refresh folders"
-      title="Refresh"
-      disabled={refreshing}
-      onclick={refresh}
-    >
-      <RefreshCw size={16} class={refreshing ? "animate-spin" : ""} />
-    </Button>
+  <div class="flex h-12 items-center justify-between gap-3 border-b px-1">
+    <h2 class="text-sm font-medium">
+      {shared ? "Shared folders" : "Private folders"}
+    </h2>
+    {#if shared}
+      <Button
+        type="button"
+        variant={creating ? "outline" : "ghost"}
+        size="sm"
+        class="size-9 p-0"
+        aria-label={creating ? "Close new folder form" : "Add folder"}
+        aria-expanded={creating}
+        title="Add folder"
+        onclick={() => {
+          const next = !creating;
+          reset();
+          creating = next;
+        }}
+      >
+        <Plus bind:rotated={creating} />
+      </Button>
+    {/if}
   </div>
 
   {#if creating}
@@ -283,21 +256,7 @@
               </span>
             </span>
 
-            <svg
-              viewBox="0 0 20 20"
-              class="size-4 shrink-0 text-muted-foreground transition-transform {selectedId ===
-              folder.id
-                ? 'rotate-180'
-                : ''}"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m5 8 5 5 5-5" />
-            </svg>
+            <Chevron expanded={selectedId === folder.id} />
           </button>
 
           {#if selectedId === folder.id}

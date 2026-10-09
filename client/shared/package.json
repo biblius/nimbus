@@ -6,6 +6,7 @@
     "./api": "./src/lib/api.ts",
     "./router": "./src/lib/router.ts",
     "./session": "./src/lib/session.svelte.ts",
+    "./theme": "./src/lib/theme.svelte.ts",
     "./toast": "./src/lib/toast.ts",
     "./types": "./src/lib/types.ts",
     "./styles.css": "./src/styles.css"

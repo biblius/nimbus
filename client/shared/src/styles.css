@@ -1,22 +1,22 @@
-@custom-variant dark (&:is(.dark *));
-
 :root {
-  --background: oklch(0.985 0.002 247);
-  --foreground: oklch(0.21 0.02 256);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 256);
-  --primary: oklch(0.35 0.08 230);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.96 0.01 247);
-  --secondary-foreground: oklch(0.28 0.03 256);
-  --muted: oklch(0.96 0.01 247);
-  --muted-foreground: oklch(0.5 0.02 256);
-  --accent: oklch(0.94 0.02 220);
-  --accent-foreground: oklch(0.28 0.04 240);
-  --destructive: oklch(0.58 0.22 27);
-  --border: oklch(0.9 0.01 247);
-  --input: oklch(0.9 0.01 247);
-  --ring: oklch(0.55 0.08 230);
+  color-scheme: dark;
+  --background: #171717;
+  --foreground: #ebebeb;
+  --card: #202020;
+  --card-foreground: #ebebeb;
+  --primary: #0082c9;
+  --primary-foreground: #ffffff;
+  --secondary: #242424;
+  --secondary-foreground: #ebebeb;
+  --muted: #242424;
+  --muted-foreground: #a0a0a0;
+  --accent: #2a2a2a;
+  --accent-foreground: #ebebeb;
+  --destructive: #d23b3b;
+  --border: #272727;
+  --input: #3a3a3a;
+  --field: #272727;
+  --ring: #0082c9;
   --radius: 0.7rem;
   --toastContainerTop: auto;
   --toastContainerRight: 1rem;
@@ -31,10 +31,32 @@
   --toastColor: var(--card-foreground);
   --toastBorder: 1px solid var(--border);
   --toastBorderRadius: var(--radius);
-  --toastBoxShadow: 0 8px 24px oklch(0.21 0.02 256 / 0.12);
+  --toastBoxShadow: 0 16px 40px oklch(0.08 0.02 262 / 0.55);
   --toastBarHeight: 3px;
   --toastBarBackground: var(--primary);
   --toastBtnFont: 0.875rem "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root.light {
+  color-scheme: light;
+  --background: oklch(0.985 0.002 247);
+  --foreground: oklch(0.21 0.02 256);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 256);
+  --primary: oklch(0.4 0.13 258);
+  --primary-foreground: oklch(0.985 0.005 258);
+  --secondary: oklch(0.96 0.008 258);
+  --secondary-foreground: oklch(0.28 0.03 258);
+  --muted: oklch(0.96 0.008 258);
+  --muted-foreground: oklch(0.5 0.02 258);
+  --accent: oklch(0.95 0.012 258);
+  --accent-foreground: oklch(0.28 0.04 258);
+  --destructive: oklch(0.58 0.2 25);
+  --border: oklch(0.9 0.008 258);
+  --input: oklch(0.9 0.008 258);
+  --field: oklch(0.985 0.002 247);
+  --ring: oklch(0.52 0.14 258);
+  --toastBoxShadow: 0 8px 24px oklch(0.21 0.02 256 / 0.12);
 }
 
 @theme inline {
@@ -53,6 +75,7 @@
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-field: var(--field);
   --color-ring: var(--ring);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -64,8 +87,22 @@
     @apply border-border;
   }
 
+  html {
+    background-color: var(--background);
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  ::selection {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--ring);
   }
 }

@@ -20,12 +20,16 @@
 {#if session.user?.role === "admin"}
   <PanelShell bind:open={session.menuOpen} label="Configuration">
     {#snippet sidebar()}
+      <!-- SIDEBAR -->
+
       <nav class="flex flex-col gap-1 p-3" aria-label="Configuration">
         <p
           class="hidden px-3 pb-2 text-center text-xs font-medium tracking-wide text-muted-foreground uppercase md:block"
         >
           Administration
         </p>
+
+        <!-- USERS -->
 
         <a
           href={"/admin/users"}
@@ -40,6 +44,8 @@
           Users
         </a>
 
+        <!-- FOLDERS -->
+
         <div
           class="mt-2 flex flex-col gap-1 border-t pt-2"
           role="group"
@@ -51,6 +57,7 @@
           >
             Folders
           </p>
+
           {#each folderLinks as link (link.href)}
             <a
               href={link.href}
@@ -68,6 +75,8 @@
         </div>
       </nav>
     {/snippet}
+
+    <!-- PAGE CONTENT -->
 
     <div class="p-4 sm:p-6">
       <div class="mx-auto max-w-5xl">

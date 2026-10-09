@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { Pencil, RefreshCw, Trash } from "@lucide/svelte";
+  import { Pencil, Trash } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { ApiError } from "../../api";
   import type { UserData, UserView, UserViewFull } from "../../types";
   import Button from "../../components/ui/button/button.svelte";
+  import Chevron from "../../components/ui/chevron/chevron.svelte";
   import Plus from "../../components/ui/plus/plus.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
   import UserForm from "../../components/user/UserForm.svelte";
@@ -43,11 +44,6 @@
    */
   let deleting = $state(false);
 
-  /**
-   * Whether the user list is being reloaded.
-   */
-  let refreshing = $state(false);
-
   function reset() {
     selectedId = null;
     editing = false;
@@ -58,21 +54,6 @@
     const next = await session.client.listUsers();
     users = next;
     if (selectedId && !next.some((user) => user.id === selectedId)) reset();
-  }
-
-  async function refresh() {
-    if (refreshing) return;
-    refreshing = true;
-    try {
-      await load();
-    } catch (cause) {
-      toastError(
-        cause instanceof TypeError
-          ? "The server could not be reached"
-          : "Could not load users",
-      );
-    }
-    refreshing = false;
   }
 
   onMount(() => {
@@ -149,39 +130,23 @@
 </script>
 
 <div class="space-y-3">
-  <div
-    class="flex items-center justify-between gap-3 rounded-lg border-b px-3 py-1.5"
-  >
-    <div class="flex items-center gap-1">
-      <h2 class="text-sm font-medium">Users</h2>
-      <Button
-        type="button"
-        variant={creating ? "outline" : "ghost"}
-        size="sm"
-        class="size-9 p-0"
-        aria-label={creating ? "Close new user form" : "Add user"}
-        aria-expanded={creating}
-        title="Add user"
-        onclick={() => {
-          const next = !creating;
-          reset();
-          creating = next;
-        }}
-      >
-        <Plus bind:rotated={creating} />
-      </Button>
-    </div>
+  <div class="flex h-12 items-center justify-between gap-3 border-b px-1">
+    <h2 class="text-sm font-medium">Users</h2>
     <Button
       type="button"
-      variant="ghost"
+      variant={creating ? "outline" : "ghost"}
       size="sm"
       class="size-9 p-0"
-      aria-label="Refresh users"
-      title="Refresh"
-      disabled={refreshing}
-      onclick={refresh}
+      aria-label={creating ? "Close new user form" : "Add user"}
+      aria-expanded={creating}
+      title="Add user"
+      onclick={() => {
+        const next = !creating;
+        reset();
+        creating = next;
+      }}
     >
-      <RefreshCw size={16} class={refreshing ? "animate-spin" : ""} />
+      <Plus bind:rotated={creating} />
     </Button>
   </div>
 
@@ -226,22 +191,7 @@
                 {user.role}
               </span>
             </span>
-            <svg
-              viewBox="0 0 20 20"
-              class="size-4 shrink-0 text-muted-foreground transition-transform {selected(
-                user,
-              )
-                ? 'rotate-180'
-                : ''}"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m5 8 5 5 5-5" />
-            </svg>
+            <Chevron expanded={selected(user)} />
           </button>
 
           {#if selected(user)}

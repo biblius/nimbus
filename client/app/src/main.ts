@@ -1,6 +1,9 @@
+import { initTheme } from "@nimbus/shared/theme";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
+
+initTheme();
 
 const target = document.getElementById("app");
 

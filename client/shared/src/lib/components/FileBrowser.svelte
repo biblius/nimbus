@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ExternalLink } from "@lucide/svelte";
   import { ApiError, ValidationError, type NimbusClient } from "../api";
   import { formatQuota, formatDatetime } from "../format";
   import { toastError } from "../toast";
@@ -10,12 +11,10 @@
     client,
     folder,
     admin = false,
-    onEditRoot,
   }: {
     client: NimbusClient;
     folder: Root;
     admin?: boolean;
-    onEditRoot?: () => void;
   } = $props();
 
   type PendingUpload = {
@@ -222,7 +221,7 @@
 
 <div class="space-y-4">
   <div
-    class="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-card px-3 py-2"
+    class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2"
   >
     <div class="min-w-0">
       <p class="truncate text-sm font-medium">{folder.name}</p>
@@ -232,9 +231,9 @@
         · Updated {formatDatetime(folder.updatedAt)}
       </p>
     </div>
-    {#if admin && onEditRoot}
-      <Button type="button" variant="outline" size="sm" onclick={onEditRoot}
-        >Edit root</Button
+    {#if admin}
+      <a href="/admin/folders/{folder.owner ? 'private' : 'shared'}{folder.id}"
+        ><ExternalLink size={16} /></a
       >
     {/if}
   </div>

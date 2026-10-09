@@ -33,7 +33,7 @@
     <label class="text-sm text-muted-foreground" for="endpoint">Server</label>
     <input
       id="endpoint"
-      class="h-9 flex-1 rounded-md border bg-background px-3 text-sm"
+      class="h-9 flex-1 rounded-md border border-input bg-field px-3 text-sm"
       bind:value={draft}
     />
     <button
