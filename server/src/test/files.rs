@@ -445,6 +445,13 @@ mod files_service {
         assert_eq!(renamed.name, "ada-renamed");
         assert_eq!(renamed.quota, 128);
         assert_eq!(renamed.owner, Some(ada.id));
+
+        let deleted = state.services.users.delete_root(root).await;
+        assert!(matches!(deleted, Err(AppError::Forbidden(_))));
+        assert_eq!(
+            count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", root),
+            1
+        );
     }
 
     async fn upload_in(

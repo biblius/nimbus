@@ -22,9 +22,9 @@
     {#snippet sidebar()}
       <nav class="flex flex-col gap-1 p-3" aria-label="Configuration">
         <p
-          class="hidden px-3 pb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase md:block"
+          class="hidden px-3 pb-2 text-center text-xs font-medium tracking-wide text-muted-foreground uppercase md:block"
         >
-          Configuration
+          Administration
         </p>
 
         <a

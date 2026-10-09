@@ -344,17 +344,19 @@
                     >
                       <Pencil size={16} />
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      class="mt-auto size-8 p-0"
-                      aria-label="Delete folder"
-                      title="Delete folder"
-                      onclick={() => (deleteFolder = folder)}
-                    >
-                      <Trash size={16} />
-                    </Button>
+                    {#if shared}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        class="mt-auto size-8 p-0"
+                        aria-label="Delete folder"
+                        title="Delete folder"
+                        onclick={() => (deleteFolder = folder)}
+                      >
+                        <Trash size={16} />
+                      </Button>
+                    {/if}
                   </div>
                 </div>
               {/if}
@@ -369,9 +371,7 @@
 <ConfirmDialog
   open={deleteFolder !== null}
   title="Delete folder"
-  description={shared
-    ? `Delete ${deleteFolder?.name}? This removes the folder and everything in it.`
-    : `Delete ${deleteFolder?.name}? This removes that user's private folder and everything in it.`}
+  description={`Delete ${deleteFolder?.name}? This removes the folder and everything in it.`}
   busy={deleting}
   onCancel={() => {
     if (!deleting) deleteFolder = null;

@@ -335,8 +335,16 @@ impl UserService {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn delete_root(&self, id: Uuid) -> Result<(), AppError> {
-        if self.files.get_root(id).await?.is_none() {
-            return Err(AppError::ResourceMissing("Folder does not exist".into()));
+        let root = self
+            .files
+            .get_root(id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))?;
+
+        if root.owner.is_some() {
+            return Err(AppError::Forbidden(
+                "Delete the user to remove their private folder".into(),
+            ));
         }
 
         let mut tx = self.tx.begin().await?;

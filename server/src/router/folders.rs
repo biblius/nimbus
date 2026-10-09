@@ -127,7 +127,7 @@ pub(crate) async fn set_quota(
     delete,
     path = "/roots/{root_id}",
     params(("root_id" = Uuid, Path, description = "Root id")),
-    responses((status = 204, description = "Root and its files removed"))
+    responses((status = 204, description = "Shared root and its files removed"))
 )]
 pub(crate) async fn delete_root(
     State(state): State<AppState>,
