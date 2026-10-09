@@ -4,6 +4,7 @@
   import { ApiError } from "../../api";
   import type { UserData, UserView, UserViewFull } from "../../types";
   import Button from "../../components/ui/button/button.svelte";
+  import Plus from "../../components/ui/plus/plus.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
   import UserForm from "../../components/user/UserForm.svelte";
   import { logout, session } from "../../session.svelte";
@@ -155,42 +156,32 @@
       <h2 class="text-sm font-medium">Users</h2>
       <Button
         type="button"
-        variant="ghost"
+        variant={creating ? "outline" : "ghost"}
         size="sm"
         class="size-9 p-0"
-        aria-label="Refresh users"
-        title="Refresh"
-        disabled={refreshing}
-        onclick={refresh}
+        aria-label={creating ? "Close new user form" : "Add user"}
+        aria-expanded={creating}
+        title="Add user"
+        onclick={() => {
+          const next = !creating;
+          reset();
+          creating = next;
+        }}
       >
-        <RefreshCw size={16} class={refreshing ? "animate-spin" : ""} />
+        <Plus bind:rotated={creating} />
       </Button>
     </div>
     <Button
       type="button"
-      variant={creating ? "outline" : "ghost"}
+      variant="ghost"
       size="sm"
       class="size-9 p-0"
-      aria-label={creating ? "Close new user form" : "Add user"}
-      aria-expanded={creating}
-      title="Add user"
-      onclick={() => {
-        const next = !creating;
-        reset();
-        creating = next;
-      }}
+      aria-label="Refresh users"
+      title="Refresh"
+      disabled={refreshing}
+      onclick={refresh}
     >
-      <svg
-        viewBox="0 0 20 20"
-        class="size-4 transition-transform {creating ? 'rotate-45' : ''}"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.75"
-        stroke-linecap="round"
-        aria-hidden="true"
-      >
-        <path d="M10 4v12M4 10h12" />
-      </svg>
+      <RefreshCw size={16} class={refreshing ? "animate-spin" : ""} />
     </Button>
   </div>
 

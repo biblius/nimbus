@@ -1,18 +1,21 @@
 <script lang="ts">
   import { Pencil, RefreshCw, Trash } from "@lucide/svelte";
-  import { onMount } from "svelte";
+  import { untrack } from "svelte";
+  import MemberInfo from "../../components/folder/MemberInfo.svelte";
   import RootForm from "../../components/folder/RootForm.svelte";
   import RootInfo from "../../components/folder/RootInfo.svelte";
   import Button from "../../components/ui/button/button.svelte";
+  import Plus from "../../components/ui/plus/plus.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
   import { formatBytes, formatQuota } from "../../format";
+  import { route } from "../../router";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import type { Member, Root, RootData, UserViewFull } from "../../types";
 
   let folders = $state<Root[]>([]);
   let users = $state<UserViewFull[]>([]);
-  let kind = $state<"private" | "shared">("private");
+  let shared = $state(false);
   let selectedId = $state<string | null>(null);
   let members = $state<Member[]>([]);
   let membersLoaded = $state(false);
@@ -73,12 +76,15 @@
   }
 
   async function load() {
+    const isShared = shared;
     const [roots, people] = await Promise.all([
-      kind === "private"
-        ? session.client.listPrivateFolders()
-        : session.client.listSharedFolders(),
+      isShared
+        ? session.client.listSharedFolders()
+        : session.client.listPrivateFolders(),
       session.client.listUsers(),
     ]);
+
+    if (isShared !== shared) return;
 
     folders = roots;
     users = people;
@@ -101,18 +107,20 @@
     await showMembers(selected.id);
   }
 
-  function choose(next: "private" | "shared") {
-    if (kind === next) return;
-    kind = next;
-    reset();
-    load().catch((cause) => {
-      toastError(
-        cause instanceof TypeError
-          ? "The server could not be reached"
-          : "Could not load folders",
-      );
+  $effect(() => {
+    const isShared = route.pathname === "/admin/folders/shared";
+    untrack(() => {
+      shared = isShared;
+      reset();
+      load().catch((cause) => {
+        toastError(
+          cause instanceof TypeError
+            ? "The server could not be reached"
+            : "Could not load folders",
+        );
+      });
     });
-  }
+  });
 
   async function refresh() {
     if (refreshing) return;
@@ -130,16 +138,6 @@
     }
     refreshing = false;
   }
-
-  onMount(() => {
-    load().catch((cause) => {
-      toastError(
-        cause instanceof TypeError
-          ? "The server could not be reached"
-          : "Could not load folders",
-      );
-    });
-  });
 
   async function createRoot(data: RootData) {
     const created = await session.client.createFolder(data);
@@ -201,70 +199,37 @@
     class="flex items-center justify-between gap-3 rounded-lg border-b px-3 py-1.5"
   >
     <div class="flex items-center gap-1">
-      <h2 class="text-sm font-medium">Folders</h2>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        class="size-9 p-0"
-        aria-label="Refresh folders"
-        title="Refresh"
-        disabled={refreshing}
-        onclick={refresh}
-      >
-        <RefreshCw size={16} class={refreshing ? "animate-spin" : ""} />
-      </Button>
-    </div>
-    {#if kind === "shared"}
-      <Button
-        type="button"
-        variant={creating ? "outline" : "ghost"}
-        size="sm"
-        class="size-9 p-0"
-        aria-label={creating ? "Close new folder form" : "Add folder"}
-        aria-expanded={creating}
-        title="Add folder"
-        onclick={() => {
-          const next = !creating;
-          reset();
-          creating = next;
-        }}
-      >
-        <svg
-          viewBox="0 0 20 20"
-          class="size-4 transition-transform {creating ? 'rotate-45' : ''}"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          aria-hidden="true"
+      <h2 class="text-sm font-medium">{shared ? "Shared" : "Private"}</h2>
+      {#if shared}
+        <Button
+          type="button"
+          variant={creating ? "outline" : "ghost"}
+          size="sm"
+          class="size-9 p-0"
+          aria-label={creating ? "Close new folder form" : "Add folder"}
+          aria-expanded={creating}
+          title="Add folder"
+          onclick={() => {
+            const next = !creating;
+            reset();
+            creating = next;
+          }}
         >
-          <path d="M10 4v12M4 10h12" />
-        </svg>
-      </Button>
-    {/if}
-  </div>
-
-  <div class="flex gap-1" role="tablist" aria-label="Folder kinds">
+          <Plus bind:rotated={creating} />
+        </Button>
+      {/if}
+    </div>
     <Button
       type="button"
-      variant={kind === "private" ? "default" : "outline"}
+      variant="ghost"
       size="sm"
-      role="tab"
-      aria-selected={kind === "private"}
-      onclick={() => choose("private")}
+      class="size-9 p-0"
+      aria-label="Refresh folders"
+      title="Refresh"
+      disabled={refreshing}
+      onclick={refresh}
     >
-      Private
-    </Button>
-    <Button
-      type="button"
-      variant={kind === "shared" ? "default" : "outline"}
-      size="sm"
-      role="tab"
-      aria-selected={kind === "shared"}
-      onclick={() => choose("shared")}
-    >
-      Shared
+      <RefreshCw size={16} class={refreshing ? "animate-spin" : ""} />
     </Button>
   </div>
 
@@ -282,9 +247,7 @@
 
   {#if folders.length === 0}
     <p class="text-sm text-muted-foreground">
-      {kind === "private"
-        ? "No private folders yet."
-        : "No shared folders yet."}
+      {shared ? "No shared folders yet." : "No private folders yet."}
     </p>
   {:else}
     <ul class="divide-y overflow-hidden rounded-lg border">
@@ -301,15 +264,10 @@
               const next = selectedId === folder.id ? null : folder.id;
               reset();
               selectedId = next;
-              if (next) {
-                if (folder.owner) {
-                  members = [];
-                  membersLoaded = true;
-                } else {
-                  showMembers(next).catch(() => {
-                    toastError("Could not load members");
-                  });
-                }
+              if (next && shared) {
+                showMembers(next).catch(() => {
+                  toastError("Could not load members");
+                });
               }
             }}
           >
@@ -351,9 +309,9 @@
                     {users}
                     {members}
                     title="Edit folder"
-                    description={folder.owner
-                      ? "A private folder stays with its owner."
-                      : "Choose who can use this shared folder."}
+                    description={shared
+                      ? "Choose who can use this shared folder."
+                      : "A private folder stays with its owner."}
                     save={(data) => updateRoot(data, folder)}
                     cancel={() => (editing = false)}
                   />
@@ -369,25 +327,8 @@
                       ownerName={ownerName(folder.owner)}
                     />
 
-                    {#if !folder.owner}
-                      <div>
-                        <p class="text-sm font-medium">Members</p>
-                        {#if !membersLoaded}
-                          <p class="text-sm text-muted-foreground">Loading…</p>
-                        {:else if members.length === 0}
-                          <p class="text-sm text-muted-foreground">
-                            No members.
-                          </p>
-                        {:else}
-                          <ul class="mt-1 space-y-1">
-                            {#each members as member (member.id)}
-                              <li class="truncate text-sm">
-                                {member.username}
-                              </li>
-                            {/each}
-                          </ul>
-                        {/if}
-                      </div>
+                    {#if shared}
+                      <MemberInfo {members} {membersLoaded} />
                     {/if}
                   </div>
                   <div class="flex flex-col self-stretch">
@@ -398,7 +339,7 @@
                       class="size-8 p-0"
                       aria-label="Edit folder"
                       title="Edit folder"
-                      disabled={!folder.owner && !membersLoaded}
+                      disabled={shared && !membersLoaded}
                       onclick={() => (editing = true)}
                     >
                       <Pencil size={16} />
@@ -428,9 +369,9 @@
 <ConfirmDialog
   open={deleteFolder !== null}
   title="Delete folder"
-  description={deleteFolder?.owner
-    ? `Delete ${deleteFolder.name}? This removes that user's private folder and everything in it.`
-    : `Delete ${deleteFolder?.name}? This removes the folder and everything in it.`}
+  description={shared
+    ? `Delete ${deleteFolder?.name}? This removes the folder and everything in it.`
+    : `Delete ${deleteFolder?.name}? This removes that user's private folder and everything in it.`}
   busy={deleting}
   onCancel={() => {
     if (!deleting) deleteFolder = null;

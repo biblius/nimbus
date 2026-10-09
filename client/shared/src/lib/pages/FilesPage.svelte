@@ -9,17 +9,14 @@
 
   let roots = $state<Root[]>([]);
 
-  let active = $state<Root | null>(null);
+  let selected = $state<Root>();
 
   onMount(async () => {
     try {
       roots = await session.client.roots();
-      active =
-        roots.find((root) => root.owner === session.user?.id) ??
-        roots[0] ??
-        null;
+      selected = roots.find((root) => root.owner === session.user?.id);
     } catch {
-      toastError("Could not load your folders");
+      toastError("Could not load files");
     }
   });
 </script>
@@ -38,13 +35,13 @@
         {#each roots as root (root.id)}
           <button
             type="button"
-            class="flex min-h-11 items-center rounded-md px-3 text-left text-sm {active?.id ===
+            class="flex min-h-11 items-center rounded-md px-3 text-left text-sm {selected?.id ===
             root.id
               ? 'bg-accent font-medium text-accent-foreground'
               : 'hover:bg-accent'}"
-            aria-current={active?.id === root.id ? "page" : undefined}
+            aria-current={selected?.id === root.id ? "page" : undefined}
             onclick={() => {
-              active = root;
+              selected = root;
               session.menuOpen = false;
             }}
           >
@@ -57,21 +54,22 @@
 
   <div class="p-4 sm:p-6">
     <div class="mx-auto max-w-5xl">
-      {#if active}
-        {@const folder = active}
+      {#if selected}
+        {@const folder = selected}
         {#key folder.id}
           <FileBrowser
             client={session.client}
             {folder}
             admin={session.user?.role === "admin"}
             onEditRoot={() =>
-              navigate("/admin/folders", { search: { id: folder.id } })}
+              navigate(
+                folder.owner
+                  ? "/admin/folders/private"
+                  : "/admin/folders/shared",
+                { search: { id: folder.id } },
+              )}
           />
         {/key}
-      {:else}
-        <p class="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
-          No storage roots are assigned to this account.
-        </p>
       {/if}
     </div>
   </div>
