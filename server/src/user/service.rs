@@ -10,15 +10,16 @@ use crate::{
     email::EmailSender,
     error::AppError,
     file::{
-        model::{FileEntry, Root, RootAssignment},
+        model::{FileEntry, RootAssignment, RootView},
         service::FileService,
         storage::Storage,
     },
     user::model::{
-        CreateSharedFolder, CreateUser, Role, SetQuota, UpdateRoot, UpdateUser, User, UserView,
-        UserViewFull,
+        CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateUser, User,
+        UserView, UserViewFull,
     },
 };
+use std::collections::HashSet;
 use tracing::instrument;
 use uuid::Uuid;
 use validify::{Validate, Validify};
@@ -132,7 +133,7 @@ impl UserService {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn list_users(&self) -> Result<Vec<UserViewFull>, AppError> {
-        self.users.list_active().await
+        self.users.list().await
     }
 
     #[instrument(skip(self, input), fields(user_id = %user_id, role = ?input.role), err(Debug))]
@@ -143,10 +144,10 @@ impl UserService {
     ) -> Result<UserView, AppError> {
         input.validify()?;
 
-        let user = self.users.get_active_by_id(user_id).await?;
+        let user = self.users.get_by_id(user_id).await?;
 
         if user.role == Role::Admin && input.role != Role::Admin {
-            let admins = self.users.count_active_admins().await?;
+            let admins = self.users.count_admins().await?;
             if admins <= 1 {
                 return Err(AppError::Forbidden(
                     "Cannot delete last administrator".into(),
@@ -195,10 +196,10 @@ impl UserService {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn delete_user(&self, id: Uuid) -> Result<(), AppError> {
-        let user = self.users.get_active_by_id(id).await?;
+        let user = self.users.get_by_id(id).await?;
 
         if user.role == Role::Admin {
-            let admins = self.users.count_active_admins().await?;
+            let admins = self.users.count_admins().await?;
 
             if admins <= 1 {
                 return Err(AppError::Forbidden(
@@ -230,7 +231,7 @@ impl UserService {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn create_shared(&self, mut input: CreateSharedFolder) -> Result<Root, AppError> {
+    pub async fn create_shared(&self, mut input: CreateSharedFolder) -> Result<RootView, AppError> {
         input.validify()?;
 
         FileEntry::valid_name(&input.name)?;
@@ -238,7 +239,7 @@ impl UserService {
         let mut members = Vec::new();
 
         for member_id in input.members {
-            let member = self.users.get_active_by_id(member_id).await?;
+            let member = self.users.get_by_id(member_id).await?;
             members.push(member.id);
         }
 
@@ -273,21 +274,95 @@ impl UserService {
 
         tx.commit().await?;
 
-        Ok(root)
+        Ok(RootView {
+            id: root.id,
+            name: root.name,
+            primary: false,
+            quota: root.quota,
+            created_at: root.created_at,
+            updated_at: root.updated_at,
+        })
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_all_roots(&self) -> Result<Vec<Root>, AppError> {
+    pub async fn list_all_roots(&self) -> Result<Vec<RootView>, AppError> {
         self.files.list_all_roots().await
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn update_root(&self, id: Uuid, mut input: UpdateRoot) -> Result<Root, AppError> {
+    pub async fn update_root(&self, id: Uuid, mut input: UpdateRoot) -> Result<RootView, AppError> {
         input.validify()?;
         FileEntry::valid_name(&input.name)?;
-        self.files
+
+        let current = self.folders.list_users_in(id).await?;
+
+        let primary = current.iter().any(|member| member.primary);
+
+        if primary {
+            debug_assert!(current.len() == 1);
+            return Err(AppError::Forbidden(
+                "Private folders cannot be shared".into(),
+            ));
+        }
+
+        let have: HashSet<Uuid> = current.iter().map(|member| member.id).collect();
+        let mut want: HashSet<Uuid> = input.members.into_iter().collect();
+
+        want.extend(current.iter().map(|member| member.id));
+
+        let add: Vec<Uuid> = want.difference(&have).copied().collect();
+        let remove: Vec<Uuid> = have.difference(&want).copied().collect();
+
+        for user_id in &add {
+            self.users.get_by_id(*user_id).await?;
+        }
+
+        let root = self
+            .files
             .update_root(id, &input.name, input.quota_bytes)
-            .await
+            .await?;
+
+        for user_id in &add {
+            self.folders
+                .assign(RootAssignment {
+                    root_id: id,
+                    user_id: *user_id,
+                    primary: false,
+                })
+                .await?;
+        }
+
+        for user_id in &remove {
+            self.folders.remove(id, *user_id).await?;
+        }
+
+        Ok(RootView {
+            id: root.id,
+            name: root.name,
+            primary,
+            quota: root.quota,
+            created_at: root.created_at,
+            updated_at: root.updated_at,
+        })
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn delete_root(&self, id: Uuid) -> Result<(), AppError> {
+        if self.files.get_root(id).await?.is_none() {
+            return Err(AppError::ResourceMissing("folder does not exist".into()));
+        }
+
+        let mut tx = self.tx.begin().await?;
+
+        let files = self.files.list_all_files_with(&mut *tx, id).await?;
+
+        let mut tx = FileService::delete_recursive(&self.files, &self.storage, tx, files).await?;
+
+        self.files.delete_root_with(&mut *tx, id).await?;
+
+        tx.commit().await?;
+
+        Ok(())
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -304,10 +379,10 @@ impl UserService {
         &self,
         user: &User,
         folder_id: Uuid,
-    ) -> Result<Vec<UserView>, AppError> {
+    ) -> Result<Vec<Member>, AppError> {
         if user.role != Role::Admin && !self.folders.can_access(user.id, folder_id).await? {
             return Err(AppError::Forbidden(
-                "you do not have access to this folder".into(),
+                "You do not have access to this folder".into(),
             ));
         }
 
@@ -315,12 +390,18 @@ impl UserService {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn assign(&self, user_id: Uuid, root_id: Uuid) -> Result<(), AppError> {
+    pub async fn assign(&self, root_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
         if self.files.get_root(root_id).await?.is_none() {
-            return Err(AppError::ResourceMissing("folder does not exist".into()));
+            return Err(AppError::ResourceMissing("Folder does not exist".into()));
         }
 
-        self.users.get_active_by_id(user_id).await?;
+        if self.folders.is_primary(root_id).await? {
+            return Err(AppError::Forbidden(
+                "Private folder cannot be shared".into(),
+            ));
+        }
+
+        self.users.get_by_id(user_id).await?;
 
         self.folders
             .assign(RootAssignment {
@@ -333,9 +414,9 @@ impl UserService {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn unassign(&self, folder_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-        if self.folders.is_primary(folder_id, user_id).await? {
+        if self.folders.is_primary_of(folder_id, user_id).await? {
             return Err(AppError::Forbidden(
-                "the private folder cannot be unassigned".into(),
+                "Private folders cannot be unassigned".into(),
             ));
         }
 

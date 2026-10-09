@@ -8,22 +8,38 @@ use uuid::Uuid;
 use crate::{
     auth::session::Session,
     error::AppError,
-    file::model::Root,
+    file::model::RootView,
     state::AppState,
-    user::model::{CreateSharedFolder, SetQuota, UpdateRoot, UserView},
+    user::model::{CreateSharedFolder, Member, SetQuota, UpdateRoot},
 };
+
+#[utoipa::path(
+    get,
+    path = "/roots/{root_id}/usage",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    responses((status = 200, description = "Bytes stored in the root", body = i64))
+)]
+pub(crate) async fn usage(
+    State(state): State<AppState>,
+    session: Session,
+    Path(root_id): Path<Uuid>,
+) -> Result<Json<i64>, AppError> {
+    Ok(Json(
+        state.services.files.usage(&session.user, root_id).await?,
+    ))
+}
 
 #[utoipa::path(
     get,
     path = "/roots/{root_id}/users",
     params(("root_id" = Uuid, Path, description = "Root id")),
-    responses((status = 200, description = "Users assigned to the root", body = Vec<UserView>))
+    responses((status = 200, description = "Users assigned to the root", body = Vec<Member>))
 )]
 pub(crate) async fn list_members(
     State(state): State<AppState>,
     session: Session,
     Path(root_id): Path<Uuid>,
-) -> Result<Json<Vec<UserView>>, AppError> {
+) -> Result<Json<Vec<Member>>, AppError> {
     Ok(Json(
         state
             .services
@@ -37,13 +53,13 @@ pub(crate) async fn list_members(
     post,
     path = "/roots/shared",
     request_body = CreateSharedFolder,
-    responses((status = 201, description = "Shared root folder created", body = Root))
+    responses((status = 201, description = "Shared root folder created", body = RootView))
 )]
 pub(crate) async fn create_shared(
     State(state): State<AppState>,
     _admin: Session,
     Json(input): Json<CreateSharedFolder>,
-) -> Result<(StatusCode, Json<Root>), AppError> {
+) -> Result<(StatusCode, Json<RootView>), AppError> {
     let folder = state.services.users.create_shared(input).await?;
     Ok((StatusCode::CREATED, Json(folder)))
 }
@@ -51,12 +67,12 @@ pub(crate) async fn create_shared(
 #[utoipa::path(
     get,
     path = "/admin/roots",
-    responses((status = 200, description = "Every root folder", body = Vec<Root>))
+    responses((status = 200, description = "Every root folder, private ones first", body = Vec<RootView>))
 )]
 pub(crate) async fn list_all(
     State(state): State<AppState>,
     _admin: Session,
-) -> Result<Json<Vec<Root>>, AppError> {
+) -> Result<Json<Vec<RootView>>, AppError> {
     Ok(Json(state.services.users.list_all_roots().await?))
 }
 
@@ -65,14 +81,14 @@ pub(crate) async fn list_all(
     path = "/roots/{root_id}",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = UpdateRoot,
-    responses((status = 200, description = "Root name and quota updated", body = Root))
+    responses((status = 200, description = "Root name, quota, and members updated", body = RootView))
 )]
 pub(crate) async fn update_root(
     State(state): State<AppState>,
     _admin: Session,
     Path(root_id): Path<Uuid>,
     Json(input): Json<UpdateRoot>,
-) -> Result<Json<Root>, AppError> {
+) -> Result<Json<RootView>, AppError> {
     Ok(Json(
         state.services.users.update_root(root_id, input).await?,
     ))
@@ -93,6 +109,21 @@ pub(crate) async fn set_quota(
 ) -> Result<StatusCode, AppError> {
     state.services.users.set_quota(root_id, input).await?;
     Ok(StatusCode::OK)
+}
+
+#[utoipa::path(
+    delete,
+    path = "/roots/{root_id}",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    responses((status = 204, description = "Root and its files removed"))
+)]
+pub(crate) async fn delete_root(
+    State(state): State<AppState>,
+    _admin: Session,
+    Path(root_id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    state.services.users.delete_root(root_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(

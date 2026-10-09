@@ -17,7 +17,6 @@ pub struct User {
     pub otp_secret: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 /// The view of the currently logged in user.
@@ -101,12 +100,12 @@ impl Display for Role {
 pub struct CreateUser {
     #[modify(trim, lowercase)]
     #[validate(length(min = 1, message = "Username cannot be empty"))]
-    #[validate(length(max = 64, message = "Username too long"))]
+    #[validate(length(max = 63, message = "Username too long"))]
     #[validate(custom(function = valid_username))]
     pub username: String,
 
     #[validate(length(min = 1, message = "Password cannot be empty"))]
-    #[validate(length(max = 256, message = "Password too long"))]
+    #[validate(length(max = 255, message = "Password too long"))]
     pub password: String,
 
     #[modify(trim, lowercase)]
@@ -123,12 +122,12 @@ pub struct CreateUser {
 pub struct UpdateUser {
     #[modify(trim, lowercase)]
     #[validate(length(min = 1, message = "Username cannot be empty"))]
-    #[validate(length(max = 64, message = "Username too long"))]
+    #[validate(length(max = 63, message = "Username too long"))]
     #[validate(custom(function = valid_username))]
     pub username: Option<String>,
 
     #[validate(length(min = 1, message = "Password cannot be empty"))]
-    #[validate(length(max = 256, message = "Password too long"))]
+    #[validate(length(max = 255, message = "Password too long"))]
     pub password: Option<String>,
 
     #[modify(trim, lowercase)]
@@ -150,7 +149,7 @@ pub struct SetQuota {
 #[serde(rename_all = "camelCase")]
 pub struct CreateSharedFolder {
     #[validate(length(min = 1, message = "Name cannot be empty"))]
-    #[validate(length(max = 256, message = "Name too long"))]
+    #[validate(length(max = 255, message = "Name too long"))]
     pub name: String,
 
     /// `0` means the shared folder is unlimited.
@@ -161,17 +160,33 @@ pub struct CreateSharedFolder {
     pub members: Vec<Uuid>,
 }
 
-/// Name and quota of an existing root.
+/// Name, quota, and members of an existing root.
+/// A private root cannot gain members. Its owner stays assigned even if left out of `members`.
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRoot {
     #[validate(length(min = 1, message = "Name cannot be empty"))]
-    #[validate(length(max = 256, message = "Name too long"))]
+    #[validate(length(max = 255, message = "Name too long"))]
     pub name: String,
 
     /// `0` means the folder is unlimited.
     #[validate(range(min = 0., message = "Quota must be 0 (unlimited) or higher"))]
     pub quota_bytes: i64,
+
+    #[serde(default)]
+    pub members: Vec<Uuid>,
+}
+
+/// A user assigned to a root. `primary` marks the owner of a private folder.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Member {
+    pub id: Uuid,
+    pub username: String,
+    pub email: Option<String>,
+    pub role: Role,
+    pub created_at: DateTime<Utc>,
+    pub primary: bool,
 }
 
 fn valid_username(username: &str) -> Result<(), ValidationError> {

@@ -6,7 +6,7 @@ use crate::{
     db::{Db, DbPool},
     error::AppError,
     file::model::{RootAssignment, RootView},
-    user::model::{Role, UserView},
+    user::model::{Member, Role},
 };
 
 #[derive(Clone)]
@@ -95,16 +95,17 @@ impl UserFolderRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_users_in(&self, root_id: Uuid) -> Result<Vec<UserView>, AppError> {
+    pub async fn list_users_in(&self, root_id: Uuid) -> Result<Vec<Member>, AppError> {
         sqlx::query_as!(
-            UserView,
+            Member,
             r#"
-            SELECT 
+            SELECT
                 u.id,
                 u.username,
                 u.email,
                 u.role AS "role: Role",
-                u.created_at
+                u.created_at,
+                uf."primary" AS "primary!"
             FROM user_folders uf
             JOIN users u ON uf.user_id = u.id
             WHERE root_id = $1
@@ -118,7 +119,19 @@ impl UserFolderRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn is_primary(&self, root_id: Uuid, user_id: Uuid) -> Result<bool, AppError> {
+    pub async fn is_primary(&self, root_id: Uuid) -> Result<bool, AppError> {
+        let private = sqlx::query_scalar(
+            r#"SELECT EXISTS (SELECT 1 FROM user_folders WHERE root_id = $1 AND "primary")"#,
+        )
+        .bind(root_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(private)
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn is_primary_of(&self, root_id: Uuid, user_id: Uuid) -> Result<bool, AppError> {
         let found: Option<bool> = sqlx::query_scalar(
             r#"SELECT "primary" FROM user_folders WHERE root_id = $1 AND user_id = $2"#,
         )
@@ -126,6 +139,7 @@ impl UserFolderRepository {
         .bind(user_id)
         .fetch_optional(&self.pool)
         .await?;
+
         Ok(found.unwrap_or(false))
     }
 
@@ -137,11 +151,10 @@ impl UserFolderRepository {
             WHERE
                 root_id = $1
             AND user_id = $2
-            AND "primary" = $3"#,
+            "#,
         )
         .bind(root_id)
         .bind(user_id)
-        .bind(false)
         .execute(&self.pool)
         .await?;
 

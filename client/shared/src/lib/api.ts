@@ -1,36 +1,37 @@
 import type {
   CreateUserInput,
   FileEntry,
-  Folder,
   LoginResult,
-  UserView,
+  Member,
   Root,
-  UserViewFull,
+  RootData,
   UserData,
+  UserView,
+  UserViewFull,
 } from "./types";
 
 /** JSON body of every `AppError` response. */
-export interface ErrorBody<T = unknown> {
+export type ErrorBody<T = unknown> = {
   message: string | null;
   code: number;
   body: T | null;
-}
+};
 
 /** One `validify::ValidationError::Field` inside an `ErrorBody`. */
-export interface ValidationField {
+export type ValidationField = {
   field: string | null;
   code: string;
   params: Record<string, unknown>;
   message: string | null;
   location: string;
-}
+};
 
 /** One `validify::ValidationError::Schema` inside an `ErrorBody`. */
-export interface ValidationSchema {
+export type ValidationSchema = {
   code: string;
   message: string | null;
   location: string;
-}
+};
 
 /** `validify::ValidationErrors`, serialized as an externally tagged enum array. */
 export type ValidationItem =
@@ -270,15 +271,36 @@ export class NimbusClient {
     });
   }
 
-  listFolders(): Promise<Folder[]> {
-    return this.request<Folder[]>("/admin/roots");
+  listFolders(): Promise<Root[]> {
+    return this.request<Root[]>("/admin/roots");
   }
 
-  updateFolder(id: string, name: string, quotaBytes: number): Promise<Folder> {
-    return this.request<Folder>(`/roots/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      body: JSON.stringify({ name, quotaBytes }),
+  createFolder(input: RootData): Promise<Root> {
+    return this.request<Root>("/roots/shared", {
+      method: "POST",
+      body: JSON.stringify(input),
     });
+  }
+
+  updateFolder(id: string, input: RootData): Promise<Root> {
+    return this.request<Root>(`/roots/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+
+  deleteFolder(id: string): Promise<void> {
+    return this.request<void>(`/roots/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
+  listMembers(id: string): Promise<Member[]> {
+    return this.request<Member[]>(`/roots/${encodeURIComponent(id)}/users`);
+  }
+
+  folderUsage(id: string): Promise<number> {
+    return this.request<number>(`/roots/${encodeURIComponent(id)}/usage`);
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {

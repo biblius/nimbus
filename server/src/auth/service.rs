@@ -117,13 +117,9 @@ impl AuthenticationService {
 
         let user = self
             .users
-            .get_active_by_id(pending.user_id)
+            .get_by_id(pending.user_id)
             .await
             .map_err(|_| AppError::Auth(AuthFailure::InvalidCredentials))?;
-
-        if user.deleted_at.is_some() {
-            return Err(AppError::Auth(AuthFailure::AccountDeactivated));
-        }
 
         let encoded = user
             .otp_secret
@@ -151,7 +147,7 @@ impl AuthenticationService {
             .await?
             .ok_or(AppError::Auth(AuthFailure::SessionNotFound))?;
 
-        let user = self.users.get_active_by_id(record.user_id).await?;
+        let user = self.users.get_by_id(record.user_id).await?;
 
         Ok(Session::from_record(record, user, false))
     }
@@ -177,7 +173,7 @@ impl AuthenticationService {
 
         let user = self
             .users
-            .get_active_by_id(session.user.id)
+            .get_by_id(session.user.id)
             .await
             .map_err(|_| AppError::Auth(AuthFailure::InvalidCredentials))?;
 
@@ -246,7 +242,7 @@ impl AuthenticationService {
             .consume(OneShotToken::PasswordReset, token)
             .await?;
 
-        let user = self.users.get_active_by_id(user_id).await?;
+        let user = self.users.get_by_id(user_id).await?;
 
         let password = hash_password(&data.new_password)?;
 
@@ -349,10 +345,6 @@ impl AuthenticationService {
 
     #[instrument(skip_all, fields(user_id = %user.id), err(Debug))]
     fn validate_password(&self, user: &User, password: &str) -> Result<(), AppError> {
-        if user.deleted_at.is_some() {
-            return Err(AppError::Auth(AuthFailure::AccountDeactivated));
-        }
-
         if !verify_password(password, &user.password) {
             return Err(AppError::Auth(AuthFailure::InvalidCredentials));
         }

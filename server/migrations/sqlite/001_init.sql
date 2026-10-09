@@ -8,8 +8,7 @@ CREATE TABLE users (
   role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
   otp_secret TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  deleted_at TEXT
+  updated_at TEXT NOT NULL
 );
 
 CREATE UNIQUE INDEX users_email_idx ON users (email)

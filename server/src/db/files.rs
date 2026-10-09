@@ -3,7 +3,7 @@ use crate::{
     error::AppError,
     file::{
         format::{FileFamily, FileFormat},
-        model::{FileEntry, FileKind, Root},
+        model::{FileEntry, FileKind, Root, RootView},
     },
 };
 use chrono::{DateTime, Utc};
@@ -83,18 +83,23 @@ impl FileRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_all_roots(&self) -> Result<Vec<Root>, AppError> {
+    pub async fn list_all_roots(&self) -> Result<Vec<RootView>, AppError> {
         sqlx::query_as!(
-            Root,
+            RootView,
             r#"
             SELECT
                 id,
                 name,
                 quota_bytes AS quota,
                 created_at,
-                updated_at
+                updated_at,
+                EXISTS (
+                    SELECT 1
+                    FROM user_folders uf
+                    WHERE uf.root_id = roots.id AND uf."primary"
+                ) AS "primary!"
             FROM roots
-            ORDER BY name
+            ORDER BY 6 DESC, name
             "#
         )
         .fetch_all(&self.pool)

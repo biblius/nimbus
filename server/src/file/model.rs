@@ -111,7 +111,7 @@ impl FileEntry {
 
         if name.is_empty() || name.len() > 255 {
             return Err(AppError::Unprocessable(
-                "file name must be between 1 and 255 bytes".into(),
+                "File name must be between 1 and 255 bytes".into(),
             ));
         }
 
@@ -122,7 +122,7 @@ impl FileEntry {
             || name.chars().any(|character| character.is_control())
         {
             return Err(AppError::Unprocessable(
-                "file name contains invalid characters".into(),
+                "File name contains invalid characters".into(),
             ));
         }
 
@@ -135,6 +135,7 @@ pub struct CreateDirectory {
     pub parent: Option<Uuid>,
 
     #[modify(trim)]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(length(min = 1, message = "Directory name cannot be empty"))]
+    #[validate(length(min = 255, message = "Directory too long"))]
     pub name: String,
 }

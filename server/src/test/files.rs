@@ -370,6 +370,7 @@ mod files_service {
                 UpdateRoot {
                     name: "new-name".into(),
                     quota_bytes: 64,
+                    members: vec![ada.id],
                 },
             )
             .await
@@ -386,6 +387,41 @@ mod files_service {
         let folder = roots.iter().find(|root| root.id == shared.id).unwrap();
         assert_eq!(folder.name, "new-name");
         assert_eq!(folder.quota, 64);
+    }
+
+    #[test]
+    async fn private_root_cannot_be_shared(state: TestState) {
+        let ada = user(state, "ada-private-share").await;
+        let bob = user(state, "bob-private-share").await;
+        let session = test::login(state, "ada-private-share", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let assigned = state.services.users.assign(root, bob.id).await;
+        assert!(matches!(assigned, Err(AppError::Forbidden(_))));
+
+        let updated = state
+            .services
+            .users
+            .update_root(
+                root,
+                UpdateRoot {
+                    name: "shared-attempt".into(),
+                    quota_bytes: 0,
+                    members: vec![ada.id, bob.id],
+                },
+            )
+            .await;
+        assert!(matches!(updated, Err(AppError::Forbidden(_))));
+
+        let members = state
+            .services
+            .users
+            .list_members(&session.user, root)
+            .await
+            .unwrap();
+        assert_eq!(members.len(), 1);
+        assert!(members[0].primary);
+        assert_eq!(members[0].id, ada.id);
     }
 
     async fn upload_in(

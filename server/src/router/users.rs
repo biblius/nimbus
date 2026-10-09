@@ -60,7 +60,7 @@ pub(crate) async fn update_user(
     delete,
     path = "/users/{id}",
     params(("id" = Uuid, Path, description = "User id")),
-    responses((status = 204, description = "User soft-deleted"))
+    responses((status = 204, description = "User removed"))
 )]
 pub(crate) async fn delete_user(
     _session: Session,

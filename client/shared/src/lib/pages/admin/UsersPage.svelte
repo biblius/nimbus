@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { Pencil, Trash } from "@lucide/svelte";
+  import { Pencil, RefreshCw, Trash } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { ApiError } from "../../api";
-  import type { UserData, UserViewFull } from "../../types";
+  import type { UserData, UserView, UserViewFull } from "../../types";
   import Button from "../../components/ui/button/button.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
   import UserForm from "../../components/user/UserForm.svelte";
@@ -42,21 +42,42 @@
    */
   let deleting = $state(false);
 
+  /**
+   * Whether the user list is being reloaded.
+   */
+  let refreshing = $state(false);
+
   function reset() {
     selectedId = null;
     editing = false;
     creating = false;
   }
 
+  async function load() {
+    const next = await session.client.listUsers();
+    users = next;
+    if (selectedId && !next.some((user) => user.id === selectedId)) reset();
+  }
+
+  async function refresh() {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      await load();
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not load users",
+      );
+    }
+    refreshing = false;
+  }
+
   onMount(() => {
-    session.client
-      .listUsers()
-      .then((next) => {
-        users = next;
-      })
-      .catch(() => {
-        toastError("Could not load users");
-      });
+    load().catch(() => {
+      toastError("Could not load users");
+    });
   });
 
   async function createUser(data: UserData) {
@@ -120,13 +141,31 @@
     }
     deleting = false;
   }
+
+  const selected = (user: UserView) => {
+    return selectedId === user.id;
+  };
 </script>
 
 <div class="space-y-3">
   <div
     class="flex items-center justify-between gap-3 rounded-lg border-b px-3 py-1.5"
   >
-    <h2 class="text-sm font-medium">Users</h2>
+    <div class="flex items-center gap-1">
+      <h2 class="text-sm font-medium">Users</h2>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="size-9 p-0"
+        aria-label="Refresh users"
+        title="Refresh"
+        disabled={refreshing}
+        onclick={refresh}
+      >
+        <RefreshCw size={16} class={refreshing ? "animate-spin" : ""} />
+      </Button>
+    </div>
     <Button
       type="button"
       variant={creating ? "outline" : "ghost"}
@@ -174,13 +213,14 @@
         <li>
           <button
             type="button"
-            class="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2 text-left {selectedId ===
-            user.id
+            class="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2 text-left {selected(
+              user,
+            )
               ? 'bg-accent'
               : 'hover:bg-accent/60'}"
-            aria-expanded={selectedId === user.id}
+            aria-expanded={selected(user)}
             onclick={() => {
-              const next = selectedId === user.id ? null : user.id;
+              const next = selected(user) ? null : user.id;
               reset();
               selectedId = next;
             }}
@@ -197,8 +237,9 @@
             </span>
             <svg
               viewBox="0 0 20 20"
-              class="size-4 shrink-0 text-muted-foreground transition-transform {selectedId ===
-              user.id
+              class="size-4 shrink-0 text-muted-foreground transition-transform {selected(
+                user,
+              )
                 ? 'rotate-180'
                 : ''}"
               fill="none"
@@ -212,16 +253,18 @@
             </svg>
           </button>
 
-          {#if selectedId === user.id}
+          {#if selected(user)}
             <div class="border-t bg-muted/30 p-3">
               {#if editing}
-                <UserForm
-                  {user}
-                  title="Edit user"
-                  description="Leave the password blank to keep the current one."
-                  save={(data) => updateUser(data, user.id)}
-                  cancel={() => (editing = false)}
-                />
+                <div class="mx-auto max-w-lg">
+                  <UserForm
+                    {user}
+                    title="Edit user"
+                    description="Leave the password blank to keep the current one."
+                    save={(data) => updateUser(data, user.id)}
+                    cancel={() => (editing = false)}
+                  />
+                </div>
               {:else}
                 <div class="flex justify-between">
                   <!-- USER INFO CARD -->

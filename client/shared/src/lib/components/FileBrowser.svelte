@@ -18,18 +18,18 @@
     onEditRoot?: () => void;
   } = $props();
 
-  interface PendingUpload {
+  type PendingUpload = {
     id: number;
     name: string;
     loaded: number;
     total: number;
     error: string;
-  }
+  };
 
-  interface Crumb {
+  type Crumb = {
     id: string | null;
     name: string;
-  }
+  };
 
   /// How many files are sent at the same time.
   const PARALLEL_UPLOADS = 10;

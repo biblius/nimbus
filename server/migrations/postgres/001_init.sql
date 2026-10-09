@@ -8,8 +8,7 @@ CREATE TABLE users (
   role TEXT NOT NULL,
   otp_secret TEXT,
   created_at TIMESTAMPTZ NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL,
-  deleted_at TIMESTAMPTZ
+  updated_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE UNIQUE INDEX users_email_idx ON users (email)

@@ -77,6 +77,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/otp/setup/confirm", post(auth::finish_otp_setup))
         .route("/roots", get(files::roots))
         .route("/roots/{root_id}/users", get(folders::list_members))
+        .route("/roots/{root_id}/usage", get(folders::usage))
         .route("/roots/{root_id}", get(files::list_files))
         .route(
             "/roots/{root_id}",
@@ -101,7 +102,10 @@ pub fn router(state: AppState) -> Router {
             delete(users::delete_user).patch(users::update_user),
         )
         .route("/admin/roots", get(folders::list_all))
-        .route("/roots/{root_id}", put(folders::update_root))
+        .route(
+            "/roots/{root_id}",
+            put(folders::update_root).delete(folders::delete_root),
+        )
         .route("/roots/shared", post(folders::create_shared))
         .route("/roots/{root_id}/quota", put(folders::set_quota))
         .route(

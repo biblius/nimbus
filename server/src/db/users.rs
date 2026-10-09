@@ -33,13 +33,12 @@ impl UserRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn count_active_admins(&self) -> Result<i64, AppError> {
+    pub async fn count_admins(&self) -> Result<i64, AppError> {
         sqlx::query_scalar!(
             r#"
             SELECT COUNT(*) AS "count!"
             FROM users 
-            WHERE role = $1 
-            AND deleted_at IS NULL"#,
+            WHERE role = $1"#,
             Role::Admin as _
         )
         .fetch_one(&self.pool)
@@ -62,7 +61,7 @@ impl UserRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn get_active_by_id(&self, id: Uuid) -> Result<User, AppError> {
+    pub async fn get_by_id(&self, id: Uuid) -> Result<User, AppError> {
         let user = sqlx::query_as!(
             User,
             r#"
@@ -74,10 +73,9 @@ impl UserRepository {
                 role AS "role: Role",
                 otp_secret, 
                 created_at,
-                updated_at,
-                deleted_at
+                updated_at
             FROM users
-            WHERE id = $1 AND deleted_at IS NULL
+            WHERE id = $1
             "#,
             id
         )
@@ -86,7 +84,7 @@ impl UserRepository {
 
         match user {
             Some(user) => Ok(user),
-            None => Err(AppError::ResourceMissing("user not found".into())),
+            None => Err(AppError::ResourceMissing("User not found".into())),
         }
     }
 
@@ -103,8 +101,7 @@ impl UserRepository {
                 role AS "role: Role",
                 otp_secret, 
                 created_at,
-                updated_at,
-                deleted_at
+                updated_at
             FROM users
             WHERE username = $1
             "#,
@@ -128,10 +125,9 @@ impl UserRepository {
                 role AS "role: Role",
                 otp_secret,
                 created_at,
-                updated_at,
-                deleted_at
+                updated_at
             FROM users
-            WHERE email = $1 AND deleted_at IS NULL
+            WHERE email = $1
             "#,
             email
         )
@@ -141,7 +137,7 @@ impl UserRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_active(&self) -> Result<Vec<UserViewFull>, AppError> {
+    pub async fn list(&self) -> Result<Vec<UserViewFull>, AppError> {
         sqlx::query_as!(
             UserViewFull,
             r#"
@@ -154,7 +150,6 @@ impl UserRepository {
                 created_at,
                 updated_at
             FROM users
-            WHERE deleted_at IS NULL
             ORDER BY username
             "#
         )
@@ -196,8 +191,7 @@ impl UserRepository {
                 role AS "role: Role",
                 otp_secret,
                 created_at,
-                updated_at,
-                deleted_at
+                updated_at
             "#,
             id,
             user.username,
@@ -232,7 +226,7 @@ impl UserRepository {
                 role = $3,
                 password = COALESCE($4, password),
                 updated_at = $5
-            WHERE id = $6 AND deleted_at IS NULL
+            WHERE id = $6
             RETURNING
                 id,
                 username,
@@ -264,8 +258,7 @@ impl UserRepository {
                 password = $1,
                 updated_at = $2 
             WHERE 
-                id = $3 
-            AND deleted_at IS NULL"#,
+                id = $3"#,
             password,
             now,
             id
@@ -291,8 +284,7 @@ impl UserRepository {
                 otp_secret = $1,
                 updated_at = $2 
             WHERE 
-                id = $3 
-            AND deleted_at IS NULL
+                id = $3
             "#,
             secret,
             now,

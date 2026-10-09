@@ -29,16 +29,12 @@
 
   async function onSubmit(event: SubmitEvent) {
     event.preventDefault();
+
     busy = true;
     validation = undefined;
+
     try {
       await save({ username, email, role, password });
-      if (!user) {
-        username = "";
-        email = "";
-        role = "user";
-      }
-      password = "";
     } catch (cause) {
       if (cause instanceof ValidationError) {
         validation = cause;

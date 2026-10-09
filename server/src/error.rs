@@ -20,7 +20,6 @@ pub enum AuthFailure {
     CsrfHeaderNotFound,
     SessionNotFound,
     InvalidCredentials,
-    AccountDeactivated,
 }
 
 impl std::fmt::Display for AuthFailure {

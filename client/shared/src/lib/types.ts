@@ -1,16 +1,6 @@
 export type Role = "admin" | "user";
 
-export interface UserViewFull {
-  id: string;
-  username: string;
-  email: string | null;
-  role: Role;
-  otpEnabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SessionView {
+export type SessionView = {
   id: string;
   remoteAddress: string | null;
   userAgent: string | null;
@@ -19,63 +9,75 @@ export interface SessionView {
   expiresAt: string | null;
   firstLogin: boolean;
   user: UserViewFull;
-}
+};
 
-export interface UserView {
+export type UserViewFull = UserView & {
+  otpEnabled: boolean;
+  updatedAt: string;
+};
+
+export type UserView = {
   id: string;
   username: string;
   email: string | null;
   role: Role;
   createdAt: string;
-}
+};
 
 /**
  * Data used when creating or modifying a user.
  * Parameters are not allowed to be null when creating.
  * If any parameter is null when updating, left as is.
  */
-export interface UserData {
+export type UserData = {
   username?: string;
   email?: string;
   role: Role;
   password?: string;
-}
+};
 
 export type LoginResult =
   | { status: "session"; session: SessionView }
   | { status: "twoFactorRequired"; token: string };
 
-export interface Root {
+export type Root = {
   id: string;
   name: string;
   primary: boolean;
   quota: number;
   createdAt: string;
   updatedAt: string;
-}
+};
 
-/** A root as stored, without the caller's assignment flag. */
-export interface Folder {
+/** A user assigned to a root. `primary` is the owner of a private folder. */
+export type Member = {
   id: string;
-  name: string;
-  quota: number;
+  username: string;
+  email: string | null;
+  role: Role;
   createdAt: string;
-  updatedAt: string;
-}
+  primary: boolean;
+};
 
-export interface CreateUserInput {
+export type RootData = {
+  name: string;
+  quotaBytes: number;
+  members: string[];
+};
+
+export type CreateUserInput = {
   username: string;
   password: string;
   email?: string;
   role: Role;
-}
+};
 
-export interface UpdateUserInput {
+export type UpdateUserInput = {
   username: string;
   email: string | null;
   role: Role;
   password?: string;
-}
+};
 
 export type FileFamily =
   "Image" | "Audio" | "Video" | "Text" | "Doc" | "Unknown";
@@ -107,7 +109,7 @@ export type FileFormat =
   | "Pptx"
   | { Other: string };
 
-export interface FileEntry {
+export type FileEntry = {
   id: string;
   rootId: string;
   createdBy: string;
@@ -121,4 +123,4 @@ export interface FileEntry {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
-}
+};

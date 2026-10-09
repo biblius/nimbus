@@ -9,7 +9,7 @@ use crate::{
     file::model::{CreateDirectory, FileEntry, Root, RootView},
     router::{auth, files, folders, users},
     user::model::{
-        CreateSharedFolder, CreateUser, Role, SetQuota, UpdateRoot, UpdateUser, UserView,
+        CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateUser, UserView,
         UserViewFull,
     },
 };
@@ -36,8 +36,10 @@ use crate::{
         users::update_user,
         users::delete_user,
         folders::list_members,
+        folders::usage,
         folders::list_all,
         folders::update_root,
+        folders::delete_root,
         folders::create_shared,
         folders::set_quota,
         folders::assign,
@@ -71,6 +73,7 @@ use crate::{
         SetQuota,
         UpdateUser,
         UpdateRoot,
+        Member,
     ))
 )]
 pub struct ApiDoc;
