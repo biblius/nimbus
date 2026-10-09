@@ -6,22 +6,24 @@ import type { UserView } from "./types";
  * Current session state.
  */
 export const session = $state<{
+  client: NimbusClient;
+  user: UserView | null;
+  menuOpen: boolean;
+}>({
   /**
    * The Nimbus server API.
+   * Set by the app entrypoint before the router mounts.
    */
-  client: NimbusClient;
+  client: undefined!,
+
   /**
-   * The current user.
+   * The current user, set on initial page load in SessionApp.
    */
-  user: UserView | null;
+  user: null,
+
   /**
    * Whether the sidebar is open (for small screens).
    */
-  menuOpen: boolean;
-}>({
-  // Set by the app entrypoint before the router mounts.
-  client: undefined!,
-  user: null,
   menuOpen: false,
 });
 

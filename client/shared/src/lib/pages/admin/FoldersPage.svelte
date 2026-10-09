@@ -361,11 +361,14 @@
               {:else}
                 <div class="flex justify-between gap-3">
                   <div class="min-w-0 flex-1 space-y-4">
+                    <!-- ROOT CARD -->
+
                     <RootInfo
                       {folder}
                       usage={usageText(folder.id)}
                       ownerName={ownerName(folder.owner)}
                     />
+
                     {#if !folder.owner}
                       <div>
                         <p class="text-sm font-medium">Members</p>
