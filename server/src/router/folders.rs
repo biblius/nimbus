@@ -89,6 +89,23 @@ pub(crate) async fn list_shared(
 }
 
 #[utoipa::path(
+    get,
+    path = "/admin/roots/{root_id}",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    responses(
+        (status = 200, description = "Root folder", body = RootView),
+        (status = 404, description = "Folder does not exist")
+    )
+)]
+pub(crate) async fn get_root(
+    State(state): State<AppState>,
+    _admin: Session,
+    Path(root_id): Path<Uuid>,
+) -> Result<Json<RootView>, AppError> {
+    Ok(Json(state.services.users.get_root(root_id).await?))
+}
+
+#[utoipa::path(
     put,
     path = "/roots/{root_id}",
     params(("root_id" = Uuid, Path, description = "Root id")),

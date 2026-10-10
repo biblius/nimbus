@@ -353,7 +353,7 @@ mod files_service {
         let after_quota = state
             .services
             .files
-            .list_roots(&session.user)
+            .list_accessible_roots(&session.user)
             .await
             .unwrap();
         let limited = after_quota
@@ -381,7 +381,7 @@ mod files_service {
         let roots = state
             .services
             .files
-            .list_roots(&session.user)
+            .list_accessible_roots(&session.user)
             .await
             .unwrap();
         let folder = roots.iter().find(|root| root.id == shared.id).unwrap();

@@ -232,7 +232,7 @@
       </p>
     </div>
     {#if admin}
-      <a href="/admin/folders/{folder.owner ? 'private' : 'shared'}{folder.id}"
+      <a href="/admin/folders/{folder.owner ? 'private' : 'shared'}/{folder.id}"
         ><ExternalLink size={16} /></a
       >
     {/if}

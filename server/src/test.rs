@@ -230,7 +230,7 @@ pub async fn private_root(state: &TestState, user: &User) -> Uuid {
     state
         .services
         .files
-        .list_roots(user)
+        .list_accessible_roots(user)
         .await
         .unwrap()
         .into_iter()

@@ -53,7 +53,7 @@ impl FileService {
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
-    pub async fn list_roots(&self, user: &User) -> Result<Vec<RootView>, AppError> {
+    pub async fn list_accessible_roots(&self, user: &User) -> Result<Vec<RootView>, AppError> {
         self.files.list_accessible_roots(user.id).await
     }
 
@@ -74,7 +74,7 @@ impl FileService {
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
-    pub async fn list_directory(
+    pub async fn list(
         &self,
         user: &User,
         root_id: Uuid,

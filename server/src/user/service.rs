@@ -263,6 +263,24 @@ impl UserService {
     }
 
     #[instrument(skip(self), err(Debug))]
+    pub async fn get_root(&self, id: Uuid) -> Result<RootView, AppError> {
+        let root = self
+            .files
+            .get_root(id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))?;
+
+        Ok(RootView {
+            id: root.id,
+            name: root.name,
+            quota: root.quota,
+            owner: root.owner,
+            created_at: root.created_at,
+            updated_at: root.updated_at,
+        })
+    }
+
+    #[instrument(skip(self), err(Debug))]
     pub async fn update_root(&self, id: Uuid, mut input: UpdateRoot) -> Result<RootView, AppError> {
         input.validify()?;
         FileEntry::valid_name(&input.name)?;

@@ -12,8 +12,14 @@ export const { navigate, route, isActive } = createRouter({
     "/admin": {
       "/users": () => import("./pages/admin/UsersPage.svelte"),
       "/folders": {
-        "/private": () => import("./pages/admin/FoldersPage.svelte"),
-        "/shared": () => import("./pages/admin/FoldersPage.svelte"),
+        "/private": {
+          "/": () => import("./pages/admin/FoldersPage.svelte"),
+          "/:folderId": () => import("./pages/admin/FolderPage.svelte"),
+        },
+        "/shared": {
+          "/": () => import("./pages/admin/FoldersPage.svelte"),
+          "/:folderId": () => import("./pages/admin/FolderPage.svelte"),
+        },
       },
       layout: () => import("./pages/admin/AdminLayout.svelte"),
     },

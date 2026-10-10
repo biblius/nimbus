@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import { ApiError, ValidationError } from "../../api";
   import { formatQuota } from "../../format";
+  import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import type { Member, Root, RootData, UserViewFull } from "../../types";
   import Button from "../ui/button/button.svelte";
@@ -11,7 +12,6 @@
     title,
     description,
     folder,
-    users,
     members = [],
     save,
     cancel,
@@ -19,11 +19,14 @@
     title: string;
     description: string;
     folder?: Root;
-    users: UserViewFull[];
     members?: Member[];
     save: (root: RootData) => Promise<void>;
     cancel?: () => void;
   } = $props();
+
+  let users = $state<UserViewFull[]>([]);
+  let usersLoaded = $state(false);
+  let usersFailed = $state(false);
 
   let name = $state(untrack(() => folder?.name ?? ""));
   let quota = $state(untrack(() => (folder ? String(folder.quota) : "0")));
@@ -33,6 +36,28 @@
   let busy = $state(false);
 
   const privateFolder = $derived(folder?.owner != null);
+
+  $effect(() => {
+    if (privateFolder) return;
+
+    untrack(() => {
+      session.client
+        .listUsers()
+        .then((people) => {
+          users = people;
+          usersLoaded = true;
+        })
+        .catch((cause) => {
+          usersLoaded = true;
+          usersFailed = true;
+          toastError(
+            cause instanceof TypeError
+              ? "The server could not be reached"
+              : "Could not load users",
+          );
+        });
+    });
+  });
 
   const quotaPreview = $derived.by(() => {
     if (!/^\d+$/.test(quota.trim())) return "";
@@ -117,7 +142,11 @@
   {#if !privateFolder}
     <fieldset class="space-y-2">
       <legend class="text-sm leading-none font-medium">Members</legend>
-      {#if users.length === 0}
+      {#if !usersLoaded}
+        <p class="text-sm text-muted-foreground">Loading…</p>
+      {:else if usersFailed}
+        <p class="text-sm text-muted-foreground">Could not load users.</p>
+      {:else if users.length === 0}
         <p class="text-sm text-muted-foreground">No users to assign.</p>
       {:else}
         <ul class="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">

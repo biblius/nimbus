@@ -1,22 +1,49 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { session } from "../../session.svelte";
+  import { toastError } from "../../toast";
   import type { Member } from "../../types";
 
   let {
-    members,
-    membersLoaded = $bindable(),
-  }: { members: Member[]; membersLoaded: boolean } = $props();
+    folderId,
+    members = $bindable(null),
+  }: { folderId: string; members?: Member[] | null } = $props();
+
+  let failed = $state(false);
+
+  onMount(() => {
+    session.client
+      .listMembers(folderId)
+      .then((next) => {
+        members = next;
+      })
+      .catch((cause) => {
+        failed = true;
+        toastError(
+          cause instanceof TypeError
+            ? "The server could not be reached"
+            : "Could not load members",
+        );
+      });
+  });
 </script>
 
 <div class="space-y-1.5">
   <p class="text-sm font-medium">
     Members
-    {#if membersLoaded}
+    {#if members}
       <span class="font-normal text-muted-foreground">
         {members.length}
       </span>
     {/if}
   </p>
-  {#if !membersLoaded}
+  {#if failed}
+    <p
+      class="rounded-lg border bg-card px-3 py-2 text-sm text-muted-foreground"
+    >
+      Could not load members.
+    </p>
+  {:else if !members}
     <p
       class="rounded-lg border bg-card px-3 py-2 text-sm text-muted-foreground"
     >

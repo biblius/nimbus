@@ -78,7 +78,7 @@ pub fn router(state: AppState) -> Router {
         .route("/roots", get(files::roots))
         .route("/roots/{root_id}/users", get(folders::list_members))
         .route("/roots/{root_id}/usage", get(folders::usage))
-        .route("/roots/{root_id}", get(files::list_files))
+        .route("/roots/{root_id}", get(files::list))
         .route(
             "/roots/{root_id}",
             post(files::upload).layer(DefaultBodyLimit::max(upload_max)),
@@ -103,6 +103,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/admin/roots/private", get(folders::list_private))
         .route("/admin/roots/shared", get(folders::list_shared))
+        .route("/admin/roots/{root_id}", get(folders::get_root))
         .route(
             "/roots/{root_id}",
             put(folders::update_root).delete(folders::delete_root),

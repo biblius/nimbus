@@ -279,6 +279,10 @@ export class NimbusClient {
     return this.request<Root[]>("/admin/roots/shared");
   }
 
+  getFolder(id: string): Promise<Root> {
+    return this.request<Root>(`/admin/roots/${encodeURIComponent(id)}`);
+  }
+
   createFolder(input: RootData): Promise<Root> {
     return this.request<Root>("/roots/shared", {
       method: "POST",

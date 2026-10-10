@@ -30,7 +30,13 @@ pub(crate) async fn roots(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Json<Vec<RootView>>, AppError> {
-    Ok(Json(state.services.files.list_roots(&session.user).await?))
+    Ok(Json(
+        state
+            .services
+            .files
+            .list_accessible_roots(&session.user)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -42,7 +48,7 @@ pub(crate) async fn roots(
     ),
     responses((status = 200, description = "Children of the directory", body = Vec<FileEntry>))
 )]
-pub(crate) async fn list_files(
+pub(crate) async fn list(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
     session: Session,
@@ -52,7 +58,7 @@ pub(crate) async fn list_files(
         state
             .services
             .files
-            .list_directory(&session.user, root_id, query.parent)
+            .list(&session.user, root_id, query.parent)
             .await?,
     ))
 }

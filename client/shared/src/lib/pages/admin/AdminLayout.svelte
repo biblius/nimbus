@@ -61,12 +61,12 @@
           {#each folderLinks as link (link.href)}
             <a
               href={link.href}
-              class="flex min-h-11 items-center rounded-md pr-3 pl-6 text-left text-sm {isActive(
+              class="flex min-h-11 items-center rounded-md pr-3 pl-6 text-left text-sm {isActive.startsWith(
                 link.href,
               )
                 ? 'bg-accent font-medium text-accent-foreground'
                 : 'hover:bg-accent'}"
-              aria-current={isActive(link.href) ? "page" : undefined}
+              aria-current={isActive.startsWith(link.href) ? "page" : undefined}
               onclick={() => (session.menuOpen = false)}
             >
               {link.label}
