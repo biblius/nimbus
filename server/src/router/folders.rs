@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
 };
 use uuid::Uuid;
@@ -9,8 +9,9 @@ use crate::{
     auth::session::Session,
     error::AppError,
     file::model::RootView,
+    model::{List, PaginationSort},
     state::AppState,
-    user::model::{CreateSharedFolder, Member, SetQuota, UpdateRoot},
+    user::model::{CreateSharedFolder, Member, SetQuota, UpdateRoot, UserSearch, UserSort},
 };
 
 #[utoipa::path(
@@ -39,19 +40,40 @@ pub(crate) async fn list_members(
     State(state): State<AppState>,
     session: Session,
     Path(root_id): Path<Uuid>,
+    Query(pagination): Query<PaginationSort<UserSort, UserSearch>>,
+) -> Result<Json<List<Member>>, AppError> {
+    Ok(Json(
+        state
+            .services
+            .users
+            .list_members(&session.user, root_id, pagination)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/roots/{root_id}/users/all",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    responses((status = 200, description = "Every user assigned to the root", body = Vec<Member>))
+)]
+pub(crate) async fn list_all_members(
+    State(state): State<AppState>,
+    session: Session,
+    Path(root_id): Path<Uuid>,
 ) -> Result<Json<Vec<Member>>, AppError> {
     Ok(Json(
         state
             .services
             .users
-            .list_members(&session.user, root_id)
+            .list_all_members(&session.user, root_id)
             .await?,
     ))
 }
 
 #[utoipa::path(
     post,
-    path = "/roots/shared",
+    path = "/admin/roots/shared",
     request_body = CreateSharedFolder,
     responses((status = 201, description = "Shared root folder created", body = RootView))
 )]
@@ -107,7 +129,7 @@ pub(crate) async fn get_root(
 
 #[utoipa::path(
     put,
-    path = "/roots/{root_id}",
+    path = "/admin/roots/{root_id}",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = UpdateRoot,
     responses((status = 200, description = "Root name, quota, and members updated", body = RootView))
@@ -125,7 +147,7 @@ pub(crate) async fn update_root(
 
 #[utoipa::path(
     put,
-    path = "/roots/{root_id}/quota",
+    path = "/admin/roots/{root_id}/quota",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = SetQuota,
     responses((status = 200, description = "Quota updated"))
@@ -142,7 +164,7 @@ pub(crate) async fn set_quota(
 
 #[utoipa::path(
     delete,
-    path = "/roots/{root_id}",
+    path = "/admin/roots/{root_id}",
     params(("root_id" = Uuid, Path, description = "Root id")),
     responses((status = 204, description = "Shared root and its files removed"))
 )]
@@ -157,7 +179,7 @@ pub(crate) async fn delete_root(
 
 #[utoipa::path(
     post,
-    path = "/roots/{root_id}/users/{user_id}",
+    path = "/admin/roots/{root_id}/users/{user_id}",
     params(
         ("root_id" = Uuid, Path, description = "Root id"),
         ("user_id" = Uuid, Path, description = "User id")
@@ -175,7 +197,7 @@ pub(crate) async fn assign(
 
 #[utoipa::path(
     delete,
-    path = "/roots/{root_id}/users/{user_id}",
+    path = "/admin/roots/{root_id}/users/{user_id}",
     params(
         ("root_id" = Uuid, Path, description = "Root id"),
         ("user_id" = Uuid, Path, description = "User id")

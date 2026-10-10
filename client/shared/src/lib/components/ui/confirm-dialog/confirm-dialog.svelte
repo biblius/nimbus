@@ -22,10 +22,14 @@
   let dialog = $state<HTMLDivElement | null>(null);
 
   $effect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
     dialog?.focus();
     const onKeydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onCancel();
+      if (event.key === "Escape" && !busy) {
+        onCancel();
+      }
     };
     window.addEventListener("keydown", onKeydown);
     return () => window.removeEventListener("keydown", onKeydown);

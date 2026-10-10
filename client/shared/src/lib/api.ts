@@ -3,6 +3,7 @@ import type {
   FileEntry,
   LoginResult,
   Member,
+  Page,
   Root,
   RootData,
   UserData,
@@ -58,7 +59,9 @@ export class ValidationError extends Error {
    */
   field(name: string): ValidationField | undefined {
     for (const item of this.body.body ?? []) {
-      if ("Field" in item && item.Field.field === name) return item.Field;
+      if ("Field" in item && item.Field.field === name) {
+        return item.Field;
+      }
     }
   }
 }
@@ -163,7 +166,9 @@ export class NimbusClient {
   ): Promise<FileEntry> {
     const body = new FormData();
 
-    if (parent) body.set("parent", parent);
+    if (parent) {
+      body.set("parent", parent);
+    }
 
     body.set("file", file);
 
@@ -178,7 +183,9 @@ export class NimbusClient {
       xhr.setRequestHeader("X-NIMBUS-CSRF", "1");
 
       xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+        if (event.lengthComputable) {
+          onProgress?.(event.loaded, event.total);
+        }
       };
 
       xhr.onload = () => {
@@ -248,25 +255,25 @@ export class NimbusClient {
   }
 
   listUsers(): Promise<UserViewFull[]> {
-    return this.request<UserViewFull[]>("/users");
+    return this.request<UserViewFull[]>("/admin/users");
   }
 
   createUser(input: CreateUserInput): Promise<UserViewFull> {
-    return this.request<UserViewFull>("/users", {
+    return this.request<UserViewFull>("/admin/users", {
       method: "POST",
       body: JSON.stringify(input),
     });
   }
 
   updateUser(id: string, input: UserData): Promise<UserView> {
-    return this.request<UserView>(`/users/${encodeURIComponent(id)}`, {
+    return this.request<UserView>(`/admin/users/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(input),
     });
   }
 
   deleteUser(id: string): Promise<void> {
-    return this.request<void>(`/users/${encodeURIComponent(id)}`, {
+    return this.request<void>(`/admin/users/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
   }
@@ -284,27 +291,41 @@ export class NimbusClient {
   }
 
   createFolder(input: RootData): Promise<Root> {
-    return this.request<Root>("/roots/shared", {
+    return this.request<Root>("/admin/roots/shared", {
       method: "POST",
       body: JSON.stringify(input),
     });
   }
 
   updateFolder(id: string, input: RootData): Promise<Root> {
-    return this.request<Root>(`/roots/${encodeURIComponent(id)}`, {
+    return this.request<Root>(`/admin/roots/${encodeURIComponent(id)}`, {
       method: "PUT",
       body: JSON.stringify(input),
     });
   }
 
   deleteFolder(id: string): Promise<void> {
-    return this.request<void>(`/roots/${encodeURIComponent(id)}`, {
+    return this.request<void>(`/admin/roots/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
   }
 
-  listMembers(id: string): Promise<Member[]> {
-    return this.request<Member[]>(`/roots/${encodeURIComponent(id)}/users`);
+  listAllMembers(id: string): Promise<Member[]> {
+    return this.request<Member[]>(`/roots/${encodeURIComponent(id)}/users/all`);
+  }
+
+  listMembers(
+    id: string,
+    page: number,
+    perPage: number,
+  ): Promise<Page<Member>> {
+    const query = new URLSearchParams({
+      page: String(page),
+      perPage: String(perPage),
+    });
+    return this.request<Page<Member>>(
+      `/roots/${encodeURIComponent(id)}/users?${query}`,
+    );
   }
 
   folderUsage(id: string): Promise<number> {

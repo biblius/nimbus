@@ -41,10 +41,11 @@
   let ticket = 0;
   let descendants = $state<Crumb[]>([]);
 
-  const trail = $derived([
-    { id: null as string | null, name: folder.name },
-    ...descendants,
-  ]);
+  const trail = $derived.by(() => {
+    const crumbs: Crumb[] = [{ id: null, name: folder.name }];
+    for (const crumb of descendants) crumbs.push(crumb);
+    return crumbs;
+  });
   const here = $derived(trail[trail.length - 1]);
 
   $effect(() => {
@@ -57,10 +58,14 @@
     const currentTicket = ++ticket;
     try {
       const next = await client.list(rootId, parent);
-      if (currentTicket !== ticket) return;
+      if (currentTicket !== ticket) {
+        return;
+      }
       entries = next;
     } catch (cause) {
-      if (currentTicket !== ticket) return;
+      if (currentTicket !== ticket) {
+        return;
+      }
       entries = [];
       toastError(
         cause instanceof TypeError
@@ -72,9 +77,14 @@
 
   async function upload(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
-    const files = [...(input.files ?? [])];
+    const files: File[] = [];
+    if (input.files) {
+      for (const file of input.files) files.push(file);
+    }
     input.value = "";
-    if (files.length === 0) return;
+    if (files.length === 0) {
+      return;
+    }
 
     const rootId = folder.id;
     const parent = here.id;
@@ -106,9 +116,12 @@
                 item.total = total;
               },
             );
-            pending = pending.filter((entry) => entry.id !== item.id);
+            const index = pending.findIndex((entry) => entry.id === item.id);
+            if (index !== -1) {
+              pending.splice(index, 1);
+            }
             if (folder.id === rootId && here.id === parent) {
-              entries = [...entries, created];
+              entries.push(created);
             }
           } catch (cause) {
             if (cause instanceof TypeError) {
@@ -130,7 +143,9 @@
   }
 
   function percent(item: PendingUpload) {
-    if (item.total <= 0) return 0;
+    if (item.total <= 0) {
+      return 0;
+    }
     return Math.min(100, Math.round((item.loaded / item.total) * 100));
   }
 
@@ -147,7 +162,7 @@
       );
       directoryName = "";
       if (folder.id === rootId && here.id === parent) {
-        entries = [...entries, created];
+        entries.push(created);
       }
     } catch (cause) {
       if (cause instanceof ValidationError) {
@@ -343,10 +358,7 @@
               type="button"
               class="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium"
               onclick={() => {
-                descendants = [
-                  ...descendants,
-                  { id: entry.id, name: entry.name },
-                ];
+                descendants.push({ id: entry.id, name: entry.name });
                 void load(folder.id, entry.id);
               }}
             >

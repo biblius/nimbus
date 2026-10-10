@@ -28,7 +28,9 @@ export function formatQuota(bytes: number): string {
 export function formatDatetime(iso: string): string {
   const date = new Date(iso);
 
-  if (Number.isNaN(date.getTime())) return iso;
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
 
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",

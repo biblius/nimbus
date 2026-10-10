@@ -50,6 +50,12 @@ export type Root = {
   updatedAt: string;
 };
 
+/** One page from a paginated list. */
+export type Page<T> = {
+  total: number;
+  items: T[];
+};
+
 /** A user assigned to a shared root. */
 export type Member = {
   id: string;

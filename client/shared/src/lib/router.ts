@@ -13,11 +13,11 @@ export const { navigate, route, isActive } = createRouter({
       "/users": () => import("./pages/admin/UsersPage.svelte"),
       "/folders": {
         "/private": {
-          "/": () => import("./pages/admin/FoldersPage.svelte"),
+          "/": () => import("./pages/admin/PrivateFoldersPage.svelte"),
           "/:folderId": () => import("./pages/admin/FolderPage.svelte"),
         },
         "/shared": {
-          "/": () => import("./pages/admin/FoldersPage.svelte"),
+          "/": () => import("./pages/admin/SharedFoldersPage.svelte"),
           "/:folderId": () => import("./pages/admin/FolderPage.svelte"),
         },
       },

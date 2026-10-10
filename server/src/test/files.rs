@@ -4,6 +4,7 @@ mod files_service {
     use crate::{
         error::{AppError, AuthFailure},
         file::model::CreateDirectory,
+        model::PaginationSort,
         test::{self, TestState},
         user::model::{CreateSharedFolder, CreateUser, Role, SetQuota, UpdateRoot, User},
     };
@@ -416,10 +417,11 @@ mod files_service {
         let members = state
             .services
             .users
-            .list_members(&session.user, root)
+            .list_members(&session.user, root, PaginationSort::default())
             .await
             .unwrap();
-        assert!(members.is_empty());
+        assert!(members.items.is_empty());
+        assert_eq!(members.total, 0);
         assert_eq!(
             count!(
                 state,

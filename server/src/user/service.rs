@@ -11,9 +11,10 @@ use crate::{
         service::FileService,
         storage::Storage,
     },
+    model::{List, PaginationSort},
     user::model::{
         CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateUser, User,
-        UserView, UserViewFull,
+        UserSearch, UserSort, UserView, UserViewFull,
     },
 };
 use std::collections::HashSet;
@@ -389,6 +390,26 @@ impl UserService {
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn list_members(
+        &self,
+        user: &User,
+        folder_id: Uuid,
+        pagination: PaginationSort<UserSort, UserSearch>,
+    ) -> Result<List<Member>, AppError> {
+        pagination.validate()?;
+
+        if user.role != Role::Admin && !self.folders.can_access(user.id, folder_id).await? {
+            return Err(AppError::Forbidden(
+                "You do not have access to this folder".into(),
+            ));
+        }
+
+        self.folders
+            .list_users_in_paginated(folder_id, pagination)
+            .await
+    }
+
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
+    pub async fn list_all_members(
         &self,
         user: &User,
         folder_id: Uuid,

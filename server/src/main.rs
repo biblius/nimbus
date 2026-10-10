@@ -5,6 +5,7 @@ mod db;
 mod email;
 mod error;
 mod file;
+mod model;
 mod router;
 mod state;
 mod user;

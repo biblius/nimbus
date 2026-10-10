@@ -32,11 +32,17 @@
 
 <svelte:window
   onclick={(event) => {
-    if (!accountOpen || !accountMenu) return;
-    if (!accountMenu.contains(event.target as Node)) closeAccount();
+    if (!accountOpen || !accountMenu) {
+      return;
+    }
+    if (!accountMenu.contains(event.target as Node)) {
+      closeAccount();
+    }
   }}
   onkeydown={(event) => {
-    if (event.key === "Escape") closeAccount();
+    if (event.key === "Escape") {
+      closeAccount();
+    }
   }}
 />
 

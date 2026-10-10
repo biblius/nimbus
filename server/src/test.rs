@@ -9,6 +9,7 @@
 
 mod auth;
 mod files;
+mod members;
 mod smoke;
 
 use crate::{

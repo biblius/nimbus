@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 #[utoipa::path(
     post,
-    path = "/users",
+    path = "/admin/users",
     request_body = CreateUser,
     responses((status = 201, description = "User and private folder created", body = UserViewFull))
 )]
@@ -28,7 +28,7 @@ pub(crate) async fn create_user(
 
 #[utoipa::path(
     get,
-    path = "/users",
+    path = "/admin/users",
     responses((status = 200, description = "Active users", body = Vec<UserViewFull>))
 )]
 pub(crate) async fn list_users(
@@ -40,7 +40,7 @@ pub(crate) async fn list_users(
 
 #[utoipa::path(
     patch,
-    path = "/users/{id}",
+    path = "/admin/users/{id}",
     params(("id" = Uuid, Path, description = "User id")),
     request_body = UpdateUser,
     responses((status = 200, description = "User updated", body = UserView))
@@ -58,7 +58,7 @@ pub(crate) async fn update_user(
 
 #[utoipa::path(
     delete,
-    path = "/users/{id}",
+    path = "/admin/users/{id}",
     params(("id" = Uuid, Path, description = "User id")),
     responses((status = 204, description = "User removed"))
 )]

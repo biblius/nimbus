@@ -1,65 +1,76 @@
 <script lang="ts">
-  import { untrack } from "svelte";
-  import FolderListItem from "../../components/folder/FolderListItem.svelte";
-  import RootForm from "../../components/folder/RootForm.svelte";
-  import Button from "../../components/ui/button/button.svelte";
-  import Plus from "../../components/ui/plus/plus.svelte";
-  import { route } from "../../router";
+  import { onMount } from "svelte";
+  import FolderListItem from "./FolderListItem.svelte";
+  import SharedRootForm from "./SharedRootForm.svelte";
+  import Button from "../ui/button/button.svelte";
+  import Plus from "../ui/plus/plus.svelte";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import type { Root, RootData } from "../../types";
 
-  let folders = $state<Root[]>([]);
-  let shared = $state(false);
+  let {
+    shared = false,
+    load,
+  }: {
+    shared?: boolean;
+    load: () => Promise<Root[]>;
+  } = $props();
+
+  let folders = $state<Root[] | null>(null);
+  let failed = $state(false);
   let creating = $state(false);
 
   function reset() {
     creating = false;
   }
 
-  async function load() {
-    const isShared = shared;
-    const roots = isShared
-      ? await session.client.listSharedFolders()
-      : await session.client.listPrivateFolders();
-
-    if (isShared !== shared) return;
-
-    folders = roots;
-  }
-
-  $effect(() => {
-    const isShared = route.pathname === "/admin/folders/shared";
-    untrack(() => {
-      shared = isShared;
-      reset();
-      load().catch((cause) => {
+  onMount(() => {
+    load()
+      .then((roots) => {
+        folders = roots;
+      })
+      .catch((cause) => {
+        failed = true;
         toastError(
           cause instanceof TypeError
             ? "The server could not be reached"
             : "Could not load folders",
         );
       });
-    });
   });
 
   async function createRoot(data: RootData) {
     const created = await session.client.createFolder(data);
 
-    folders = [created, ...folders];
+    if (!folders) {
+      folders = [];
+    }
+    folders.unshift(created);
 
     reset();
   }
 
   function updateFolder(updated: Root) {
-    folders = [
-      updated,
-      ...folders.filter((folder) => folder.id !== updated.id),
-    ];
+    if (!folders) {
+      folders = [];
+    }
+
+    const index = folders.findIndex((folder) => folder.id === updated.id);
+    if (index !== -1) {
+      folders.splice(index, 1);
+    }
+    folders.unshift(updated);
   }
 
   function removeFolder(removed: Root) {
-    folders = folders.filter((folder) => folder.id !== removed.id);
+    if (!folders) {
+      return;
+    }
+
+    const index = folders.findIndex((folder) => folder.id === removed.id);
+    if (index !== -1) {
+      folders.splice(index, 1);
+    }
   }
 </script>
 
@@ -86,7 +97,7 @@
 
   {#if creating}
     <div class="mx-auto max-w-lg">
-      <RootForm
+      <SharedRootForm
         title="Add folder"
         description="A quota of 0 means unlimited. Choose who can use this shared folder."
         save={createRoot}
@@ -95,7 +106,11 @@
     </div>
   {/if}
 
-  {#if folders.length === 0}
+  {#if failed}
+    <p class="text-sm text-muted-foreground">Could not load folders.</p>
+  {:else if !folders}
+    <p class="text-sm text-muted-foreground">Loading…</p>
+  {:else if folders.length === 0}
     <p class="text-sm text-muted-foreground">
       {shared ? "No shared folders yet." : "No private folders yet."}
     </p>

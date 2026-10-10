@@ -13,7 +13,7 @@
   import UserInfo from "../../components/user/UserInfo.svelte";
 
   /**
-   * Users listed from /users.
+   * Users listed from /admin/users.
    */
   let users = $state<UserViewFull[]>([]);
 
@@ -53,7 +53,9 @@
   async function load() {
     const next = await session.client.listUsers();
     users = next;
-    if (selectedId && !next.some((user) => user.id === selectedId)) reset();
+    if (selectedId && !next.some((user) => user.id === selectedId)) {
+      reset();
+    }
   }
 
   onMount(() => {
@@ -63,7 +65,9 @@
   });
 
   async function createUser(data: UserData) {
-    if (!data.email) data.email = undefined;
+    if (!data.email) {
+      data.email = undefined;
+    }
 
     const created = await session.client.createUser({
       username: data.username?.trim() ?? "",
@@ -72,7 +76,7 @@
       role: data.role,
     });
 
-    users = [...users, created];
+    users.push(created);
     reset();
   }
 
@@ -84,16 +88,21 @@
       password: data.password || undefined,
     });
 
-    users = users.map((user) =>
-      user.id === updated.id ? { ...user, ...updated } : user,
-    );
-    if (session.user?.id === updated.id) session.user = updated;
+    const index = users.findIndex((user) => user.id === updated.id);
+    if (index !== -1) {
+      users[index] = { ...users[index], ...updated };
+    }
+    if (session.user?.id === updated.id) {
+      session.user = updated;
+    }
 
     editing = false;
   }
 
   async function confirmDelete() {
-    if (!deleteUser || deleting) return;
+    if (!deleteUser || deleting) {
+      return;
+    }
 
     const userId = deleteUser.id;
 
@@ -102,7 +111,10 @@
     try {
       await session.client.deleteUser(userId);
 
-      users = users.filter((user) => user.id !== userId);
+      const index = users.findIndex((user) => user.id === userId);
+      if (index !== -1) {
+        users.splice(index, 1);
+      }
 
       deleteUser = null;
 
@@ -258,7 +270,9 @@
     : "Delete"}
   busy={deleting}
   onCancel={() => {
-    if (!deleting) deleteUser = null;
+    if (!deleting) {
+      deleteUser = null;
+    }
   }}
   onConfirm={confirmDelete}
 />

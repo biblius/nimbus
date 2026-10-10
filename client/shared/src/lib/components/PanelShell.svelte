@@ -17,7 +17,9 @@
 
 <svelte:window
   onkeydown={(event) => {
-    if (event.key === "Escape" && open) open = false;
+    if (event.key === "Escape" && open) {
+      open = false;
+    }
   }}
 />
 

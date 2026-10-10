@@ -6,6 +6,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validify::{Validate, ValidationError, Validify, field_err};
 
+use crate::{search_column, sort_column};
+
 /// User row, including secrets. Never serialize this to a client.
 #[derive(Debug, Clone)]
 pub struct User {
@@ -110,6 +112,19 @@ impl Display for Role {
     }
 }
 
+sort_column! {
+    UserSort,
+    Username => "username",
+    CreatedAt => "created_at",
+    UpdatedAt => "updated_at"
+}
+
+search_column! {
+    UserSearch,
+    Username => "username",
+    Email => "email"
+}
+
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUser {
@@ -193,7 +208,7 @@ pub struct UpdateRoot {
 }
 
 /// A user assigned to a shared root.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct Member {
     pub id: Uuid,

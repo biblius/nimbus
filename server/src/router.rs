@@ -77,6 +77,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/otp/setup/confirm", post(auth::finish_otp_setup))
         .route("/roots", get(files::roots))
         .route("/roots/{root_id}/users", get(folders::list_members))
+        .route("/roots/{root_id}/users/all", get(folders::list_all_members))
         .route("/roots/{root_id}/usage", get(folders::usage))
         .route("/roots/{root_id}", get(files::list))
         .route(
@@ -101,14 +102,17 @@ pub fn router(state: AppState) -> Router {
             "/users/{id}",
             delete(users::delete_user).patch(users::update_user),
         )
-        .route("/admin/roots/private", get(folders::list_private))
-        .route("/admin/roots/shared", get(folders::list_shared))
-        .route("/admin/roots/{root_id}", get(folders::get_root))
+        .route("/roots/private", get(folders::list_private))
+        .route(
+            "/roots/shared",
+            get(folders::list_shared).post(folders::create_shared),
+        )
         .route(
             "/roots/{root_id}",
-            put(folders::update_root).delete(folders::delete_root),
+            get(folders::get_root)
+                .put(folders::update_root)
+                .delete(folders::delete_root),
         )
-        .route("/roots/shared", post(folders::create_shared))
         .route("/roots/{root_id}/quota", put(folders::set_quota))
         .route(
             "/roots/{root_id}/users/{user_id}",
@@ -123,7 +127,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(public)
         .merge(session)
-        .merge(admin)
+        .nest("/admin", admin)
         .route("/_health", get(health))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(cors)

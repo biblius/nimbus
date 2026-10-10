@@ -13,7 +13,9 @@
 
   $effect(() => {
     // Ensure non-admins get redirected back to the users page
-    if (session.user?.role !== "admin") navigate("/", { replace: true });
+    if (session.user?.role !== "admin") {
+      navigate("/", { replace: true });
+    }
   });
 </script>
 

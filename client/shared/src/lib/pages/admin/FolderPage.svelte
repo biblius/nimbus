@@ -3,15 +3,15 @@
   import { untrack } from "svelte";
   import { ApiError } from "../../api";
   import MemberInfo from "../../components/folder/MemberInfo.svelte";
-  import RootForm from "../../components/folder/RootForm.svelte";
-  import RootInfo from "../../components/folder/RootInfo.svelte";
+  import PrivateRootForm from "../../components/folder/PrivateRootForm.svelte";
+  import SharedRootForm from "../../components/folder/SharedRootForm.svelte";
   import Button from "../../components/ui/button/button.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
-  import { formatBytes, formatQuota } from "../../format";
+  import { formatBytes, formatDatetime, formatQuota } from "../../format";
   import { navigate, route } from "../../router";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
-  import type { Member, Root, RootData } from "../../types";
+  import type { Root, RootData } from "../../types";
 
   /**
    * The currently viewed folder.
@@ -25,7 +25,6 @@
 
   let notFound = $state(false);
   let failed = $state(false);
-  let members = $state<Member[] | null>(null);
   let editing = $state(false);
   let deleteOpen = $state(false);
   let deleting = $state(false);
@@ -40,7 +39,9 @@
   }
 
   function usageText() {
-    if (usage === undefined) return "…";
+    if (usage === undefined) {
+      return "…";
+    }
     return usage == null ? "-" : formatBytes(usage);
   }
 
@@ -50,26 +51,33 @@
     folder = null;
     editing = false;
     deleteOpen = false;
-    members = null;
     usage = undefined;
 
     try {
       const loaded = await session.client.getFolder(id);
 
-      if (route.params.folderId !== id) return;
+      if (route.params.folderId !== id) {
+        return;
+      }
 
       folder = loaded;
 
       session.client
         .folderUsage(id)
         .then((bytes) => {
-          if (route.params.folderId === id) usage = bytes;
+          if (route.params.folderId === id) {
+            usage = bytes;
+          }
         })
         .catch(() => {
-          if (route.params.folderId === id) usage = null;
+          if (route.params.folderId === id) {
+            usage = null;
+          }
         });
     } catch (cause) {
-      if (route.params.folderId !== id) return;
+      if (route.params.folderId !== id) {
+        return;
+      }
 
       if (cause instanceof ApiError && cause.status === 404) {
         notFound = true;
@@ -89,23 +97,28 @@
   $effect(() => {
     const id = route.params.folderId;
 
-    if (!id) return;
+    if (!id) {
+      return;
+    }
 
     untrack(() => load(id));
   });
 
   async function updateRoot(data: RootData) {
-    if (!folder) return;
+    if (!folder) {
+      return;
+    }
 
     const updated = await session.client.updateFolder(folder.id, data);
 
     folder = updated;
-    members = null;
     editing = false;
   }
 
   async function confirmDelete() {
-    if (!folder || deleting) return;
+    if (!folder || deleting) {
+      return;
+    }
 
     deleting = true;
 
@@ -152,25 +165,58 @@
     <p class="text-sm text-muted-foreground">Loading…</p>
   {:else if editing}
     <div class="mx-auto max-w-lg">
-      <RootForm
-        {folder}
-        members={members ?? []}
-        title="Edit folder"
-        description={shared
-          ? "Choose who can use this shared folder."
-          : "A private folder stays with its owner."}
-        save={updateRoot}
-        cancel={() => (editing = false)}
-      />
+      {#if shared}
+        <SharedRootForm
+          {folder}
+          title="Edit folder"
+          description="Choose who can use this shared folder."
+          save={updateRoot}
+          cancel={() => (editing = false)}
+        />
+      {:else}
+        <PrivateRootForm
+          {folder}
+          title="Edit folder"
+          description="A private folder stays with its owner."
+          save={updateRoot}
+          cancel={() => (editing = false)}
+        />
+      {/if}
     </div>
   {:else}
     <div class="rounded-lg border bg-muted/30 p-3">
       <div class="flex justify-between gap-3">
         <div class="min-w-0 flex-1 space-y-4">
-          <RootInfo {folder} usage={usageText()} />
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <dl
+              class="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm"
+            >
+              <dt class="text-muted-foreground">ID</dt>
+              <dd class="truncate font-mono text-xs leading-5">{folder.id}</dd>
+              <dt class="text-muted-foreground">Name</dt>
+              <dd class="truncate">{folder.name}</dd>
+              {#if folder.owner}
+                <dt class="text-muted-foreground">Owner</dt>
+                <dd class="truncate font-mono text-xs leading-5">
+                  {folder.owner}
+                </dd>
+              {:else}
+                <dt class="text-muted-foreground">Type</dt>
+                <dd>Shared</dd>
+              {/if}
+              <dt class="text-muted-foreground">Quota</dt>
+              <dd>{formatQuota(folder.quota)}</dd>
+              <dt class="text-muted-foreground">Usage</dt>
+              <dd>{usage}</dd>
+              <dt class="text-muted-foreground">Created</dt>
+              <dd>{formatDatetime(folder.createdAt)}</dd>
+              <dt class="text-muted-foreground">Updated</dt>
+              <dd>{formatDatetime(folder.updatedAt)}</dd>
+            </dl>
+          </div>
 
           {#if shared}
-            <MemberInfo folderId={folder.id} bind:members />
+            <MemberInfo folderId={folder.id} />
           {/if}
         </div>
         <div class="flex flex-col self-stretch">
@@ -181,7 +227,6 @@
             class="size-8 p-0"
             aria-label="Edit folder"
             title="Edit folder"
-            disabled={shared && members == null}
             onclick={() => (editing = true)}
           >
             <Pencil size={16} />
@@ -211,7 +256,9 @@
   description={`Delete ${folder?.name}? This removes the folder and everything in it.`}
   busy={deleting}
   onCancel={() => {
-    if (!deleting) deleteOpen = false;
+    if (!deleting) {
+      deleteOpen = false;
+    }
   }}
   onConfirm={confirmDelete}
 />

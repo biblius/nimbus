@@ -36,6 +36,7 @@ use crate::{
         users::update_user,
         users::delete_user,
         folders::list_members,
+        folders::list_all_members,
         folders::usage,
         folders::list_private,
         folders::list_shared,

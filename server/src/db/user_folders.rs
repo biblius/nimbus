@@ -1,4 +1,4 @@
-use sqlx::Executor;
+use sqlx::{Executor, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -6,7 +6,8 @@ use crate::{
     db::{Db, DbPool},
     error::AppError,
     file::model::RootAssignment,
-    user::model::{Member, Role},
+    model::{List, PaginationSort, ToSearchColumn},
+    user::model::{Member, Role, UserSearch, UserSort},
 };
 
 #[derive(Clone)]
@@ -72,6 +73,81 @@ impl UserFolderRepository {
         .fetch_optional(&self.pool)
         .await?;
         Ok(found.is_some())
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_users_in_paginated(
+        &self,
+        root_id: Uuid,
+        pagination: PaginationSort<UserSort, UserSearch>,
+    ) -> Result<List<Member>, AppError> {
+        let (limit, offset) = pagination.limit_offset();
+        let (sort_by, sort_dir) = pagination.sort();
+
+        let mut q = QueryBuilder::new(
+            r#"
+            SELECT
+                u.id,
+                u.username,
+                u.email,
+                u.role,
+                u.created_at
+            FROM user_folders uf
+            JOIN users u ON uf.user_id = u.id
+            WHERE root_id = 
+            "#,
+        );
+
+        q.push_bind(root_id);
+
+        let mut count_q = QueryBuilder::new(
+            r#"
+            SELECT COUNT(*)
+            FROM user_folders uf
+            JOIN users u ON uf.user_id = u.id
+            WHERE root_id = 
+            "#,
+        );
+
+        count_q.push_bind(root_id);
+
+        if let Some(ref search) = pagination.search {
+            q.push(" AND ")
+                .push(search.column.to_search_column_prefixed("u"))
+                .push(" ILIKE '%' || ")
+                .push_bind(&search.q)
+                .push(" || '%'");
+
+            count_q
+                .push(" AND ")
+                .push(search.column.to_search_column_prefixed("u"))
+                .push(" ILIKE '%' || ")
+                .push_bind(&search.q)
+                .push(" || '%'");
+        }
+
+        q.push(" ORDER BY ")
+            .push(sort_by)
+            .push(" ")
+            .push(sort_dir)
+            .push(" LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(offset);
+
+        let members = q
+            .build_query_as::<Member>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+
+        let count = count_q
+            .build_query_scalar::<i64>()
+            .fetch_one(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+
+        Ok(List::new(count as usize, members))
     }
 
     #[instrument(skip(self), err(Debug))]

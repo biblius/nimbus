@@ -1,14 +1,15 @@
 <script lang="ts">
   import { Pencil, Trash } from "@lucide/svelte";
   import MemberInfo from "./MemberInfo.svelte";
-  import RootForm from "./RootForm.svelte";
+  import PrivateRootForm from "./PrivateRootForm.svelte";
+  import SharedRootForm from "./SharedRootForm.svelte";
   import Button from "../ui/button/button.svelte";
   import Chevron from "../ui/chevron/chevron.svelte";
   import ConfirmDialog from "../ui/confirm-dialog/confirm-dialog.svelte";
   import { formatBytes, formatDatetime, formatQuota } from "../../format";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
-  import type { Member, Root, RootData } from "../../types";
+  import type { Root, RootData } from "../../types";
 
   let {
     folder,
@@ -22,7 +23,6 @@
 
   let expanded = $state(false);
   let editing = $state(false);
-  let members = $state<Member[] | null>(null);
   let deleteOpen = $state(false);
   let deleting = $state(false);
   /**
@@ -62,11 +62,9 @@
     if (expanded) {
       expanded = false;
       editing = false;
-      members = null;
       return;
     }
 
-    members = null;
     expanded = true;
 
     loadUsage();
@@ -75,14 +73,15 @@
   async function save(data: RootData) {
     const updated = await session.client.updateFolder(folder.id, data);
 
-    members = null;
     editing = false;
 
     onUpdate(updated);
   }
 
   async function confirmDelete() {
-    if (deleting) return;
+    if (deleting) {
+      return;
+    }
 
     deleting = true;
 
@@ -126,16 +125,23 @@
     <div class="border-t bg-muted/30 p-3">
       {#if editing}
         <div class="mx-auto max-w-lg">
-          <RootForm
-            {folder}
-            members={members ?? []}
-            title="Edit folder"
-            description={shared
-              ? "Choose who can use this shared folder."
-              : "A private folder stays with its owner."}
-            {save}
-            cancel={() => (editing = false)}
-          />
+          {#if shared}
+            <SharedRootForm
+              {folder}
+              title="Edit folder"
+              description="Choose who can use this shared folder."
+              {save}
+              cancel={() => (editing = false)}
+            />
+          {:else}
+            <PrivateRootForm
+              {folder}
+              title="Edit folder"
+              description="A private folder stays with its owner."
+              {save}
+              cancel={() => (editing = false)}
+            />
+          {/if}
         </div>
       {:else}
         <div class="flex justify-between gap-3">
@@ -171,7 +177,7 @@
             </div>
 
             {#if shared}
-              <MemberInfo folderId={folder.id} bind:members />
+              <MemberInfo folderId={folder.id} />
             {/if}
           </div>
           <div class="flex flex-col self-stretch">
@@ -182,7 +188,6 @@
               class="size-8 p-0"
               aria-label="Edit folder"
               title="Edit folder"
-              disabled={shared && members == null}
               onclick={() => (editing = true)}
             >
               <Pencil size={16} />
