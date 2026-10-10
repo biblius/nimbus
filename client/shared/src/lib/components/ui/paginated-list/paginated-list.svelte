@@ -63,6 +63,7 @@
         class="h-9 appearance-none rounded-l-md rounded-r-none border border-input bg-field px-2 text-sm shadow-sm outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring"
         bind:value={sortColumn}
         onchange={onSearch}
+        title="Sort by"
         aria-label="Sort by"
       >
         {#each sortColumns as option (option.value)}

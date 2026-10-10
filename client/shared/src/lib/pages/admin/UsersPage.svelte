@@ -205,7 +205,9 @@
                       {user.role}
                     </span>
                   </span>
-                  <span class="block truncate text-xs text-muted-foreground">
+                  <span
+                    class="block h-4 truncate text-xs leading-4 text-muted-foreground"
+                  >
                     {user.email ?? ""}
                   </span>
                 </span>

@@ -60,6 +60,8 @@
   <label class="flex shrink-0 items-center text-sm">
     <select
       class="ml-0 h-9 appearance-none rounded-md rounded-l-none border border-input bg-field px-2 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      title="Search by"
+      aria-label="Search by"
       bind:value={query.column}
       onchange={columnChanged}
     >

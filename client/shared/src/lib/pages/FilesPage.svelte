@@ -25,9 +25,9 @@
   {#snippet sidebar()}
     <nav class="flex flex-col gap-1 p-3" aria-label="Roots">
       <p
-        class="hidden px-3 pb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase md:block"
+        class="hidden pb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase md:block"
       >
-        Roots
+        Folders
       </p>
       {#if roots.length === 0}
         <p class="px-3 text-sm text-muted-foreground">No roots are assigned.</p>
