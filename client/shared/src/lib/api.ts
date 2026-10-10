@@ -3,6 +3,7 @@ import type {
   FileEntry,
   LoginResult,
   Member,
+  ListQuery,
   Page,
   Root,
   RootData,
@@ -254,8 +255,10 @@ export class NimbusClient {
     URL.revokeObjectURL(url);
   }
 
-  listUsers(): Promise<UserViewFull[]> {
-    return this.request<UserViewFull[]>("/admin/users");
+  listUsers(query: ListQuery): Promise<Page<UserViewFull>> {
+    return this.request<Page<UserViewFull>>(
+      `/admin/users?${this.listParams(query)}`,
+    );
   }
 
   createUser(input: CreateUserInput): Promise<UserViewFull> {
@@ -314,18 +317,29 @@ export class NimbusClient {
     return this.request<Member[]>(`/roots/${encodeURIComponent(id)}/users/all`);
   }
 
-  listMembers(
-    id: string,
-    page: number,
-    perPage: number,
-  ): Promise<Page<Member>> {
-    const query = new URLSearchParams({
-      page: String(page),
-      perPage: String(perPage),
-    });
+  listMembers(id: string, query: ListQuery): Promise<Page<Member>> {
     return this.request<Page<Member>>(
-      `/roots/${encodeURIComponent(id)}/users?${query}`,
+      `/roots/${encodeURIComponent(id)}/users?${this.listParams(query)}`,
     );
+  }
+
+  private listParams(query: ListQuery): URLSearchParams {
+    const params = new URLSearchParams({
+      page: String(query.page),
+      perPage: String(query.perPage),
+    });
+
+    if (query.search?.q) {
+      params.set("q", query.search.q);
+      params.set("column", query.search.column);
+    }
+
+    if (query.sort) {
+      params.set("sort.column", query.sort.column);
+      params.set("sort.direction", query.sort.direction);
+    }
+
+    return params;
   }
 
   folderUsage(id: string): Promise<number> {

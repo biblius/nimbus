@@ -1,12 +1,13 @@
 use chrono::Utc;
-use sqlx::Executor;
+use sqlx::{Executor, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
 
 use crate::{
     db::{Db, DbPool},
     error::AppError,
-    user::model::{CreateUser, Role, User, UserView, UserViewFull},
+    model::{List, PaginationSort, ToSearchColumn},
+    user::model::{CreateUser, Role, User, UserSearch, UserSort, UserView, UserViewFull},
 };
 
 #[derive(Clone)]
@@ -137,25 +138,69 @@ impl UserRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn list(&self) -> Result<Vec<UserViewFull>, AppError> {
-        sqlx::query_as!(
-            UserViewFull,
+    pub async fn list_paginated(
+        &self,
+        pagination: PaginationSort<UserSort, UserSearch>,
+    ) -> Result<List<UserViewFull>, AppError> {
+        let (limit, offset) = pagination.limit_offset();
+        let (sort_by, sort_dir) = pagination.sort();
+
+        let mut listed = QueryBuilder::<Db>::new(
             r#"
             SELECT
                 id,
                 username,
                 email,
-                role AS "role: Role",
-                otp_secret IS NOT NULL AS "otp_enabled!",
+                role,
+                otp_secret IS NOT NULL AS otp_enabled,
                 created_at,
                 updated_at
             FROM users
-            ORDER BY username
-            "#
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(AppError::from)
+            "#,
+        );
+        let mut count = QueryBuilder::<Db>::new("SELECT COUNT(*) FROM users");
+
+        if let Some(ref search) = pagination.search {
+            let column = search.column.to_search_column();
+
+            listed
+                .push(" WHERE ")
+                .push(column)
+                .push(" ILIKE '%' || ")
+                .push_bind(&search.q)
+                .push(" || '%'");
+
+            count
+                .push(" WHERE ")
+                .push(column)
+                .push(" ILIKE '%' || ")
+                .push_bind(&search.q)
+                .push(" || '%'");
+        }
+
+        listed
+            .push(" ORDER BY ")
+            .push(sort_by)
+            .push(" ")
+            .push(sort_dir)
+            .push(" LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(offset);
+
+        let items = listed
+            .build_query_as::<UserViewFull>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+
+        let total = count
+            .build_query_scalar::<i64>()
+            .fetch_one(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+
+        Ok(List::new(total as usize, items))
     }
 
     #[instrument(skip(self, executor, user), fields(user_id = %id, username = %user.username), err(Debug))]

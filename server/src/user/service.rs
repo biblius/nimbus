@@ -109,8 +109,12 @@ impl UserService {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_users(&self) -> Result<Vec<UserViewFull>, AppError> {
-        self.users.list().await
+    pub async fn list_users(
+        &self,
+        pagination: PaginationSort<UserSort, UserSearch>,
+    ) -> Result<List<UserViewFull>, AppError> {
+        pagination.validate()?;
+        self.users.list_paginated(pagination).await
     }
 
     #[instrument(skip(self, input), fields(user_id = %user_id, role = ?input.role), err(Debug))]

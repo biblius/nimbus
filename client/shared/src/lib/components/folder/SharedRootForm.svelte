@@ -7,6 +7,7 @@
   import type { Root, RootData, UserViewFull } from "../../types";
   import Button from "../ui/button/button.svelte";
   import Field from "../ui/field/field.svelte";
+  import InfiniteList from "../ui/infinite-list/infinite-list.svelte";
 
   let {
     title,
@@ -22,9 +23,11 @@
     cancel?: () => void;
   } = $props();
 
-  let users = $state<UserViewFull[]>([]);
-  let usersLoaded = $state(false);
-  let usersFailed = $state(false);
+  const searchColumns = [
+    { value: "username", label: "Username" },
+    { value: "email", label: "Email" },
+  ];
+
   let membersReady = $state(untrack(() => folder == null));
   let membersFailed = $state(false);
 
@@ -36,22 +39,6 @@
   let busy = $state(false);
 
   onMount(() => {
-    session.client
-      .listUsers()
-      .then((people) => {
-        users = people;
-        usersLoaded = true;
-      })
-      .catch((cause) => {
-        usersLoaded = true;
-        usersFailed = true;
-        toastError(
-          cause instanceof TypeError
-            ? "The server could not be reached"
-            : "Could not load users",
-        );
-      });
-
     if (!folder) {
       return;
     }
@@ -168,29 +155,42 @@
     <legend class="text-sm leading-none font-medium">Members</legend>
     {#if !membersReady && !membersFailed}
       <p class="text-sm text-muted-foreground">Loading…</p>
-    {:else if membersFailed}
-      <p class="text-sm text-muted-foreground">Could not load members.</p>
-    {:else if !usersLoaded}
-      <p class="text-sm text-muted-foreground">Loading…</p>
-    {:else if usersFailed}
-      <p class="text-sm text-muted-foreground">Could not load users.</p>
-    {:else if users.length === 0}
-      <p class="text-sm text-muted-foreground">No users to assign.</p>
     {:else}
-      <ul class="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
-        {#each users as user (user.id)}
-          <li>
-            <label class="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={selected.includes(user.id)}
-                onchange={() => toggle(user.id)}
-              />
-              <span class="truncate">{user.username}</span>
-            </label>
-          </li>
-        {/each}
-      </ul>
+      {#if membersFailed}
+        <p class="text-sm text-muted-foreground">Could not load members.</p>
+      {/if}
+      <InfiniteList
+        columns={searchColumns}
+        errorMessage="Could not load users."
+        load={(query) =>
+          session.client.listUsers({
+            ...query,
+            sort: { column: "username", direction: "asc" },
+          })}
+      >
+        {#snippet children(users: UserViewFull[])}
+          {#if users.length === 0}
+            <p class="px-3 py-2 text-sm text-muted-foreground">
+              No users to assign.
+            </p>
+          {:else}
+            <ul class="divide-y">
+              {#each users as user (user.id)}
+                <li class="px-3 py-2">
+                  <label class="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(user.id)}
+                      onchange={() => toggle(user.id)}
+                    />
+                    <span class="truncate">{user.username}</span>
+                  </label>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {/snippet}
+      </InfiniteList>
     {/if}
   </fieldset>
 

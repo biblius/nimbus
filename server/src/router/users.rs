@@ -1,12 +1,13 @@
 use crate::{
     auth::session::Session,
     error::AppError,
+    model::{List, PaginationSort},
     state::AppState,
-    user::model::{CreateUser, UpdateUser, UserView, UserViewFull},
+    user::model::{CreateUser, UpdateUser, UserSearch, UserSort, UserView, UserViewFull},
 };
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
 };
 use uuid::Uuid;
@@ -29,13 +30,14 @@ pub(crate) async fn create_user(
 #[utoipa::path(
     get,
     path = "/admin/users",
-    responses((status = 200, description = "Active users", body = Vec<UserViewFull>))
+    responses((status = 200, description = "Active users", body = List<UserViewFull>))
 )]
 pub(crate) async fn list_users(
     _session: Session,
     State(state): State<AppState>,
-) -> Result<Json<Vec<UserViewFull>>, AppError> {
-    Ok(Json(state.services.users.list_users().await?))
+    Query(pagination): Query<PaginationSort<UserSort, UserSearch>>,
+) -> Result<Json<List<UserViewFull>>, AppError> {
+    Ok(Json(state.services.users.list_users(pagination).await?))
 }
 
 #[utoipa::path(

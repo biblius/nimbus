@@ -11,6 +11,7 @@ mod auth;
 mod files;
 mod members;
 mod smoke;
+mod users;
 
 use crate::{
     auth::{service::AuthenticationService, token::TokenStore},

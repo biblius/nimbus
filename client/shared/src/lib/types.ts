@@ -56,6 +56,26 @@ export type Page<T> = {
   items: T[];
 };
 
+/** Column and text for one search. */
+export type ListSearch = {
+  column: string;
+  q: string;
+};
+
+/** Column and direction for one sort. */
+export type ListSort = {
+  column: string;
+  direction: "asc" | "desc";
+};
+
+/** Query for a paginated, searchable, sortable list. */
+export type ListQuery = {
+  page: number;
+  perPage: number;
+  search?: ListSearch;
+  sort?: ListSort;
+};
+
 /** A user assigned to a shared root. */
 export type Member = {
   id: string;

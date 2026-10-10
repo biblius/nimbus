@@ -82,6 +82,7 @@ pub struct PaginationSort<Srt: ToSchema, Srch: ToSchema = ()> {
     /// The column to sort by.
     ///
     /// Default: `updated_at`
+    #[serde(flatten)]
     pub sort: Option<Sort<Srt>>,
 
     #[validate]
@@ -123,14 +124,12 @@ impl<Srt: ToSchema, Srch: ToSchema> Default for PaginationSort<Srt, Srch> {
 #[derive(Debug, Clone, Validate, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Sort<T> {
-    #[serde(alias = "sort.by")]
-    #[serde(alias = "sort.column")]
+    #[serde(rename = "sortColumn", alias = "sort.by", alias = "sort.column")]
     pub column: T,
 
     /// The column to search by when performing the query. This is intended to be an enum of all
     /// the possible search values for a given query.
-    #[serde(alias = "sort.direction")]
-    #[serde(alias = "sort.dir")]
+    #[serde(rename = "sortDirection", alias = "sort.direction", alias = "sort.dir")]
     pub direction: SortDirection,
 }
 
@@ -254,7 +253,28 @@ mod query {
             Query::<PaginationSort<UserSort, UserSearch>>::try_from_uri(&uri).unwrap();
 
         assert_eq!(parsed.limit_offset(), (10, 10));
+        assert!(parsed.sort.is_none());
+        assert!(parsed.search.is_none());
         parsed.validate().unwrap();
+
+        let sorted: Uri =
+            "http://localhost/users?page=1&perPage=10&sort.column=email&sort.direction=asc"
+                .parse()
+                .unwrap();
+        let Query(sorted) =
+            Query::<PaginationSort<UserSort, UserSearch>>::try_from_uri(&sorted).unwrap();
+        assert_eq!(sorted.sort().0, "email");
+        assert_eq!(sorted.sort().1, "ASC");
+
+        let found: Uri = "http://localhost/users?page=1&perPage=10&q=ada&column=username"
+            .parse()
+            .unwrap();
+        let Query(found) =
+            Query::<PaginationSort<UserSort, UserSearch>>::try_from_uri(&found).unwrap();
+        let search = found.search.as_ref().unwrap();
+        assert_eq!(search.q, "ada");
+        assert_eq!(search.column.to_search_column(), "username");
+        found.validate().unwrap();
     }
 }
 

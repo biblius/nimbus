@@ -37,7 +37,7 @@ impl User {
 }
 
 /// The view of the currently logged in user.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct UserViewFull {
     pub id: Uuid,
@@ -115,6 +115,7 @@ impl Display for Role {
 sort_column! {
     UserSort,
     Username => "username",
+    Email => "email",
     CreatedAt => "created_at",
     UpdatedAt => "updated_at"
 }

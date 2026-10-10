@@ -52,14 +52,13 @@
         }
 
         // Await a tick so the children get populated
-        // and move the sentinel outside the view
+        // and move the sentinel.
         await tick();
 
         const box = scroller!.getBoundingClientRect();
         const mark = sentinel!.getBoundingClientRect();
 
-        // The sentinel is in the view which indicates
-        // the remaining items fit in the list
+        // The sentinel is below the visible box, so scrolling can load the rest.
         if (mark.top > box.bottom + 1) {
           break;
         }
