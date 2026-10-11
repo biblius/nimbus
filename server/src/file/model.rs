@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError, prelude::FromRow};
 use utoipa::ToSchema;
 use uuid::Uuid;
-use validify::Validify;
+use validify::{Validate, Validify};
 
 use super::format::FileType;
 use crate::{db::Db, error::AppError};
@@ -126,6 +126,13 @@ impl FileEntry {
 
         Ok(name)
     }
+}
+
+/// Files to soft-delete in one request.
+#[derive(Debug, Deserialize, ToSchema, Validate)]
+pub struct TrashFiles {
+    #[validate(length(min = 1, message = "At least 1 file must be provided"))]
+    pub ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize, Validify, ToSchema)]

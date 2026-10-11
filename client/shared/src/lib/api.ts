@@ -174,6 +174,7 @@ export class NimbusClient {
     parent: string | null,
     file: File,
     onProgress?: UploadProgress,
+    signal?: AbortSignal,
   ): Promise<FileEntry> {
     const body = new FormData();
 
@@ -185,7 +186,38 @@ export class NimbusClient {
 
     // fetch has no upload progress events, so this one call uses XMLHttpRequest.
     return new Promise<FileEntry>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException("upload aborted", "AbortError"));
+        return;
+      }
+
       const xhr = new XMLHttpRequest();
+      let settled = false;
+
+      const succeed = (entry: FileEntry) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        signal?.removeEventListener("abort", onAbort);
+        resolve(entry);
+      };
+
+      const fail = (error: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        signal?.removeEventListener("abort", onAbort);
+        reject(error);
+      };
+
+      const onAbort = () => {
+        xhr.abort();
+        fail(new DOMException("upload aborted", "AbortError"));
+      };
+
+      signal?.addEventListener("abort", onAbort);
 
       xhr.open("POST", `${this.#root}/roots/${encodeURIComponent(rootId)}`);
 
@@ -217,25 +249,25 @@ export class NimbusClient {
           payload[0]
         ) {
           onProgress?.(file.size, file.size);
-          resolve(payload[0] as FileEntry);
+          succeed(payload[0] as FileEntry);
         } else {
-          reject(parseError(xhr.status, payload));
+          fail(parseError(xhr.status, payload));
         }
       };
 
-      xhr.onerror = () => reject(new TypeError("network error"));
+      xhr.onerror = () => fail(new TypeError("network error"));
 
       xhr.onabort = () =>
-        reject(new DOMException("upload aborted", "AbortError"));
+        fail(new DOMException("upload aborted", "AbortError"));
 
       xhr.send(body);
     });
   }
 
-  remove(rootId: string, id: string): Promise<void> {
+  trash(rootId: string, ids: string[]): Promise<void> {
     return this.request<void>(
-      `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}`,
-      { method: "DELETE" },
+      `/roots/${encodeURIComponent(rootId)}/files`,
+      { method: "DELETE", body: JSON.stringify({ ids }) },
     );
   }
 

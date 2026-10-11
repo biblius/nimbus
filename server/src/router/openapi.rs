@@ -6,7 +6,7 @@ use crate::{
         PasswordResetRequest,
     },
     auth::session::SessionView,
-    file::model::{CreateDirectory, FileEntry, Root, RootView},
+    file::model::{CreateDirectory, FileEntry, Root, RootView, TrashFiles},
     router::{auth, files, folders, users},
     user::model::{
         CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateUser, UserView,
@@ -55,6 +55,7 @@ use crate::{
         files::metadata,
         files::download,
         files::delete_file,
+        files::delete_files,
     ),
     components(schemas(
         LoginCredentials,
@@ -74,6 +75,7 @@ use crate::{
         UserView,
         FileEntry,
         CreateDirectory,
+        TrashFiles,
         SetQuota,
         UpdateUser,
         UpdateRoot,

@@ -1,7 +1,7 @@
 use crate::{
     auth::session::Session,
     error::AppError,
-    file::model::{CreateDirectory, FileEntry, RootView},
+    file::model::{CreateDirectory, FileEntry, RootView, TrashFiles},
     state::AppState,
 };
 use axum::{
@@ -269,6 +269,27 @@ pub(crate) async fn delete_file(
     Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
     state.services.files.delete(&session.user, file_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    delete,
+    path = "/roots/{root_id}/files",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    request_body = TrashFiles,
+    responses((status = 204, description = "Files scheduled for deletion"))
+)]
+pub(crate) async fn delete_files(
+    State(state): State<AppState>,
+    session: Session,
+    Path(root_id): Path<Uuid>,
+    Json(input): Json<TrashFiles>,
+) -> Result<StatusCode, AppError> {
+    state
+        .services
+        .files
+        .delete_many(&session.user, root_id, input)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

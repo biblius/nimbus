@@ -4,7 +4,6 @@
     ArrowUp,
     Check,
     ChevronRight,
-    File as FileIcon,
     Folder,
     FolderPlus,
     Settings,
@@ -15,12 +14,14 @@
   import { tick, untrack } from "svelte";
   import { navigate } from "../router";
   import { ApiError, ValidationError } from "../api";
-  import { formatBytes, formatQuota, formatDatetime } from "../format";
+  import { formatQuota, formatDatetime } from "../format";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
   import { type FileEntry, type Root } from "../types";
   import { cn } from "../utils";
+  import FileListItem from "./FileListItem.svelte";
   import Button from "./ui/button/button.svelte";
+  import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
 
   let {
     folder: root,
@@ -57,9 +58,13 @@
   type SortDirection = "asc" | "desc";
 
   const columns =
-    "grid grid-cols-[minmax(0,1fr)_2.25rem] items-center gap-x-3 px-3 sm:grid-cols-[minmax(0,1fr)_6rem_11.5rem_2.25rem] sm:gap-x-4 lg:grid-cols-[minmax(0,1fr)_6rem_11.5rem_11.5rem_2.25rem]";
+    "grid grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_5.5rem] @2xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_5.5rem] @4xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_minmax(0,11.5rem)_5.5rem]";
 
   let entries = $state<FileEntry[]>([]);
+  let selected = $state<string[]>([]);
+  let deleteOpen = $state(false);
+  let deleting = $state(false);
+  let pendingDelete = $state<string[]>([]);
   let sort = $state<{ column: SortColumn; direction: SortDirection }>({
     column: "kind",
     direction: "asc",
@@ -96,6 +101,9 @@
   let pending = $state<PendingUpload[]>([]);
 
   let nextUploadId = 0;
+
+  /// Queued and in-flight uploads. Aborting one cancels that file only.
+  const uploadControllers = new Map<number, AbortController>();
 
   let ancestors = $state<Crumb[]>([]);
 
@@ -206,6 +214,7 @@
     loading = true;
 
     entries = [];
+    selected = [];
 
     loadAncestors(rootId, parent, currentLoad);
 
@@ -348,8 +357,13 @@
     const parent = location.id;
 
     const queue = files.map((file) => {
+      const id = nextUploadId++;
+      const controller = new AbortController();
+
+      uploadControllers.set(id, controller);
+
       pending.push({
-        id: nextUploadId++,
+        id,
         name: file.name,
         loaded: 0,
         total: file.size,
@@ -359,14 +373,18 @@
       // Read the element back so later writes go through the reactive proxy.
       const item = pending[pending.length - 1];
 
-      return { file, item };
+      return { file, item, controller };
     });
 
     const workers = Array.from(
       { length: Math.min(PARALLEL_UPLOADS, queue.length) },
       async () => {
         while (queue.length > 0) {
-          const { file, item } = queue.shift()!;
+          const { file, item, controller } = queue.shift()!;
+
+          if (controller.signal.aborted) {
+            continue;
+          }
 
           try {
             const created = await session.client.upload(
@@ -377,18 +395,22 @@
                 item.loaded = loaded;
                 item.total = total;
               },
+              controller.signal,
             );
 
-            const index = pending.findIndex((entry) => entry.id === item.id);
-
-            if (index !== -1) {
-              pending.splice(index, 1);
-            }
+            removeUpload(item.id);
 
             if (root.id === rootId && location.id === parent) {
               insertEntry(created);
             }
           } catch (cause) {
+            uploadControllers.delete(item.id);
+
+            if (cause instanceof DOMException && cause.name === "AbortError") {
+              removeUpload(item.id);
+              continue;
+            }
+
             if (cause instanceof TypeError) {
               item.error = "The server could not be reached";
             } else if (cause instanceof ApiError && cause.status === 413) {
@@ -404,6 +426,21 @@
     );
 
     await Promise.all(workers);
+  }
+
+  function removeUpload(id: number) {
+    uploadControllers.delete(id);
+
+    const index = pending.findIndex((entry) => entry.id === id);
+
+    if (index !== -1) {
+      pending.splice(index, 1);
+    }
+  }
+
+  function cancelUpload(id: number) {
+    uploadControllers.get(id)?.abort();
+    removeUpload(id);
   }
 
   function percent(item: PendingUpload) {
@@ -538,22 +575,71 @@
     }
   }
 
-  async function remove(entry: FileEntry) {
-    const currentRoot = root.id;
-    const currentParent = location.id;
+  function toggle(id: string) {
+    const index = selected.indexOf(id);
+
+    if (index === -1) {
+      selected.push(id);
+      return;
+    }
+
+    selected.splice(index, 1);
+  }
+
+  function toggleAll() {
+    if (selected.length === entries.length) {
+      selected = [];
+      return;
+    }
+
+    selected = entries.map((entry) => entry.id);
+  }
+
+  function askDelete(ids: string[]) {
+    pendingDelete = [...ids];
+    deleteOpen = true;
+  }
+
+  const deleteDescription = $derived.by(() => {
+    if (pendingDelete.length === 1) {
+      const entry = entries.find((item) => item.id === pendingDelete[0]);
+      return `Delete ${entry ? label(entry) : "this item"}?`;
+    }
+    return `Delete ${pendingDelete.length} items?`;
+  });
+
+  async function confirmDelete() {
+    const ids = pendingDelete;
+    const rootId = root.id;
+    const parent = location.id;
+
+    deleting = true;
 
     try {
-      await session.client.remove(currentRoot, entry.id);
+      await session.client.trash(rootId, ids);
 
-      if (root.id === currentRoot && location.id === currentParent) {
-        entries = entries.filter((item) => item.id !== entry.id);
+      if (root.id !== rootId || location.id !== parent) {
+        return;
       }
+
+      const gone = new Set(ids);
+
+      entries = entries.filter((entry) => !gone.has(entry.id));
+      selected = selected.filter((id) => !gone.has(id));
+
+      pendingDelete = [];
+
+      deleteOpen = false;
     } catch (cause) {
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
           : "Could not delete that item",
       );
+    } finally {
+      if (root.id === rootId && location.id === parent) {
+        deleting = false;
+      }
     }
   }
 
@@ -570,14 +656,14 @@
   }
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col gap-3">
+<div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
   <div
     class="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2"
   >
     <div class="min-w-0">
-      <p class="truncate text-sm font-medium">{root.name}</p>
-      <p class="truncate text-xs text-muted-foreground">
-        {root.owner ? "Private" : "Shared"}
+      <p class="inline truncate text-sm font-medium">{root.name}</p>
+      <p class="inline truncate text-xs text-muted-foreground">
+        · {root.owner ? "Private" : "Shared"}
         · {formatQuota(root.quota)}
         · Updated {formatDatetime(root.updatedAt)}
       </p>
@@ -652,6 +738,17 @@
         <FolderPlus size={16} />
         <span class="hidden sm:inline">New folder</span>
       </Button>
+      {#if selected.length > 0}
+        <Button
+          type="button"
+          variant="outline"
+          aria-label="Delete selected"
+          onclick={() => askDelete(selected)}
+        >
+          <Trash size={16} />
+          <span class="hidden sm:inline">Delete</span>
+        </Button>
+      {/if}
     </div>
   </div>
 
@@ -676,9 +773,19 @@
                 </button>
               </span>
             {:else}
-              <span class="shrink-0 text-muted-foreground tabular-nums"
-                >{percent(item)}%</span
-              >
+              <span class="flex shrink-0 items-center gap-2">
+                <span class="text-muted-foreground tabular-nums"
+                  >{percent(item)}%</span
+                >
+                <button
+                  type="button"
+                  class="text-xs underline"
+                  aria-label="Cancel {item.name}"
+                  onclick={() => cancelUpload(item.id)}
+                >
+                  Cancel
+                </button>
+              </span>
             {/if}
           </div>
           <div
@@ -702,17 +809,29 @@
   {/if}
 
   <div
-    class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card"
+    class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card"
   >
+    <!-- COLUMN HEADERS -->
+
     <div
       class="{columns} h-10 shrink-0 border-b text-xs font-medium text-muted-foreground"
     >
+      <input
+        type="checkbox"
+        class="size-4"
+        aria-label="Select all"
+        checked={entries.length > 0 && selected.length === entries.length}
+        disabled={entries.length === 0}
+        onchange={toggleAll}
+      />
       {@render columnHeader("name", "Name", "", "")}
-      {@render columnHeader("size", "Size", "hidden sm:flex", "justify-end")}
-      {@render columnHeader("created", "Created", "hidden lg:flex", "")}
-      {@render columnHeader("modified", "Modified", "hidden sm:flex", "")}
+      {@render columnHeader("size", "Size", "hidden @lg:flex", "justify-end")}
+      {@render columnHeader("created", "Created", "hidden @4xl:flex", "")}
+      {@render columnHeader("modified", "Modified", "hidden @2xl:flex", "")}
       <span class="sr-only">Actions</span>
     </div>
+
+    <!-- FILE LIST -->
 
     <div
       bind:this={scroller}
@@ -736,7 +855,7 @@
         </div>
       {:else}
         <ul class="divide-y">
-          <!-- CREATE DIRECTORY -->
+          <!-- NEW DIRECTORY DRAFT -->
 
           {#if drafting}
             <li class="px-3 py-2">
@@ -798,63 +917,34 @@
           <!-- FILES -->
 
           {#each entries as entry (entry.id)}
-            <li class="{columns} group min-h-11 py-1 hover:bg-accent/60">
-              {#if entry.kind === "directory"}
-                <button
-                  type="button"
-                  class="flex min-h-11 w-full min-w-0 items-center gap-2.5 text-left text-sm font-medium"
-                  onclick={() => openDirectory(entry)}
-                >
-                  <Folder size={18} class="shrink-0 text-primary" />
-                  <span class="truncate" title={label(entry)}
-                    >{label(entry)}</span
-                  >
-                </button>
-              {:else}
-                <button
-                  type="button"
-                  class="flex min-h-11 w-full min-w-0 items-center gap-2.5 text-left text-sm hover:underline"
-                  onclick={() => download(entry)}
-                >
-                  <FileIcon size={18} class="shrink-0 text-muted-foreground" />
-                  <span class="truncate" title={label(entry)}
-                    >{label(entry)}</span
-                  >
-                </button>
-              {/if}
-              <span
-                class="hidden text-right text-sm text-muted-foreground tabular-nums sm:block"
-              >
-                {entry.kind === "directory"
-                  ? "—"
-                  : formatBytes(entry.sizeBytes)}
-              </span>
-              <span
-                class="hidden min-w-0 truncate text-sm text-muted-foreground lg:block"
-              >
-                {formatDatetime(entry.createdAt)}
-              </span>
-              <span
-                class="hidden min-w-0 truncate text-sm text-muted-foreground sm:block"
-              >
-                {formatDatetime(entry.updatedAt)}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                class="size-8 px-0 text-muted-foreground hover:text-destructive sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
-                aria-label="Delete {label(entry)}"
-                onclick={() => remove(entry)}
-              >
-                <Trash size={16} />
-              </Button>
-            </li>
+            <FileListItem
+              {entry}
+              name={label(entry)}
+              {columns}
+              selected={selected.includes(entry.id)}
+              onToggle={() => toggle(entry.id)}
+              onOpen={() => openDirectory(entry)}
+              onDownload={() => download(entry)}
+              onDelete={() => askDelete([entry.id])}
+            />
           {/each}
         </ul>
       {/if}
     </div>
   </div>
+
+  <ConfirmDialog
+    open={deleteOpen}
+    title={pendingDelete.length === 1 ? "Delete item" : "Delete items"}
+    description={deleteDescription}
+    busy={deleting}
+    onCancel={() => {
+      if (!deleting) {
+        deleteOpen = false;
+      }
+    }}
+    onConfirm={confirmDelete}
+  />
 </div>
 
 {#snippet columnHeader(

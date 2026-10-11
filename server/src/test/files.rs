@@ -3,7 +3,7 @@
 mod files_service {
     use crate::{
         error::{AppError, AuthFailure},
-        file::model::CreateDirectory,
+        file::model::{CreateDirectory, TrashFiles},
         model::PaginationSort,
         test::{self, TestState},
         user::model::{CreateSharedFolder, CreateUser, Role, SetQuota, UpdateRoot, User},
@@ -209,6 +209,63 @@ mod files_service {
             .await
             .unwrap();
         assert_eq!(test::blob_count(state.storage_dir()), before);
+    }
+
+    #[test]
+    async fn trash_removes_every_listed_file(state: TestState) {
+        let _ada = user(state, "ada-trash").await;
+        let session = test::login(state, "ada-trash", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+        let first = test::upload(state, &session.user, root, "one.txt", b"one").await;
+        let second = test::upload(state, &session.user, root, "two.txt", b"two").await;
+        let kept = test::upload(state, &session.user, root, "keep.txt", b"keep").await;
+
+        state
+            .services
+            .files
+            .delete_many(
+                &session.user,
+                root,
+                TrashFiles {
+                    ids: vec![first.id, second.id, second.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            state.services.files.content(&session.user, first.id).await,
+            Err(AppError::ResourceMissing(_))
+        ));
+        assert!(matches!(
+            state.services.files.content(&session.user, second.id).await,
+            Err(AppError::ResourceMissing(_))
+        ));
+        assert!(state.services.files.content(&session.user, kept.id).await.is_ok());
+
+        let _bob = user(state, "bob-trash").await;
+        let bob = test::login(state, "bob-trash", "temporary").await;
+        let other = test::private_root(state, &bob.user).await;
+        let foreign = test::upload(state, &bob.user, other, "foreign.txt", b"no").await;
+
+        state
+            .services
+            .files
+            .delete_many(
+                &session.user,
+                root,
+                TrashFiles {
+                    ids: vec![first.id, kept.id, foreign.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            state.services.files.content(&session.user, kept.id).await,
+            Err(AppError::ResourceMissing(_))
+        ));
+        assert!(state.services.files.content(&bob.user, foreign.id).await.is_ok());
     }
 
     #[test]

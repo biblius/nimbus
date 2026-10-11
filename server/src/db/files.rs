@@ -522,7 +522,7 @@ impl FileRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn soft_delete(&self, ids: &[Uuid]) -> Result<(), AppError> {
+    pub async fn soft_delete(&self, root_id: Uuid, ids: &[Uuid]) -> Result<(), AppError> {
         if ids.is_empty() {
             return Ok(());
         }
@@ -534,7 +534,9 @@ impl FileRepository {
         query.push_bind(now);
         query.push(", updated_at = ");
         query.push_bind(now);
-        query.push(" WHERE deleted_at IS NULL AND id IN (");
+        query.push(" WHERE root_id = ");
+        query.push_bind(root_id);
+        query.push(" AND deleted_at IS NULL AND id IN (");
 
         let mut separated = query.separated(", ");
 

@@ -10,7 +10,7 @@ use crate::{
         user_folders::UserFolderRepository,
     },
     error::AppError,
-    file::model::RootView,
+    file::model::{RootView, TrashFiles},
     user::model::{Role, User},
 };
 use chrono::{Duration, Utc};
@@ -18,7 +18,7 @@ use sqlx::Transaction;
 use std::collections::{HashSet, VecDeque};
 use tracing::instrument;
 use uuid::Uuid;
-use validify::Validify;
+use validify::{Validate, Validify};
 
 #[derive(Clone)]
 pub struct FileService {
@@ -260,7 +260,26 @@ impl FileService {
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn delete(&self, user: &User, id: Uuid) -> Result<(), AppError> {
         let file = self.readable(user, id).await?;
-        self.files.soft_delete(&[file.id]).await
+        self.files.soft_delete(file.root_id, &[file.id]).await
+    }
+
+    /// Soft-delete every live file in `root_id`. One query, after a single access check.
+    #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
+    pub async fn delete_many(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        input: TrashFiles,
+    ) -> Result<(), AppError> {
+        input.validate()?;
+
+        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
+            return Err(AppError::Forbidden(
+                "You do not have access to this folder".into(),
+            ));
+        }
+
+        self.files.soft_delete(root_id, &input.ids).await
     }
 
     #[instrument(skip(self), err(Debug))]

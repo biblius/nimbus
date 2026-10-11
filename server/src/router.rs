@@ -94,6 +94,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/roots/{root_id}/files/{id}", get(files::metadata))
         .route("/roots/{root_id}/files/{id}/download", get(files::download))
+        .route("/roots/{root_id}/files", delete(files::delete_files))
         .route("/roots/{root_id}/files/{id}", delete(files::delete_file))
         .route_layer(axum_middleware::from_fn_with_state(
             state.clone(),
