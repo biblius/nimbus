@@ -51,6 +51,7 @@ use crate::{
         files::list,
         files::create_directory,
         files::upload,
+        files::ancestors,
         files::metadata,
         files::download,
         files::delete_file,

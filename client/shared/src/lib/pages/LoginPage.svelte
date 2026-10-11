@@ -34,7 +34,7 @@
 
       session.user = result.session.user;
 
-      navigate("/", { replace: true });
+      navigate("/files", { replace: true });
     } catch (cause) {
       if (cause instanceof ValidationError) {
         validation = cause;

@@ -2,74 +2,60 @@
   import { onMount } from "svelte";
   import FileBrowser from "../components/FileBrowser.svelte";
   import PanelShell from "../components/PanelShell.svelte";
-  import { navigate } from "../router";
+  import UserSidebar from "../components/UserSidebar.svelte";
+  import { navigate, route } from "../router";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
   import type { Root } from "../types";
 
   let roots = $state<Root[]>([]);
+  let loaded = $state(false);
 
-  let selected = $state<Root>();
+  const rootId = $derived(route.params.root_id);
+  const parentId = $derived(route.params.parent_id ?? null);
+  const selected = $derived(roots.find((root) => root.id === rootId));
 
   onMount(async () => {
     try {
       roots = await session.client.roots();
-      selected = roots.find((root) => root.owner === session.user?.id);
     } catch {
       toastError("Could not load files");
+    } finally {
+      loaded = true;
     }
+  });
+
+  $effect(() => {
+    if (rootId || !loaded || roots.length === 0) {
+      return;
+    }
+    const home =
+      roots.find((root) => root.owner === session.user?.id) ?? roots[0];
+    navigate("/files/:root_id", {
+      params: { root_id: home.id },
+      replace: true,
+    });
   });
 </script>
 
 <PanelShell bind:open={session.menuOpen} label="Roots">
   {#snippet sidebar()}
-    <nav class="flex flex-col gap-1 p-3" aria-label="Roots">
-      <p
-        class="hidden pb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase md:block"
-      >
-        Folders
-      </p>
-      {#if roots.length === 0}
-        <p class="px-3 text-sm text-muted-foreground">No roots are assigned.</p>
-      {:else}
-        {#each roots as root (root.id)}
-          <button
-            type="button"
-            class="flex min-h-11 items-center rounded-md px-3 text-left text-sm {selected?.id ===
-            root.id
-              ? 'bg-accent font-medium text-accent-foreground'
-              : 'hover:bg-accent'}"
-            aria-current={selected?.id === root.id ? "page" : undefined}
-            onclick={() => {
-              selected = root;
-              session.menuOpen = false;
-            }}
-          >
-            <span class="truncate">{root.name}</span>
-          </button>
-        {/each}
-      {/if}
-    </nav>
+    <UserSidebar {roots} {selected} />
   {/snippet}
 
-  <div class="p-4 sm:p-6">
-    <div class="mx-auto max-w-5xl">
+  <!-- Fill the space under the app header. The file list scrolls inside. -->
+  <div
+    class="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col overflow-hidden p-4 sm:p-6"
+  >
+    <div class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
       {#if selected}
-        {@const folder = selected}
-        {#key folder.id}
-          <FileBrowser
-            client={session.client}
-            {folder}
-            admin={session.user?.role === "admin"}
-            onEditRoot={() =>
-              navigate(
-                folder.owner
-                  ? "/admin/folders/private"
-                  : "/admin/folders/shared",
-                { search: { id: folder.id } },
-              )}
-          />
-        {/key}
+        <FileBrowser
+          folder={selected}
+          {parentId}
+          admin={session.user?.role === "admin"}
+        />
+      {:else if loaded && rootId}
+        <p class="text-sm text-muted-foreground">This folder does not exist.</p>
       {/if}
     </div>
   </div>

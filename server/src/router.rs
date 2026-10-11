@@ -88,6 +88,10 @@ pub fn router(state: AppState) -> Router {
             "/roots/{root_id}/directories",
             post(files::create_directory),
         )
+        .route(
+            "/roots/{root_id}/files/{file_id}/ancestors",
+            get(files::ancestors),
+        )
         .route("/roots/{root_id}/files/{id}", get(files::metadata))
         .route("/roots/{root_id}/files/{id}/download", get(files::download))
         .route("/roots/{root_id}/files/{id}", delete(files::delete_file))

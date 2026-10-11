@@ -16,7 +16,7 @@ use crate::{
 };
 use chrono::{Duration, Utc};
 use sqlx::Transaction;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use tracing::instrument;
 use uuid::Uuid;
 use validify::Validify;
@@ -86,6 +86,51 @@ impl FileService {
             ));
         }
         self.files.list_files(root_id, dir_id).await
+    }
+
+    /// Directories from the root down to `file_id`, including `file_id`.
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
+    pub async fn ancestors(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        file_id: Uuid,
+    ) -> Result<Vec<FileEntry>, AppError> {
+        if !self.folders.can_access(user.id, root_id).await? {
+            return Err(AppError::Forbidden(
+                "You do not have access to this folder".into(),
+            ));
+        }
+
+        let mut chain = Vec::new();
+        let mut current = Some(file_id);
+        let mut seen = HashSet::new();
+
+        while let Some(id) = current {
+            if !seen.insert(id) {
+                return Err(AppError::Unprocessable(
+                    "Directory tree contains a cycle".into(),
+                ));
+            }
+
+            let entry = self
+                .files
+                .get_live(id)
+                .await?
+                .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
+
+            if entry.root_id != root_id {
+                return Err(AppError::ResourceMissing("File does not exist".into()));
+            }
+
+            current = entry.parent;
+
+            chain.push(entry);
+        }
+
+        chain.reverse();
+
+        Ok(chain)
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]

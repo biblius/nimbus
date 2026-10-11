@@ -144,6 +144,16 @@ export class NimbusClient {
     );
   }
 
+  /**
+   * Directories from the root down to `fileId`, including `fileId`.
+   * The first entry sits in the root. The last entry is `fileId`.
+   */
+  ancestors(rootId: string, fileId: string): Promise<FileEntry[]> {
+    return this.request<FileEntry[]>(
+      `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(fileId)}/ancestors`,
+    );
+  }
+
   createDirectory(
     rootId: string,
     parent: string | null,
@@ -237,6 +247,7 @@ export class NimbusClient {
         headers: { "X-NIMBUS-CSRF": "1" },
       },
     );
+
     if (!response.ok) {
       let body: ErrorBody | null = null;
       try {
@@ -249,9 +260,11 @@ export class NimbusClient {
 
     const url = URL.createObjectURL(await response.blob());
     const anchor = document.createElement("a");
+
     anchor.href = url;
     anchor.download = name;
     anchor.click();
+
     URL.revokeObjectURL(url);
   }
 

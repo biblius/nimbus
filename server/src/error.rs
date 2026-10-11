@@ -42,6 +42,9 @@ pub enum AppError {
     #[error("{0}")]
     ResourceConflict(String),
 
+    #[error("{0}")]
+    FileNameConflict(String),
+
     #[error("Forbidden error: {0}")]
     Forbidden(String),
 
@@ -68,9 +71,10 @@ impl AppError {
             AppError::ResourceMissing(_) => StatusCode::NOT_FOUND,
             AppError::ResourceConflict(_) => StatusCode::CONFLICT,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
-            AppError::Unprocessable(_) | AppError::Validation(_) | AppError::UuidParse(_) => {
-                StatusCode::UNPROCESSABLE_ENTITY
-            }
+            AppError::Unprocessable(_)
+            | AppError::FileNameConflict(_)
+            | AppError::Validation(_)
+            | AppError::UuidParse(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::QuotaExceeded | AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             AppError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -117,6 +121,11 @@ impl AppError {
                 message: Some("Payload too large".to_string()),
                 code: 9,
                 body: None,
+            },
+            AppError::FileNameConflict(file_name) => ErrorBody {
+                message: Some("File already exists".to_string()),
+                code: 10,
+                body: serde_json::to_value(file_name).ok(),
             },
             AppError::UuidParse(_) | AppError::Internal => ErrorBody {
                 message: Some("Internal server error".to_string()),

@@ -422,9 +422,12 @@ impl FileRepository {
 
         query.push_bind(root).push(" AND deleted_at IS NULL");
 
+        // Root entries have no parent. Everything else belongs to a directory.
         if let Some(parent) = parent {
             query.push(" AND parent = ").push_bind(parent);
-        };
+        } else {
+            query.push(" AND parent IS NULL");
+        }
 
         query.push(r#" ORDER BY CASE WHEN "type" = 'd' THEN 0 ELSE 1 END, name"#);
 

@@ -174,6 +174,33 @@ pub(crate) async fn upload(
 
 #[utoipa::path(
     get,
+    path = "/roots/{root_id}/files/{file_id}/ancestors",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("file_id" = Uuid, Path, description = "File id")
+    ),
+    responses((
+        status = 200,
+        description = "Directories from the root down to this file, including this file",
+        body = Vec<FileEntry>
+    ))
+)]
+pub(crate) async fn ancestors(
+    State(state): State<AppState>,
+    session: Session,
+    Path((root_id, file_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Vec<FileEntry>>, AppError> {
+    Ok(Json(
+        state
+            .services
+            .files
+            .ancestors(&session.user, root_id, file_id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
     path = "/roots/{root_id}/files/{id}",
     params(
         ("root_id" = Uuid, Path, description = "Root id"),

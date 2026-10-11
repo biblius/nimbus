@@ -24,8 +24,6 @@
     { value: "updatedAt", label: "Updated" },
   ];
 
-  let generation = $state(0);
-
   /**
    * The currently selected user.
    */
@@ -78,7 +76,6 @@
     });
 
     reset();
-    generation += 1;
   }
 
   async function updateUser(data: UserData, userId: string) {
@@ -94,7 +91,6 @@
     }
 
     editing = false;
-    generation += 1;
   }
 
   async function confirmDelete() {
@@ -112,7 +108,6 @@
       deleteUser = null;
 
       reset();
-      generation += 1;
 
       if (session.user?.id === userId) {
         await logout();
@@ -171,7 +166,6 @@
     load={(query) => session.client.listUsers(query)}
     {searchColumns}
     {sortColumns}
-    bind:generation
     {onLoaded}
   >
     {#snippet children(users)}
