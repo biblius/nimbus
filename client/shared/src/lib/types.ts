@@ -105,35 +105,113 @@ export type UpdateUserInput = {
   password?: string;
 };
 
-export type FileFamily =
-  "Image" | "Audio" | "Video" | "Text" | "Doc" | "Unknown";
-
-export type FileFormat =
-  | "Jpg"
-  | "Png"
-  | "Wav"
-  | "Mp3"
-  | "Avi"
-  | "Mp4"
-  | "Txt"
-  | "Json"
-  | "Html"
-  | "Xml"
-  | "Md"
-  | "Csv"
-  | "Css"
-  | "Rtf"
-  | "Doc"
-  | "Docx"
-  | "Odt"
-  | "Ods"
-  | "Odp"
-  | "Pdf"
-  | "Xls"
-  | "Xlsx"
-  | "Ppt"
-  | "Pptx"
-  | { Other: string };
+/**
+ * File types from the API. The single key is the family and the value is the format variant
+ * (`"Png"`, `"SevenZ"`). `other` holds the raw extension instead of a variant.
+ */
+export type FileType =
+  | {
+      app:
+        | "Wasm"
+        | "Elf"
+        | "Exe"
+        | "Dll"
+        | "Class"
+        | "Bc"
+        | "Mach"
+        | "Dex"
+        | "Dey"
+        | "Der"
+        | "Obj"
+        | "Pem"
+        | "Qcow2";
+    }
+  | { book: "Epub" | "Mobi" }
+  | {
+      image:
+        | "Jpg"
+        | "Jp2"
+        | "Png"
+        | "Gif"
+        | "Webp"
+        | "Cr2"
+        | "Tif"
+        | "Bmp"
+        | "Jxr"
+        | "Psd"
+        | "Ico"
+        | "Heif"
+        | "Avif"
+        | "Jxl"
+        | "Ora"
+        | "Djvu"
+        | "Dwg";
+    }
+  | {
+      video:
+        "Mp4" | "M4v" | "Mkv" | "Webm" | "Mov" | "Avi" | "Wmv" | "Mpg" | "Flv";
+    }
+  | {
+      audio:
+        | "Midi"
+        | "Mp3"
+        | "M4a"
+        | "Opus"
+        | "Ogg"
+        | "Flac"
+        | "Wav"
+        | "Amr"
+        | "Aac"
+        | "Aiff"
+        | "Dsf"
+        | "Ape";
+    }
+  | { font: "Woff" | "Woff2" | "Ttf" | "Otf" }
+  | {
+      doc:
+        | "Doc"
+        | "Docx"
+        | "Xls"
+        | "Xlsx"
+        | "Ppt"
+        | "Pptx"
+        | "Odt"
+        | "Ods"
+        | "Odp";
+    }
+  | {
+      archive:
+        | "Zip"
+        | "Tar"
+        | "Par2"
+        | "Rar"
+        | "Gz"
+        | "Bz2"
+        | "Bz3"
+        | "SevenZ"
+        | "Xz"
+        | "Pdf"
+        | "Swf"
+        | "Rtf"
+        | "Eot"
+        | "Ps"
+        | "Sqlite"
+        | "Nes"
+        | "Crx"
+        | "Cab"
+        | "Deb"
+        | "Ar"
+        | "Z"
+        | "Lz"
+        | "Rpm"
+        | "Dcm"
+        | "Zst"
+        | "Lz4"
+        | "Msi"
+        | "Cpio";
+    }
+  | { text: "Html" | "Xml" | "Sh" | "Txt" | "Json" | "Md" | "Csv" | "Css" }
+  | { other: string };
 
 export type FileEntry = {
   id: string;
@@ -142,8 +220,7 @@ export type FileEntry = {
   kind: "file" | "directory";
   name: string;
   parent: string | null;
-  family: FileFamily | null;
-  format: FileFormat | null;
+  fileType: FileType | null;
   hash: string | null;
   sizeBytes: number;
   createdAt: string;

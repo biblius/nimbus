@@ -1,5 +1,7 @@
 <script lang="ts">
   import {
+    ArrowDown,
+    ArrowUp,
     Check,
     ChevronRight,
     File as FileIcon,
@@ -16,7 +18,7 @@
   import { formatBytes, formatQuota, formatDatetime } from "../format";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
-  import type { FileEntry, Root } from "../types";
+  import { type FileEntry, type Root } from "../types";
   import { cn } from "../utils";
   import Button from "./ui/button/button.svelte";
 
@@ -51,10 +53,36 @@
   /// How many files are sent at the same time.
   const PARALLEL_UPLOADS = 10;
 
+  type SortColumn = "kind" | "name" | "size" | "created" | "modified";
+  type SortDirection = "asc" | "desc";
+
   const columns =
-    "grid grid-cols-[minmax(0,1fr)_2.25rem] items-center gap-x-3 px-3 sm:grid-cols-[minmax(0,1fr)_6rem_11.5rem_2.25rem] sm:gap-x-4";
+    "grid grid-cols-[minmax(0,1fr)_2.25rem] items-center gap-x-3 px-3 sm:grid-cols-[minmax(0,1fr)_6rem_11.5rem_2.25rem] sm:gap-x-4 lg:grid-cols-[minmax(0,1fr)_6rem_11.5rem_11.5rem_2.25rem]";
 
   let entries = $state<FileEntry[]>([]);
+  let sort = $state<{ column: SortColumn; direction: SortDirection }>({
+    column: "kind",
+    direction: "asc",
+  });
+
+  const occurences = $derived.by(() => {
+    const seen: Record<string, number> = {};
+    const labels: Record<string, string> = {};
+
+    for (const entry of entries) {
+      const prior = seen[entry.name] ?? 0;
+
+      seen[entry.name] = prior + 1;
+
+      if (prior > 0) {
+        labels[entry.id] = `${entry.name} (${prior})`;
+      } else {
+        labels[entry.id] = entry.name;
+      }
+    }
+
+    return labels;
+  });
 
   let loading = $state(true);
   let latestLoad = 0;
@@ -189,6 +217,8 @@
       }
 
       entries = next.filter((entry) => entry.parent === parent);
+
+      order();
     } catch (cause) {
       if (currentLoad !== latestLoad) {
         return;
@@ -206,30 +236,89 @@
     }
   }
 
-  /// Drop the returned entry into the open folder. Directories stay ahead of files, then by name.
+  function cycleSort(column: SortColumn) {
+    if (sort.column !== column) {
+      sort = { column, direction: "asc" };
+    } else if (sort.direction === "asc") {
+      sort = { column, direction: "desc" };
+    } else {
+      sort = { column: "kind", direction: "asc" };
+    }
+
+    order();
+  }
+
+  function order() {
+    entries.sort((left, right) => {
+      let byColumn = 0;
+
+      switch (sort.column) {
+        case "kind":
+          byColumn = left.kind.localeCompare(right.kind);
+          break;
+        case "name":
+          byColumn = left.name.localeCompare(right.name, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+          break;
+        case "size":
+          byColumn = left.sizeBytes - right.sizeBytes;
+          break;
+        case "created":
+          byColumn = left.createdAt.localeCompare(right.createdAt);
+          break;
+        case "modified":
+          byColumn = left.updatedAt.localeCompare(right.updatedAt);
+          break;
+      }
+
+      const directed = sort.direction === "asc" ? byColumn : -byColumn;
+
+      if (directed !== 0) {
+        return directed;
+      }
+
+      const byName = left.name.localeCompare(right.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+
+      if (byName !== 0) {
+        return byName;
+      }
+
+      if (left.createdAt !== right.createdAt) {
+        return left.createdAt < right.createdAt ? -1 : 1;
+      }
+
+      if (left.id === right.id) {
+        return 0;
+      }
+
+      return left.id < right.id ? -1 : 1;
+    });
+  }
+
+  function ariaSort(column: SortColumn): "ascending" | "descending" | "none" {
+    if (sort.column !== column) {
+      return "none";
+    }
+    return sort.direction === "asc" ? "ascending" : "descending";
+  }
+
+  /// Drop the returned entry into the open folder.
   function insertEntry(created: FileEntry) {
-    // Do not add files if the location changed
     if (created.parent !== location.id) {
       return;
     }
 
-    if (entries.length === 0) {
-      entries.push(created);
-      return;
-    }
+    entries.push(created);
+    order();
+  }
 
-    const index = entries.findIndex((entry) => {
-      if (created.kind !== entry.kind) {
-        return created.kind === "directory";
-      }
-      return created.name < entry.name;
-    });
-
-    if (index === -1) {
-      entries.push(created);
-    } else {
-      entries.splice(index, 0, created);
-    }
+  function label(entry: FileEntry) {
+    return occurences[entry.id] ?? entry.name;
   }
 
   function openDirectory(entry: FileEntry) {
@@ -302,8 +391,6 @@
           } catch (cause) {
             if (cause instanceof TypeError) {
               item.error = "The server could not be reached";
-            } else if (cause instanceof ApiError && cause.status === 409) {
-              item.error = "A file with this name already exists";
             } else if (cause instanceof ApiError && cause.status === 413) {
               item.error = "Not enough space";
             } else if (cause instanceof ApiError && cause.status === 403) {
@@ -392,9 +479,6 @@
     }
     if (cause instanceof TypeError) {
       return "The server could not be reached";
-    }
-    if (cause instanceof ApiError && cause.status === 409) {
-      return "A folder with this name already exists";
     }
     if (cause instanceof ApiError && cause.status === 403) {
       return "You cannot create a folder here";
@@ -492,7 +576,7 @@
   >
     <div class="min-w-0">
       <p class="truncate text-sm font-medium">{root.name}</p>
-      <p class="text-xs text-muted-foreground">
+      <p class="truncate text-xs text-muted-foreground">
         {root.owner ? "Private" : "Shared"}
         · {formatQuota(root.quota)}
         · Updated {formatDatetime(root.updatedAt)}
@@ -558,14 +642,15 @@
       <Button
         type="button"
         variant="outline"
+        aria-label="Upload"
         onclick={() => fileInput?.click()}
       >
         <Upload size={16} />
-        Upload
+        <span class="hidden sm:inline">Upload</span>
       </Button>
-      <Button type="button" onclick={beginDirectory}>
+      <Button type="button" aria-label="New folder" onclick={beginDirectory}>
         <FolderPlus size={16} />
-        New folder
+        <span class="hidden sm:inline">New folder</span>
       </Button>
     </div>
   </div>
@@ -622,9 +707,10 @@
     <div
       class="{columns} h-10 shrink-0 border-b text-xs font-medium text-muted-foreground"
     >
-      <span>Name</span>
-      <span class="hidden text-right sm:block">Size</span>
-      <span class="hidden sm:block">Modified</span>
+      {@render columnHeader("name", "Name", "", "")}
+      {@render columnHeader("size", "Size", "hidden sm:flex", "justify-end")}
+      {@render columnHeader("created", "Created", "hidden lg:flex", "")}
+      {@render columnHeader("modified", "Modified", "hidden sm:flex", "")}
       <span class="sr-only">Actions</span>
     </div>
 
@@ -720,7 +806,9 @@
                   onclick={() => openDirectory(entry)}
                 >
                   <Folder size={18} class="shrink-0 text-primary" />
-                  <span class="truncate" title={entry.name}>{entry.name}</span>
+                  <span class="truncate" title={label(entry)}
+                    >{label(entry)}</span
+                  >
                 </button>
               {:else}
                 <button
@@ -729,7 +817,9 @@
                   onclick={() => download(entry)}
                 >
                   <FileIcon size={18} class="shrink-0 text-muted-foreground" />
-                  <span class="truncate" title={entry.name}>{entry.name}</span>
+                  <span class="truncate" title={label(entry)}
+                    >{label(entry)}</span
+                  >
                 </button>
               {/if}
               <span
@@ -738,6 +828,11 @@
                 {entry.kind === "directory"
                   ? "—"
                   : formatBytes(entry.sizeBytes)}
+              </span>
+              <span
+                class="hidden min-w-0 truncate text-sm text-muted-foreground lg:block"
+              >
+                {formatDatetime(entry.createdAt)}
               </span>
               <span
                 class="hidden min-w-0 truncate text-sm text-muted-foreground sm:block"
@@ -749,7 +844,7 @@
                 variant="ghost"
                 size="sm"
                 class="size-8 px-0 text-muted-foreground hover:text-destructive sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
-                aria-label="Delete {entry.name}"
+                aria-label="Delete {label(entry)}"
                 onclick={() => remove(entry)}
               >
                 <Trash size={16} />
@@ -761,3 +856,35 @@
     </div>
   </div>
 </div>
+
+{#snippet columnHeader(
+  column: SortColumn,
+  label: string,
+  cellClass: string,
+  buttonClass: string,
+)}
+  <div
+    role="columnheader"
+    aria-sort={ariaSort(column)}
+    class={cn("flex h-full min-w-0 items-center", cellClass)}
+  >
+    <button
+      type="button"
+      class={cn(
+        "inline-flex h-full w-full min-w-0 items-center gap-1 hover:text-foreground",
+        sort.column === column && "text-foreground",
+        buttonClass,
+      )}
+      onclick={() => cycleSort(column)}
+    >
+      <span class="truncate">{label}</span>
+      {#if sort.column === column}
+        {#if sort.direction === "asc"}
+          <ArrowUp size={14} class="shrink-0" aria-hidden="true" />
+        {:else}
+          <ArrowDown size={14} class="shrink-0" aria-hidden="true" />
+        {/if}
+      {/if}
+    </button>
+  </div>
+{/snippet}

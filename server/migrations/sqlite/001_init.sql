@@ -39,7 +39,6 @@ CREATE TABLE files (
   parent BLOB REFERENCES files (id),
   "type" TEXT NOT NULL,
   name TEXT NOT NULL,
-  family TEXT,
   format TEXT,
   hash TEXT,
   size_bytes INTEGER NOT NULL,
@@ -55,16 +54,6 @@ CREATE INDEX files_created_by_idx ON files (created_by);
 CREATE INDEX files_parent_idx ON files (parent);
 
 CREATE INDEX files_hash_idx ON files (hash);
-
-CREATE UNIQUE INDEX files_root_name_idx ON files (root_id, name)
-WHERE
-  deleted_at IS NULL
-  AND parent IS NULL;
-
-CREATE UNIQUE INDEX files_sibling_name_idx ON files (parent, name)
-WHERE
-  deleted_at IS NULL
-  AND parent IS NOT NULL;
 
 CREATE TABLE sessions (
   id BLOB PRIMARY KEY NOT NULL,

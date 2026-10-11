@@ -41,6 +41,77 @@ mod files_service {
     }
 
     #[test]
+    async fn same_name_can_be_stored_more_than_once(state: TestState) {
+        let _ada = user(state, "ada-dupname").await;
+        let session = test::login(state, "ada-dupname", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let stored = test::submit(
+            state,
+            &session.user,
+            root,
+            vec![
+                ("same.txt", b"one".as_slice()),
+                ("same.txt", b"two".as_slice()),
+            ],
+        )
+        .await;
+        let first = stored[0].as_ref().unwrap();
+        let second = stored[1].as_ref().unwrap();
+        assert_eq!(first.name, "same.txt");
+        assert_eq!(second.name, "same.txt");
+        assert_ne!(first.id, second.id);
+
+        let notes = state
+            .services
+            .files
+            .create_directory(
+                &session.user,
+                root,
+                CreateDirectory {
+                    parent: None,
+                    name: "notes".into(),
+                },
+            )
+            .await
+            .unwrap();
+        let notes_again = state
+            .services
+            .files
+            .create_directory(
+                &session.user,
+                root,
+                CreateDirectory {
+                    parent: None,
+                    name: "notes".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(notes.name, "notes");
+        assert_eq!(notes_again.name, "notes");
+        assert_ne!(notes.id, notes_again.id);
+
+        let listed = state
+            .services
+            .files
+            .list(&session.user, root, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|entry| entry.name == "same.txt")
+                .count(),
+            2
+        );
+        assert_eq!(
+            listed.iter().filter(|entry| entry.name == "notes").count(),
+            2
+        );
+    }
+
+    #[test]
     async fn shared_root_enforces_quota(state: TestState) {
         let ada = user(state, "ada-quota").await;
         let session = test::login(state, "ada-quota", "temporary").await;

@@ -1,3 +1,4 @@
+use super::format::{FileType, SNIFF_LEN};
 use crate::error::AppError;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -40,6 +41,9 @@ pub struct UploadWriter {
     /// The maximum amount of bytes this writer can receive before it errors.
     max_bytes: i64,
 
+    /// Leading bytes kept for type detection. Capped at [`SNIFF_LEN`].
+    header: Vec<u8>,
+
     /// Used to control the Drop impl so as not to remove the file.
     committed: bool,
 }
@@ -58,6 +62,9 @@ pub struct TempFile {
 
     /// The final file size.
     pub size: i64,
+
+    /// Type decided from the upload header and the file name.
+    pub file_type: FileType,
 
     /// Used to control the Drop impl so as not to remove the file.
     committed: bool,
@@ -89,6 +96,7 @@ impl Storage {
             size: 0,
             temp,
             max_bytes: self.max_bytes,
+            header: Vec::with_capacity(SNIFF_LEN),
             committed: false,
         })
     }
@@ -98,8 +106,7 @@ impl Storage {
         let dest = self.path(&tmp.hash);
 
         if tokio::fs::try_exists(&dest).await? {
-            let _ = tokio::fs::remove_file(&tmp.temp).await;
-            tmp.committed = true;
+            // TempFile drop impl handles removing the tmp file
             return Ok(false);
         }
 
@@ -135,6 +142,12 @@ impl UploadWriter {
 
         self.hasher.update(chunk);
 
+        let room = SNIFF_LEN.saturating_sub(self.header.len());
+        if room > 0 {
+            let take = room.min(chunk.len());
+            self.header.extend_from_slice(&chunk[..take]);
+        }
+
         self.file.write_all(chunk).await?;
 
         self.size = next;
@@ -153,6 +166,7 @@ impl UploadWriter {
             temp: self.temp.clone(),
             hash: hex::encode(self.hasher.clone().finalize()),
             size: self.size,
+            file_type: FileType::infer(&self.name, &self.header),
             committed: false,
         })
     }

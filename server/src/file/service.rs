@@ -1,5 +1,4 @@
 use super::{
-    format::FileFormat,
     model::{CreateDirectory, FileEntry, FileKind},
     storage::{Storage, TempFile, UploadWriter},
 };
@@ -147,7 +146,7 @@ impl FileService {
     ) -> Result<FileEntry, AppError> {
         input.validify()?;
 
-        let name = self.writable(user, root, input.parent, &input.name).await?;
+        let name = self.writable(user, root, &input.name).await?;
 
         let entry = self
             .files
@@ -158,8 +157,7 @@ impl FileService {
                 kind: FileKind::Directory,
                 name,
                 parent: input.parent,
-                family: None,
-                format: None,
+                file_type: None,
                 hash: None,
                 size_bytes: 0,
             })
@@ -177,7 +175,7 @@ impl FileService {
         parent: Option<Uuid>,
         name: String,
     ) -> Result<UploadWriter, AppError> {
-        let name = self.writable(user, root, parent, &name).await?;
+        let name = self.writable(user, root, &name).await?;
         self.storage.writer(name).await
     }
 
@@ -200,9 +198,6 @@ impl FileService {
             }
         }
 
-        let format = FileFormat::from_ext(&file.name);
-        let family = format.family();
-
         let mut tx = self.tx.begin().await?;
 
         let entry = self
@@ -216,8 +211,7 @@ impl FileService {
                     kind: FileKind::File,
                     name: file.name.clone(),
                     parent,
-                    family: Some(family),
-                    format: Some(format),
+                    file_type: Some(file.file_type.clone()),
                     hash: Some(file.hash.clone()),
                     size_bytes: file.size,
                 },
@@ -255,9 +249,9 @@ impl FileService {
         }
 
         let mime = file
-            .format
+            .file_type
             .as_ref()
-            .map(|format| format.mime())
+            .map(|file_type| file_type.mime())
             .unwrap_or("application/octet-stream");
 
         Ok((file, path, mime))
@@ -355,24 +349,12 @@ impl FileService {
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
-    async fn writable(
-        &self,
-        user: &User,
-        root: Uuid,
-        parent: Option<Uuid>,
-        name: &str,
-    ) -> Result<String, AppError> {
+    async fn writable(&self, user: &User, root: Uuid, name: &str) -> Result<String, AppError> {
         let name = FileEntry::valid_name(name)?.to_string();
 
         if user.role != Role::Admin && !self.folders.can_access(user.id, root).await? {
             return Err(AppError::Forbidden(
                 "You do not have access to this folder".into(),
-            ));
-        }
-
-        if self.files.name_taken(root, parent, &name).await? {
-            return Err(AppError::ResourceConflict(
-                "A directory with that name already exists".into(),
             ));
         }
 

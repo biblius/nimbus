@@ -2,7 +2,7 @@ use crate::{
     db::{Db, DbPool},
     error::AppError,
     file::{
-        format::{FileFamily, FileFormat},
+        format::FileType,
         model::{FileEntry, FileKind, Root, RootView},
     },
 };
@@ -24,8 +24,7 @@ pub struct NewFile {
     pub name: String,
     /// `None` for an entry that sits directly in the root.
     pub parent: Option<Uuid>,
-    pub family: Option<FileFamily>,
-    pub format: Option<FileFormat>,
+    pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
 }
@@ -296,8 +295,7 @@ impl FileRepository {
                 "type" AS "kind: FileKind",
                 name,
                 parent,
-                family AS "family: FileFamily",
-                format AS "format: FileFormat",
+                format AS "file_type: FileType",
                 hash,
                 size_bytes,
                 created_at,
@@ -337,7 +335,6 @@ impl FileRepository {
                 "type",
                 name,
                 parent,
-                family,
                 format,
                 hash,
                 size_bytes,
@@ -345,7 +342,7 @@ impl FileRepository {
                 updated_at,
                 deleted_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, NULL)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, NULL)
             RETURNING
                 id,
                 root_id,
@@ -353,8 +350,7 @@ impl FileRepository {
                 "type" AS "kind: FileKind",
                 name,
                 parent,
-                family AS "family: FileFamily",
-                format AS "format: FileFormat",
+                format AS "file_type: FileType",
                 hash,
                 size_bytes,
                 created_at,
@@ -367,8 +363,7 @@ impl FileRepository {
             file.kind as _,
             file.name,
             file.parent,
-            file.family.map(|f| f.to_string()),
-            file.format.map(|f| f.to_string()),
+            file.file_type as _,
             file.hash,
             file.size_bytes,
             now
@@ -407,8 +402,7 @@ impl FileRepository {
                 "type" AS kind,
                 name,
                 parent,
-                family,
-                format,
+                format AS file_type,
                 hash,
                 size_bytes,
                 created_at,
@@ -429,7 +423,7 @@ impl FileRepository {
             query.push(" AND parent IS NULL");
         }
 
-        query.push(r#" ORDER BY CASE WHEN "type" = 'd' THEN 0 ELSE 1 END, name"#);
+        query.push(r#" ORDER BY CASE WHEN "type" = 'd' THEN 0 ELSE 1 END, name, created_at, id"#);
 
         query
             .build_query_as::<FileEntry>()
@@ -457,8 +451,7 @@ impl FileRepository {
                 "type" AS "kind: FileKind",
                 name,
                 parent,
-                family AS "family: FileFamily",
-                format AS "format: FileFormat",
+                format AS "file_type: FileType",
                 hash,
                 size_bytes,
                 created_at,
@@ -494,8 +487,7 @@ impl FileRepository {
                 "type" AS "kind: FileKind",
                 name,
                 parent,
-                family AS "family: FileFamily",
-                format AS "format: FileFormat",
+                format AS "file_type: FileType",
                 hash,
                 size_bytes,
                 created_at,
@@ -509,32 +501,6 @@ impl FileRepository {
         .fetch_all(executor)
         .await
         .map_err(AppError::from)
-    }
-
-    /// `parent` is null when checking the top level of a root.
-    #[instrument(skip(self), err(Debug))]
-    pub async fn name_taken(
-        &self,
-        root_id: Uuid,
-        parent: Option<Uuid>,
-        name: &str,
-    ) -> Result<bool, AppError> {
-        let found = sqlx::query_scalar!(
-            r#"
-            SELECT id
-            FROM files
-            WHERE root_id = $1
-              AND name = $2
-              AND deleted_at IS NULL
-              AND parent IS NOT DISTINCT FROM $3
-            "#,
-            root_id,
-            name,
-            parent
-        )
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(found.is_some())
     }
 
     /// Bytes stored in a root. Directory rows are excluded.
@@ -625,8 +591,7 @@ impl FileRepository {
                 "type" AS "kind: FileKind",
                 name,
                 parent,
-                family AS "family: FileFamily",
-                format AS "format: FileFormat",
+                format AS "file_type: FileType",
                 hash,
                 size_bytes,
                 created_at,

@@ -5,8 +5,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validify::Validify;
 
-use super::format::FileFormat;
-use crate::{db::Db, error::AppError, file::format::FileFamily};
+use super::format::FileType;
+use crate::{db::Db, error::AppError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -95,8 +95,7 @@ pub struct FileEntry {
     pub kind: FileKind,
     pub name: String,
     pub parent: Option<Uuid>,
-    pub family: Option<FileFamily>,
-    pub format: Option<FileFormat>,
+    pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
     pub created_at: DateTime<Utc>,

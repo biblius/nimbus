@@ -1,273 +1,297 @@
 use serde::Serialize;
 use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError};
-use std::fmt::Display;
+use std::sync::OnceLock;
 use utoipa::ToSchema;
 
 use crate::db::Db;
 
-/// Top-level classification used to group files in the client and determine which type of metadata
-/// and processing methods to use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
-pub enum FileFamily {
-    /// Image files
-    Image,
-    /// Audio files
-    Audio,
-    /// Video files
-    Video,
-    /// Text based (unicode) files that can be directly parsed to strings.
-    Text,
-    /// Text based files with a specific structure, ultimately determined by the format.
-    Doc,
-    /// Unknown file family
-    Unknown,
-}
+/// How many leading bytes [`FileType::infer`] keeps. Matches the `infer` crate's read limit.
+pub const SNIFF_LEN: usize = 8192;
 
-impl FileFamily {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Image => "image",
-            Self::Audio => "audio",
-            Self::Video => "video",
-            Self::Text => "text",
-            Self::Doc => "doc",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
-impl From<&str> for FileFamily {
-    fn from(value: &str) -> Self {
-        match value {
-            "image" => Self::Image,
-            "audio" => Self::Audio,
-            "video" => Self::Video,
-            "text" => Self::Text,
-            "doc" => Self::Doc,
-            _ => Self::Unknown,
-        }
-    }
-}
-
-impl From<String> for FileFamily {
-    fn from(value: String) -> Self {
-        value.as_str().into()
-    }
-}
-
-impl Display for FileFamily {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl Type<Db> for FileFamily {
-    fn type_info() -> <Db as Database>::TypeInfo {
-        <str as Type<Db>>::type_info()
-    }
-
-    fn compatible(ty: &<Db as Database>::TypeInfo) -> bool {
-        <str as Type<Db>>::compatible(ty)
-    }
-}
-
-impl<'q> Encode<'q, Db> for FileFamily {
-    fn encode_by_ref(
-        &self,
-        buf: &mut <Db as Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
-        <&'q str as Encode<'q, Db>>::encode_by_ref(&self.as_str(), buf)
-    }
-}
-
-impl<'r> Decode<'r, Db> for FileFamily {
-    fn decode(value: <Db as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
-        Ok(Self::from(<&'r str as Decode<'r, Db>>::decode(value)?))
-    }
-}
-
-/// File format. Unknown extensions use [`FileFormat::Other`].
+/// A file's family and format. The outer variant is the family.
+///
+/// Built-in variants are the types `infer` recognizes. Extra byte matchers are registered on the
+/// `infer::Infer` inside [`FileType::infer`]. Anything that does not map to a variant is
+/// [`FileType::Other`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
-pub enum FileFormat {
-    Jpg,
-    Png,
-    Wav,
-    Mp3,
-    Avi,
-    Mp4,
-    Txt,
-    Json,
-    Html,
-    Xml,
-    Md,
-    Csv,
-    Css,
-    Rtf,
-    Doc,
-    Docx,
-    Odt,
-    Ods,
-    Odp,
-    Pdf,
-    Xls,
-    Xlsx,
-    Ppt,
-    Pptx,
+#[serde(rename_all = "lowercase")]
+pub enum FileType {
+    App(AppFormat),
+    Book(BookFormat),
+    Image(ImageFormat),
+    Video(VideoFormat),
+    Audio(AudioFormat),
+    Font(FontFormat),
+    Doc(DocFormat),
+    Archive(ArchiveFormat),
+    Text(TextFormat),
     Other(String),
 }
 
-impl FileFormat {
-    pub fn as_str(&self) -> &str {
-        match self {
-            FileFormat::Jpg => "jpg",
-            FileFormat::Png => "png",
-            FileFormat::Wav => "wav",
-            FileFormat::Mp3 => "mp3",
-            FileFormat::Avi => "avi",
-            FileFormat::Mp4 => "mp4",
-            FileFormat::Txt => "txt",
-            FileFormat::Json => "json",
-            FileFormat::Html => "html",
-            FileFormat::Xml => "xml",
-            FileFormat::Md => "md",
-            FileFormat::Csv => "csv",
-            FileFormat::Css => "css",
-            FileFormat::Rtf => "rtf",
-            FileFormat::Doc => "doc",
-            FileFormat::Docx => "docx",
-            FileFormat::Odt => "odt",
-            FileFormat::Ods => "ods",
-            FileFormat::Odp => "odp",
-            FileFormat::Pdf => "pdf",
-            FileFormat::Xls => "xls",
-            FileFormat::Xlsx => "xlsx",
-            FileFormat::Ppt => "ppt",
-            FileFormat::Pptx => "pptx",
-            FileFormat::Other(ext) => ext,
+macro_rules! formats {
+    (
+        $family:ident,
+        $name:ident {
+            $(
+                $variant:ident => $ext:literal $(| $alias:literal)* , $mime:literal
+            ),*
+            $(,)?
         }
-    }
-}
-
-impl From<&str> for FileFormat {
-    fn from(value: &str) -> Self {
-        match value {
-            "jpg" | "jpeg" => Self::Jpg,
-            "png" => Self::Png,
-            "wav" => Self::Wav,
-            "mp3" => Self::Mp3,
-            "avi" => Self::Avi,
-            "mp4" => Self::Mp4,
-            "txt" => Self::Txt,
-            "json" => Self::Json,
-            "html" | "htm" => Self::Html,
-            "xml" => Self::Xml,
-            "md" | "markdown" => Self::Md,
-            "csv" => Self::Csv,
-            "css" => Self::Css,
-            "rtf" => Self::Rtf,
-            "doc" => Self::Doc,
-            "docx" => Self::Docx,
-            "odt" => Self::Odt,
-            "ods" => Self::Ods,
-            "odp" => Self::Odp,
-            "pdf" => Self::Pdf,
-            "xls" => Self::Xls,
-            "xlsx" => Self::Xlsx,
-            "ppt" => Self::Ppt,
-            "pptx" => Self::Pptx,
-            ext => Self::Other(ext.to_string()),
-        }
-    }
-}
-
-impl From<String> for FileFormat {
-    fn from(value: String) -> Self {
-        value.as_str().into()
-    }
-}
-
-impl Display for FileFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl FileFormat {
-    pub fn from_ext(name: &str) -> Self {
-        let Some((_, ext)) = name.rsplit_once('.') else {
-            return Self::Other("unknown".into());
-        };
-
-        if ext.is_empty() || ext.len() > 32 {
-            return Self::Other("unknown".into());
+    ) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+        pub enum $name {
+            $(
+                $variant
+            ),*
         }
 
-        Self::from(ext.to_ascii_lowercase().as_str())
-    }
-
-    pub fn family(&self) -> FileFamily {
-        match self {
-            Self::Jpg | Self::Png => FileFamily::Image,
-            Self::Wav | Self::Mp3 => FileFamily::Audio,
-            Self::Avi | Self::Mp4 => FileFamily::Video,
-            Self::Txt | Self::Json | Self::Html | Self::Xml | Self::Md | Self::Csv | Self::Css => {
-                FileFamily::Text
+        impl $name {
+            pub fn ext(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $ext),*
+                }
             }
-            Self::Rtf
-            | Self::Doc
-            | Self::Docx
-            | Self::Odt
-            | Self::Ods
-            | Self::Odp
-            | Self::Pdf
-            | Self::Xls
-            | Self::Xlsx
-            | Self::Ppt
-            | Self::Pptx => FileFamily::Doc,
-            Self::Other(ext) => match ext.as_str() {
-                "gif" | "webp" | "svg" | "bmp" | "heic" => FileFamily::Image,
-                "flac" | "ogg" | "aac" | "m4a" => FileFamily::Audio,
-                "mkv" | "webm" | "mov" => FileFamily::Video,
-                "js" | "ts" | "rs" | "yaml" | "yml" | "toml" => FileFamily::Text,
-                _ => FileFamily::Unknown,
+
+            pub fn mime(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $mime),*
+                }
+            }
+
+            fn from_ext(ext: &str) -> Option<Self> {
+                match ext {
+                    $(
+                        $ext $(| $alias )* => Some(Self::$variant),
+                    )*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+formats!(App, AppFormat {
+    Wasm => "wasm", "application/wasm",
+    Elf => "elf", "application/x-executable",
+    Exe => "exe", "application/vnd.microsoft.portable-executable",
+    Dll => "dll", "application/vnd.microsoft.portable-executable",
+    Class => "class", "application/java",
+    Bc => "bc", "application/x-llvm",
+    Mach => "mach", "application/x-mach-binary",
+    Dex => "dex", "application/vnd.android.dex",
+    Dey => "dey", "application/vnd.android.dey",
+    Der => "der", "application/x-x509-ca-cert",
+    Obj => "obj", "application/x-executable",
+    Pem => "pem", "application/x-x509-ca-cert",
+    Qcow2 => "qcow2", "application/x-qemu-disk",
+});
+
+formats!(Book, BookFormat {
+    Epub => "epub", "application/epub+zip",
+    Mobi => "mobi", "application/x-mobipocket-ebook",
+});
+
+formats!(Image, ImageFormat {
+    Jpg => "jpg" | "jpeg", "image/jpeg",
+    Jp2 => "jp2", "image/jp2",
+    Png => "png", "image/png",
+    Gif => "gif", "image/gif",
+    Webp => "webp", "image/webp",
+    Cr2 => "cr2", "image/x-canon-cr2",
+    Tif => "tif" | "tiff", "image/tiff",
+    Bmp => "bmp", "image/bmp",
+    Jxr => "jxr", "image/vnd.ms-photo",
+    Psd => "psd", "image/vnd.adobe.photoshop",
+    Ico => "ico", "image/vnd.microsoft.icon",
+    Heif => "heif" | "heic", "image/heif",
+    Avif => "avif", "image/avif",
+    Jxl => "jxl", "image/jxl",
+    Ora => "ora", "image/openraster",
+    Djvu => "djvu", "image/vnd.djvu",
+    Dwg => "dwg", "image/vnd.dwg",
+});
+
+formats!(Video, VideoFormat {
+    Mp4 => "mp4", "video/mp4",
+    M4v => "m4v", "video/x-m4v",
+    Mkv => "mkv", "video/x-matroska",
+    Webm => "webm", "video/webm",
+    Mov => "mov", "video/quicktime",
+    Avi => "avi", "video/x-msvideo",
+    Wmv => "wmv", "video/x-ms-wmv",
+    Mpg => "mpg" | "mpeg", "video/mpeg",
+    Flv => "flv", "video/x-flv",
+});
+
+formats!(Audio, AudioFormat {
+    Midi => "midi" | "mid", "audio/midi",
+    Mp3 => "mp3", "audio/mpeg",
+    M4a => "m4a", "audio/m4a",
+    Opus => "opus", "audio/opus",
+    Ogg => "ogg", "audio/ogg",
+    Flac => "flac", "audio/x-flac",
+    Wav => "wav", "audio/x-wav",
+    Amr => "amr", "audio/amr",
+    Aac => "aac", "audio/aac",
+    Aiff => "aiff" |  "aif", "audio/x-aiff",
+    Dsf => "dsf", "audio/x-dsf",
+    Ape => "ape", "audio/x-ape",
+});
+
+formats!(Font, FontFormat {
+    Woff => "woff", "application/font-woff",
+    Woff2 => "woff2", "application/font-woff",
+    Ttf => "ttf", "application/font-sfnt",
+    Otf => "otf", "application/font-sfnt",
+});
+
+formats!(Doc, DocFormat {
+    Doc => "doc", "application/msword",
+    Docx => "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    Xls => "xls", "application/vnd.ms-excel",
+    Xlsx => "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    Ppt => "ppt", "application/vnd.ms-powerpoint",
+    Pptx => "pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    Odt => "odt", "application/vnd.oasis.opendocument.text",
+    Ods => "ods", "application/vnd.oasis.opendocument.spreadsheet",
+    Odp => "odp", "application/vnd.oasis.opendocument.presentation",
+});
+
+formats!(Archive, ArchiveFormat {
+    Zip => "zip", "application/zip",
+    Tar => "tar", "application/x-tar",
+    Par2 => "par2", "application/x-par2",
+    Rar => "rar", "application/vnd.rar",
+    Gz => "gz" | "gzip", "application/gzip",
+    Bz2 => "bz2", "application/x-bzip2",
+    Bz3 => "bz3", "application/vnd.bzip3",
+    SevenZ => "7z", "application/x-7z-compressed",
+    Xz => "xz", "application/x-xz",
+    Pdf => "pdf", "application/pdf",
+    Swf => "swf", "application/x-shockwave-flash",
+    Rtf => "rtf", "application/rtf",
+    Eot => "eot", "application/octet-stream",
+    Ps => "ps", "application/postscript",
+    Sqlite => "sqlite", "application/vnd.sqlite3",
+    Nes => "nes", "application/x-nintendo-nes-rom",
+    Crx => "crx", "application/x-google-chrome-extension",
+    Cab => "cab", "application/vnd.ms-cab-compressed",
+    Deb => "deb", "application/vnd.debian.binary-package",
+    Ar => "ar", "application/x-unix-archive",
+    Z => "z", "application/x-compress",
+    Lz => "lz", "application/x-lzip",
+    Rpm => "rpm", "application/x-rpm",
+    Dcm => "dcm", "application/dicom",
+    Zst => "zst", "application/zstd",
+    Lz4 => "lz4", "application/x-lz4",
+    Msi => "msi", "application/x-ole-storage",
+    Cpio => "cpio", "application/x-cpio",
+});
+
+formats!(Text, TextFormat {
+    Html => "html" | "htm", "text/html",
+    Xml => "xml", "text/xml",
+    Sh => "sh", "text/x-shellscript",
+    Txt => "txt" | "text", "text/plain; charset=utf-8",
+    Json => "json", "application/json",
+    Md => "md" |  "markdown", "text/markdown; charset=utf-8",
+    Csv => "csv", "text/csv; charset=utf-8",
+    Css => "css", "text/css; charset=utf-8",
+});
+
+impl FileType {
+    /// Decide the file type from the leading bytes and the filename extension.
+    ///
+    /// Magic bytes and the extension must name the same format. When the bytes match nothing,
+    /// the extension's format is used. A name with no extension and no magic bytes is plain text.
+    pub fn infer(name: &str, bytes: &[u8]) -> Self {
+        static INFER: OnceLock<infer::Infer> = OnceLock::new();
+
+        let from_bytes = INFER
+            .get_or_init(infer::Infer::new)
+            .get(bytes)
+            .map(|kind| Self::from_extension(kind.extension()));
+
+        let ext = name
+            .rsplit_once('.')
+            .map(|(_, ext)| ext.to_ascii_lowercase());
+
+        let from_ext = ext.as_deref().map(Self::from_extension);
+
+        match (from_bytes, from_ext) {
+            // Types infered from bytes always have priority.
+            (Some(byte_type), _) => byte_type,
+            // Types inferred from extensions must either be for text
+            // files or unhandled files. Text files cannot be inferred
+            // from bytes.
+            (None, Some(ext_type)) => match ext_type {
+                FileType::Text(_) | FileType::Other(_) => ext_type.clone(),
+                // If this is not a text file or unhandled file we must flag it as
+                // an unhandled file by setting it to other.
+                _ => {
+                    tracing::warn!(
+                        "file type from bytes does not match extension: {:?}",
+                        ext_type
+                    );
+                    Self::Other("other".into())
+                }
+            },
+            // If there is no extension nor byte info, we default to unhandled.
+            (None, None) => match ext {
+                Some(ext) => Self::Other(ext),
+                None => Self::Other("other".into()),
             },
         }
     }
 
     pub fn mime(&self) -> &'static str {
         match self {
-            Self::Jpg => "image/jpeg",
-            Self::Png => "image/png",
-            Self::Wav => "audio/wav",
-            Self::Mp3 => "audio/mpeg",
-            Self::Avi => "video/x-msvideo",
-            Self::Mp4 => "video/mp4",
-            Self::Txt => "text/plain; charset=utf-8",
-            Self::Json => "application/json",
-            Self::Html => "text/html; charset=utf-8",
-            Self::Xml => "application/xml",
-            Self::Md => "text/markdown; charset=utf-8",
-            Self::Csv => "text/csv; charset=utf-8",
-            Self::Css => "text/css; charset=utf-8",
-            Self::Rtf => "application/rtf",
-            Self::Doc => "application/msword",
-            Self::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            Self::Odt => "application/vnd.oasis.opendocument.text",
-            Self::Ods => "application/vnd.oasis.opendocument.spreadsheet",
-            Self::Odp => "application/vnd.oasis.opendocument.presentation",
-            Self::Pdf => "application/pdf",
-            Self::Xls => "application/vnd.ms-excel",
-            Self::Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            Self::Ppt => "application/vnd.ms-powerpoint",
-            Self::Pptx => {
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-            }
+            Self::App(format) => format.mime(),
+            Self::Book(format) => format.mime(),
+            Self::Image(format) => format.mime(),
+            Self::Video(format) => format.mime(),
+            Self::Audio(format) => format.mime(),
+            Self::Font(format) => format.mime(),
+            Self::Doc(format) => format.mime(),
+            Self::Archive(format) => format.mime(),
+            Self::Text(format) => format.mime(),
             Self::Other(_) => "application/octet-stream",
         }
     }
+
+    /// Canonical extension stored in the `format` column.
+    pub fn format(&self) -> &str {
+        match self {
+            Self::App(format) => format.ext(),
+            Self::Book(format) => format.ext(),
+            Self::Image(format) => format.ext(),
+            Self::Video(format) => format.ext(),
+            Self::Audio(format) => format.ext(),
+            Self::Font(format) => format.ext(),
+            Self::Doc(format) => format.ext(),
+            Self::Archive(format) => format.ext(),
+            Self::Text(format) => format.ext(),
+            Self::Other(ext) => ext,
+        }
+    }
+
+    pub fn from_extension(ext: &str) -> Self {
+        let ext = ext.to_ascii_lowercase();
+        AppFormat::from_ext(&ext)
+            .map(Self::App)
+            .or_else(|| BookFormat::from_ext(&ext).map(Self::Book))
+            .or_else(|| ImageFormat::from_ext(&ext).map(Self::Image))
+            .or_else(|| VideoFormat::from_ext(&ext).map(Self::Video))
+            .or_else(|| AudioFormat::from_ext(&ext).map(Self::Audio))
+            .or_else(|| FontFormat::from_ext(&ext).map(Self::Font))
+            .or_else(|| DocFormat::from_ext(&ext).map(Self::Doc))
+            .or_else(|| ArchiveFormat::from_ext(&ext).map(Self::Archive))
+            .or_else(|| TextFormat::from_ext(&ext).map(Self::Text))
+            .unwrap_or_else(|| Self::Other(ext.to_string()))
+    }
 }
 
-impl Type<Db> for FileFormat {
+impl Type<Db> for FileType {
     fn type_info() -> <Db as Database>::TypeInfo {
         <str as Type<Db>>::type_info()
     }
@@ -277,17 +301,86 @@ impl Type<Db> for FileFormat {
     }
 }
 
-impl<'q> Encode<'q, Db> for FileFormat {
+impl<'q> Encode<'q, Db> for FileType {
     fn encode_by_ref(
         &self,
         buf: &mut <Db as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
-        <&str as Encode<'q, Db>>::encode_by_ref(&self.as_str(), buf)
+        <&str as Encode<'q, Db>>::encode(self.format(), buf)
     }
 }
 
-impl<'r> Decode<'r, Db> for FileFormat {
+impl<'r> Decode<'r, Db> for FileType {
     fn decode(value: <Db as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
-        Ok(Self::from(<&str as Decode<'r, Db>>::decode(value)?))
+        Ok(Self::from_extension(<&str as Decode<'r, Db>>::decode(
+            value,
+        )?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PNG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF, 0x00];
+
+    #[test]
+    fn agreeing_magic_and_extension_keep_the_format() {
+        let kind = FileType::infer("photo.png", PNG);
+        assert_eq!(kind, FileType::Image(ImageFormat::Png));
+        assert_eq!(kind.mime(), "image/png");
+        assert_eq!(kind.format(), "png");
+        assert_eq!(FileType::from_extension("png"), kind);
+        assert_eq!(
+            serde_json::to_value(&kind).unwrap(),
+            serde_json::json!({ "image": "Png" })
+        );
+    }
+
+    #[test]
+    fn jpeg_alias_matches_magic() {
+        assert_eq!(
+            FileType::infer("photo.jpeg", JPEG),
+            FileType::Image(ImageFormat::Jpg)
+        );
+    }
+
+    #[test]
+    fn bytes_take_priority_over_the_extension() {
+        let kind = FileType::infer("photo.jpg", PNG);
+        assert_eq!(kind, FileType::Image(ImageFormat::Png));
+        assert_eq!(kind.format(), "png");
+    }
+
+    #[test]
+    fn magic_without_an_extension_uses_the_bytes() {
+        assert_eq!(
+            FileType::infer("upload", JPEG),
+            FileType::Image(ImageFormat::Jpg)
+        );
+    }
+
+    #[test]
+    fn missing_magic_uses_the_extension() {
+        assert_eq!(
+            FileType::infer("notes.json", br#"{"a":1}"#),
+            FileType::Text(TextFormat::Json)
+        );
+    }
+
+    #[test]
+    fn missing_magic_and_extension_is_other() {
+        let kind = FileType::infer("README", b"hello");
+        assert_eq!(kind, FileType::Other("other".into()));
+        assert_eq!(FileType::from_extension(kind.format()), kind);
+    }
+
+    #[test]
+    fn unknown_extension_without_magic_is_other() {
+        assert_eq!(
+            FileType::infer("data.bin", b"hello"),
+            FileType::Other("bin".into())
+        );
     }
 }
