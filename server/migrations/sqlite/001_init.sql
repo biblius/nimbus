@@ -36,7 +36,7 @@ CREATE TABLE files (
   id BLOB PRIMARY KEY NOT NULL,
   root_id BLOB NOT NULL REFERENCES roots (id),
   created_by BLOB NOT NULL REFERENCES users (id),
-  parent BLOB REFERENCES files (id),
+  parent BLOB REFERENCES files (id) DEFERRABLE INITIALLY DEFERRED,
   "type" TEXT NOT NULL,
   name TEXT NOT NULL,
   format TEXT,
@@ -54,21 +54,22 @@ CREATE INDEX files_parent_idx ON files (parent);
 
 CREATE INDEX files_hash_idx ON files (hash);
 
--- Rows leave `files` when trashed. A directly trashed row has `parent` NULL and
--- keeps its previous parent in `original_parent`. Descendants keep their parent.
+-- Rows leave `files` when trashed. A directly trashed row has `parent` NULL.
+-- Descendants keep their parent.
 CREATE TABLE trashed_files (
   id BLOB PRIMARY KEY NOT NULL,
   root_id BLOB NOT NULL REFERENCES roots (id),
+  created_by BLOB NOT NULL REFERENCES users (id),
   trashed_by BLOB NOT NULL REFERENCES users (id),
   parent BLOB REFERENCES trashed_files (id) DEFERRABLE INITIALLY DEFERRED,
-  original_parent BLOB,
   "type" TEXT NOT NULL,
   name TEXT NOT NULL,
   format TEXT,
   hash TEXT,
   size_bytes INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  trashed_at TEXT NOT NULL
 );
 
 CREATE INDEX trashed_files_root_id_idx ON trashed_files (root_id);
@@ -79,7 +80,7 @@ CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
 
-CREATE INDEX trashed_files_created_at_idx ON trashed_files (created_at);
+CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 
 CREATE TABLE sessions (
   id BLOB PRIMARY KEY NOT NULL,

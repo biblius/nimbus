@@ -11,14 +11,14 @@ use crate::{
     },
     error::AppError,
     file::{
-        model::{RootView, TrashFiles},
+        model::{RestoreFile, RootView, TrashFiles},
         tree::FileTree,
     },
     user::model::{Role, User},
 };
 use chrono::{Duration, Utc};
 use sqlx::{Transaction, migrate::MigrateError::Source};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use tracing::instrument;
 use uuid::Uuid;
 use validify::{Validate, Validify};
@@ -285,6 +285,79 @@ impl FileService {
         self.files.trash(root_id, user.id, &input.ids).await
     }
 
+    /// Move a trashed item and its descendants back into `files` under `input.parent`.
+    #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
+    pub async fn restore(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        id: Uuid,
+        input: RestoreFile,
+    ) -> Result<(), AppError> {
+        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
+            return Err(AppError::Forbidden(
+                "You do not have access to this folder".into(),
+            ));
+        }
+
+        let Some(trashed_root) = self.files.trashed_root(id).await? else {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        };
+
+        if trashed_root != root_id {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        if let Some(parent) = input.parent {
+            let entry =
+                self.files.get_live(parent).await?.ok_or_else(|| {
+                    AppError::Unprocessable("Target directory does not exist".into())
+                })?;
+
+            if entry.root_id != root_id || entry.kind != FileKind::Directory {
+                return Err(AppError::Unprocessable("Target is not a directory".into()));
+            }
+        }
+
+        let quota = self.files.root_quota(root_id).await?;
+
+        let used = if quota > 0 {
+            self.files.root_quota_usage(root_id).await?
+        } else {
+            0
+        };
+
+        let mut tx = self.tx.begin().await?;
+
+        let mut restored = self
+            .files
+            .delete_trashed_tree(&mut *tx, root_id, id)
+            .await?;
+
+        let bytes: i64 = restored
+            .iter()
+            .filter(|row| row.kind == FileKind::File)
+            .map(|row| row.size_bytes)
+            .sum();
+
+        if quota > 0 && used.saturating_add(bytes) > quota {
+            return Err(AppError::QuotaExceeded);
+        }
+
+        for file in &mut restored {
+            if file.id == id {
+                file.parent = input.parent;
+                break;
+            }
+        }
+
+        self.files.insert_many(&mut *tx, restored).await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
     pub async fn get_trash_tree(&self, user: &User, root_id: Uuid) -> Result<FileTree, AppError> {
         if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
             return Err(AppError::Forbidden(
@@ -297,6 +370,7 @@ impl FileService {
         Ok(FileTree {
             id: root_id,
             name: String::new(),
+            kind: FileKind::Directory,
             children: FileTree::from_entries(files),
         })
     }
@@ -318,6 +392,7 @@ impl FileService {
         Ok(FileTree {
             id: parent.unwrap_or(root_id),
             name: String::new(),
+            kind: FileKind::Directory,
             children: FileTree::from_entries(files),
         })
     }

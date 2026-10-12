@@ -2,8 +2,9 @@
   import { onMount } from "svelte";
   import FileBrowser from "../components/FileBrowser.svelte";
   import PanelShell from "../components/PanelShell.svelte";
+  import TrashBrowser from "../components/TrashBrowser.svelte";
   import UserSidebar from "../components/UserSidebar.svelte";
-  import { navigate, route } from "../router";
+  import { isActive, navigate, route } from "../router";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
   import type { Root } from "../types";
@@ -13,7 +14,10 @@
 
   const rootId = $derived(route.params.root_id);
   const parentId = $derived(route.params.parent_id ?? null);
-  const selected = $derived(roots.find((root) => root.id === rootId));
+  const viewingTrash = $derived(isActive("/files/trash"));
+  const selected = $derived(
+    viewingTrash ? undefined : roots.find((root) => root.id === rootId),
+  );
 
   onMount(async () => {
     try {
@@ -26,11 +30,13 @@
   });
 
   $effect(() => {
-    if (rootId || !loaded || roots.length === 0) {
+    if (viewingTrash || rootId || !loaded || roots.length === 0) {
       return;
     }
+
     const home =
       roots.find((root) => root.owner === session.user?.id) ?? roots[0];
+
     navigate("/files/:root_id", {
       params: { root_id: home.id },
       replace: true,
@@ -48,7 +54,9 @@
     class="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col overflow-hidden p-4 sm:p-6"
   >
     <div class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
-      {#if selected}
+      {#if viewingTrash && loaded}
+        <TrashBrowser {roots} />
+      {:else if selected}
         <FileBrowser
           folder={selected}
           {parentId}

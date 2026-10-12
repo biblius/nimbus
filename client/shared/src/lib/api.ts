@@ -1,6 +1,7 @@
 import type {
   CreateUserInput,
   FileEntry,
+  FileTree,
   LoginResult,
   Member,
   ListQuery,
@@ -262,6 +263,23 @@ export class NimbusClient {
 
       xhr.send(body);
     });
+  }
+
+  tree(rootId: string): Promise<FileTree> {
+    return this.request<FileTree>(`/roots/${encodeURIComponent(rootId)}/tree`);
+  }
+
+  trashTree(rootId: string): Promise<FileTree> {
+    return this.request<FileTree>(
+      `/roots/${encodeURIComponent(rootId)}/trash`,
+    );
+  }
+
+  restore(rootId: string, id: string, parent: string | null): Promise<void> {
+    return this.request<void>(
+      `/roots/${encodeURIComponent(rootId)}/trash/${encodeURIComponent(id)}/restore`,
+      { method: "POST", body: JSON.stringify({ parent }) },
+    );
   }
 
   trash(rootId: string, ids: string[]): Promise<void> {

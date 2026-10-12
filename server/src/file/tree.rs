@@ -2,12 +2,19 @@ use std::collections::HashMap;
 
 use crate::file::{format::FileType, model::FileKind};
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct FileTree {
     pub id: Uuid,
     pub name: String,
+    pub kind: FileKind,
+    /// OpenAPI cannot expand this field; the value is the same `FileTree` shape.
+    #[schema(no_recursion)]
     pub children: Vec<FileTree>,
 }
 
@@ -59,6 +66,7 @@ impl From<FileEntryTree> for FileTree {
         Self {
             id: value.id,
             name: value.name,
+            kind: value.kind,
             children: vec![],
         }
     }

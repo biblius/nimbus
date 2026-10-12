@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     db::{Db, DbPool},
     error::AppError,
@@ -9,7 +11,6 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use sqlx::{Executor, QueryBuilder};
-use std::collections::HashSet;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -355,7 +356,7 @@ impl FileRepository {
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING
                 id,
                 root_id,
@@ -378,11 +379,67 @@ impl FileRepository {
             file.file_type as _,
             file.hash,
             file.size_bytes,
+            now,
             now
         )
         .fetch_one(executor)
         .await
         .map_err(AppError::from)
+    }
+
+    /// Insert every row in one statement. Parents and children may appear in any order.
+    #[instrument(skip(self, executor, files), err(Debug))]
+    pub async fn insert_many<'e, E>(
+        &self,
+        executor: E,
+        files: Vec<FileEntry>,
+    ) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        if files.is_empty() {
+            return Ok(());
+        }
+
+        let mut insert = QueryBuilder::<Db>::new(
+            r#"
+            INSERT INTO files (
+                id,
+                root_id,
+                created_by,
+                "type",
+                name,
+                parent,
+                format,
+                hash,
+                size_bytes,
+                created_at,
+                updated_at
+            )
+            "#,
+        );
+
+        insert.push_values(&files, |mut row, file| {
+            row.push_bind(file.id)
+                .push_bind(file.root_id)
+                .push_bind(file.created_by)
+                .push_bind(file.kind)
+                .push_bind(&file.name)
+                .push_bind(file.parent)
+                .push_bind(file.file_type.clone())
+                .push_bind(&file.hash)
+                .push_bind(file.size_bytes)
+                .push_bind(file.created_at)
+                .push_bind(file.updated_at);
+        });
+
+        insert
+            .build()
+            .execute(executor)
+            .await
+            .map_err(AppError::from)?;
+
+        Ok(())
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -590,8 +647,7 @@ impl FileRepository {
 
     /// Move `ids` and every descendant out of `files` and into `trashed_files`.
     ///
-    /// A moved row whose parent was not moved becomes a trash root. `original_parent` keeps the
-    /// parent it had in `files`.
+    /// A moved row whose parent was not moved becomes a trash root.
     #[instrument(skip(self), err(Debug))]
     pub async fn trash(
         &self,
@@ -613,6 +669,7 @@ impl FileRepository {
                 WHERE root_id =
             "#,
         );
+
         delete.push_bind(root_id);
         delete.push(" AND id IN (");
 
@@ -646,56 +703,64 @@ impl FileRepository {
             "#,
         );
 
-        let moved = delete
+        let trashed = delete
             .build_query_as::<FileEntry>()
             .fetch_all(&mut *tx)
             .await?;
 
-        if moved.is_empty() {
-            tracing::warn!("trash did not move any rows");
-            tx.commit().await?;
+        if trashed.is_empty() {
+            tracing::warn!("trash did not trash any rows");
             return Ok(());
         }
 
-        let moved_ids: HashSet<Uuid> = moved.iter().map(|row| row.id).collect();
+        let ids: HashSet<Uuid> = trashed.iter().map(|file| file.id).collect();
+
+        let now = Utc::now();
 
         let mut insert = QueryBuilder::<Db>::new(
             r#"
             INSERT INTO trashed_files (
                 id,
                 root_id,
+                created_by,
                 trashed_by,
                 parent,
-                original_parent,
                 "type",
                 name,
                 format,
                 hash,
                 size_bytes,
                 created_at,
-                updated_at
+                updated_at,
+                trashed_at
             )
             "#,
         );
 
-        insert.push_values(&moved, |mut row, file| {
-            let parent = file.parent.filter(|parent| moved_ids.contains(parent));
+        insert.push_values(&trashed, |mut row, file| {
+            // Entries whose parents are not in the removed set
+            // become new roots
+            let parent = file
+                .parent
+                .and_then(|parent| ids.contains(&parent).then_some(parent));
 
             row.push_bind(file.id)
                 .push_bind(file.root_id)
+                .push_bind(file.created_by)
                 .push_bind(trashed_by)
                 .push_bind(parent)
-                .push_bind(file.parent)
                 .push_bind(file.kind)
                 .push_bind(&file.name)
                 .push_bind(file.file_type.clone())
                 .push_bind(&file.hash)
                 .push_bind(file.size_bytes)
                 .push_bind(file.created_at)
-                .push_bind(file.updated_at);
+                .push_bind(now)
+                .push_bind(now);
         });
 
         insert.build().execute(&mut *tx).await?;
+
         tx.commit().await?;
 
         Ok(())
@@ -720,7 +785,7 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    /// Delete trashed rows created before `cutoff`. Hashes come back for blob cleanup.
+    /// Delete trashed rows whose `trashed_at` is before `cutoff`. Hashes come back for blob cleanup.
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_trashed_before<'e, E>(
         &self,
@@ -733,7 +798,7 @@ impl FileRepository {
         let hashes = sqlx::query_scalar!(
             r#"
             DELETE FROM trashed_files
-            WHERE created_at < $1
+            WHERE trashed_at < $1
             RETURNING hash
             "#,
             cutoff
@@ -742,6 +807,74 @@ impl FileRepository {
         .await?;
 
         Ok(hashes.into_iter().flatten().collect())
+    }
+
+    /// Root of one trashed row.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn trashed_root(&self, id: Uuid) -> Result<Option<Uuid>, AppError> {
+        sqlx::query_scalar!(
+            r#"
+            SELECT root_id
+            FROM trashed_files
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// Delete `id` and its descendants from `trashed_files`. Returns the removed rows.
+    #[instrument(skip(self, executor), err(Debug))]
+    pub async fn delete_trashed_tree<'e, E>(
+        &self,
+        executor: E,
+        root_id: Uuid,
+        id: Uuid,
+    ) -> Result<Vec<FileEntry>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        let restored = sqlx::query_as!(
+            FileEntry,
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT id
+                FROM trashed_files
+                WHERE id = $1
+                  AND root_id = $2
+                UNION ALL
+                SELECT child.id
+                FROM trashed_files child
+                JOIN tree t ON child.parent = t.id
+            )
+            DELETE FROM trashed_files
+            WHERE id IN (SELECT id FROM tree)
+            RETURNING
+                id,
+                root_id,
+                created_by,
+                "type" AS "kind: FileKind",
+                name,
+                parent,
+                format AS "file_type: FileType",
+                hash,
+                size_bytes,
+                created_at,
+                updated_at
+            "#,
+            id,
+            root_id
+        )
+        .fetch_all(executor)
+        .await?;
+
+        if restored.iter().all(|row| row.id != id) {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        Ok(restored)
     }
 
     /// Trash roots in a root. Deleting these removes every trashed row in that root.

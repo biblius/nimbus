@@ -11,6 +11,7 @@ export const { navigate, route, isActive } = createRouter({
     "/": () => import("./pages/HomeRedirect.svelte"),
     "/files": {
       "/": () => import("./pages/FilesOutlet.svelte"),
+      "/trash": () => import("./pages/FilesOutlet.svelte"),
       "/:root_id": () => import("./pages/FilesOutlet.svelte"),
       "/:root_id/dir/:parent_id": () => import("./pages/FilesOutlet.svelte"),
       layout: () => import("./pages/FilesPage.svelte"),

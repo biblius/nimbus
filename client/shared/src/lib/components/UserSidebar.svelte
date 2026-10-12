@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { navigate } from "../router";
+  import { Trash } from "@lucide/svelte";
+  import { isActive, navigate } from "../router";
   import { session } from "../session.svelte";
   import type { Root } from "../types";
 
@@ -15,12 +16,13 @@
   const shared = $derived(roots.filter((root) => root.owner == null));
 </script>
 
-<nav class="flex flex-col gap-1 p-3" aria-label="Roots">
+<nav class="flex min-h-0 flex-1 flex-col gap-1 p-3" aria-label="Roots">
   <p
     class="hidden px-3 pb-2 text-center text-xs font-medium tracking-wide text-muted-foreground uppercase md:block"
   >
     Folders
   </p>
+  <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
   {#if roots.length === 0}
     <p class="px-3 text-sm text-muted-foreground">No roots are assigned.</p>
   {:else}
@@ -69,4 +71,23 @@
       {/each}
     </div>
   {/if}
+  </div>
+  <div class="shrink-0 border-t pt-2">
+    <button
+      type="button"
+      class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm {isActive(
+        '/files/trash',
+      )
+        ? 'bg-accent font-medium text-accent-foreground'
+        : 'hover:bg-accent'}"
+      aria-current={isActive("/files/trash") ? "page" : undefined}
+      onclick={() => {
+        session.menuOpen = false;
+        navigate("/files/trash");
+      }}
+    >
+      <Trash size={16} />
+      <span>Trash</span>
+    </button>
+  </div>
 </nav>

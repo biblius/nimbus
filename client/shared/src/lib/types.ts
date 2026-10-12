@@ -213,6 +213,13 @@ export type FileType =
   | { text: "Html" | "Xml" | "Sh" | "Txt" | "Json" | "Md" | "Csv" | "Css" }
   | { other: string };
 
+export type FileTree = {
+  id: string;
+  name: string;
+  kind: "file" | "directory";
+  children: FileTree[];
+};
+
 export type FileEntry = {
   id: string;
   rootId: string;

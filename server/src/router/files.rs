@@ -1,7 +1,10 @@
 use crate::{
     auth::session::Session,
     error::AppError,
-    file::model::{CreateDirectory, FileEntry, RootView, TrashFiles},
+    file::{
+        model::{CreateDirectory, FileEntry, RestoreFile, RootView, TrashFiles},
+        tree::FileTree,
+    },
     state::AppState,
 };
 use axum::{
@@ -61,6 +64,71 @@ pub(crate) async fn list(
             .list(&session.user, root_id, query.parent)
             .await?,
     ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/roots/{root_id}/tree",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    responses((status = 200, description = "Live file tree", body = FileTree))
+)]
+pub(crate) async fn tree(
+    Path(root_id): Path<Uuid>,
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Json<FileTree>, AppError> {
+    Ok(Json(
+        state
+            .services
+            .files
+            .get_tree(&session.user, root_id, None)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/roots/{root_id}/trash",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    responses((status = 200, description = "Trash tree", body = FileTree))
+)]
+pub(crate) async fn trash(
+    Path(root_id): Path<Uuid>,
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Json<FileTree>, AppError> {
+    Ok(Json(
+        state
+            .services
+            .files
+            .get_trash_tree(&session.user, root_id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/roots/{root_id}/trash/{id}/restore",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("id" = Uuid, Path, description = "Trashed file id")
+    ),
+    request_body = RestoreFile,
+    responses((status = 204, description = "File restored"))
+)]
+pub(crate) async fn restore_file(
+    Path((root_id, id)): Path<(Uuid, Uuid)>,
+    State(state): State<AppState>,
+    session: Session,
+    Json(input): Json<RestoreFile>,
+) -> Result<StatusCode, AppError> {
+    state
+        .services
+        .files
+        .restore(&session.user, root_id, id, input)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(

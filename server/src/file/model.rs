@@ -126,6 +126,13 @@ pub struct RootAssignment {
     pub user_id: Uuid,
 }
 
+/// Where a trashed item should be put back. If `parent` is null, the file is stored directly in root.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreFile {
+    pub parent: Option<Uuid>,
+}
+
 /// Files to move to the trash in one request.
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 pub struct TrashFiles {
