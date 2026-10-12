@@ -5,17 +5,20 @@ use super::{
 use crate::{
     db::{
         Db,
-        files::{FileRepository, NewFile},
+        files::{FileRepository, FileTable, NewFile},
         tx::Transactor,
         user_folders::UserFolderRepository,
     },
     error::AppError,
-    file::model::{RootView, TrashFiles},
+    file::{
+        model::{RootView, TrashFiles},
+        tree::FileTree,
+    },
     user::model::{Role, User},
 };
 use chrono::{Duration, Utc};
-use sqlx::Transaction;
-use std::collections::{HashSet, VecDeque};
+use sqlx::{Transaction, migrate::MigrateError::Source};
+use std::collections::{HashMap, HashSet};
 use tracing::instrument;
 use uuid::Uuid;
 use validify::{Validate, Validify};
@@ -260,10 +263,10 @@ impl FileService {
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn delete(&self, user: &User, id: Uuid) -> Result<(), AppError> {
         let file = self.readable(user, id).await?;
-        self.files.soft_delete(file.root_id, &[file.id]).await
+        self.files.trash(file.root_id, user.id, &[file.id]).await
     }
 
-    /// Soft-delete every live file in `root_id`. One query, after a single access check.
+    /// Move every listed file in `root_id` to the trash, including descendants.
     #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
     pub async fn delete_many(
         &self,
@@ -279,7 +282,44 @@ impl FileService {
             ));
         }
 
-        self.files.soft_delete(root_id, &input.ids).await
+        self.files.trash(root_id, user.id, &input.ids).await
+    }
+
+    pub async fn get_trash_tree(&self, user: &User, root_id: Uuid) -> Result<FileTree, AppError> {
+        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
+            return Err(AppError::Forbidden(
+                "You do not have access to this folder".into(),
+            ));
+        }
+
+        let files = self.files.list_trash(root_id).await?;
+
+        Ok(FileTree {
+            id: root_id,
+            name: String::new(),
+            children: FileTree::from_entries(files),
+        })
+    }
+
+    pub async fn get_tree(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        parent: Option<Uuid>,
+    ) -> Result<FileTree, AppError> {
+        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
+            return Err(AppError::Forbidden(
+                "You do not have access to this folder".into(),
+            ));
+        }
+
+        let files = self.files.list_descendants(root_id, parent).await?;
+
+        Ok(FileTree {
+            id: parent.unwrap_or(root_id),
+            name: String::new(),
+            children: FileTree::from_entries(files),
+        })
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -295,54 +335,53 @@ impl FileService {
     ) -> Result<(), AppError> {
         let mut tx = self.tx.begin().await?;
 
-        let pending = self.files.list_pending_deletion(&mut *tx, cutoff).await?;
+        let deleted = self.files.delete_trashed_before(&mut *tx, cutoff).await?;
 
-        let tx = Self::delete_recursive(&self.files, &self.storage, tx, pending).await?;
+        let tx = Self::remove_unreferenced(&self.files, &self.storage, tx, deleted).await?;
 
         tx.commit().await?;
 
         Ok(())
     }
 
-    pub async fn delete_recursive<'tx>(
+    pub async fn delete_with_descendants<'tx>(
         files: &FileRepository,
         storage: &Storage,
         mut tx: Transaction<'tx, Db>,
-        entries: Vec<FileEntry>,
+        table: FileTable,
+        ids: &[Uuid],
     ) -> Result<Transaction<'tx, Db>, AppError> {
-        let mut ids = vec![];
+        tracing::info!(
+            roots = ids.len(),
+            "removing file trees that are pending deletion"
+        );
 
-        let mut queue = VecDeque::from(entries);
+        let deleted = files.delete_tree(&mut *tx, table, ids).await?;
 
-        while let Some(file) = queue.pop_front() {
-            ids.push(file.id);
+        Self::remove_unreferenced(files, storage, tx, deleted).await
+    }
 
-            if file.kind != FileKind::Directory {
+    async fn remove_unreferenced<'tx>(
+        files: &FileRepository,
+        storage: &Storage,
+        mut tx: Transaction<'tx, Db>,
+        hashes: Vec<String>,
+    ) -> Result<Transaction<'tx, Db>, AppError> {
+        for hash in hashes {
+            let remaining = files.count_hash(&mut *tx, &hash).await?;
+
+            if remaining > 0 {
+                tracing::info!(%remaining, "file {hash} is still in use");
                 continue;
             }
 
-            let children = files.list_all_children(&mut *tx, file.id).await?;
-
-            for child in children {
-                queue.push_back(child);
-            }
-        }
-
-        tracing::info!("removing {} files that are pending deletion", ids.len());
-
-        let deleted = files.delete(&mut *tx, &ids).await?;
-
-        for hash in deleted {
-            let remaining = files.count_hash(&mut *tx, &hash).await?;
-            if remaining == 0 {
-                match storage.remove(&hash).await {
-                    Ok(()) => {
-                        tracing::info!("deleted file {hash}")
-                    }
-                    Err(e) => {
-                        tracing::error!(error=%e,"unable to delete file: {hash}");
-                        return Err(e);
-                    }
+            match storage.remove(&hash).await {
+                Ok(()) => {
+                    tracing::info!("deleted file {hash}")
+                }
+                Err(e) => {
+                    tracing::error!(error=%e,"unable to delete file: {hash}");
+                    return Err(e);
                 }
             }
         }

@@ -4,12 +4,29 @@ use crate::{
     file::{
         format::FileType,
         model::{FileEntry, FileKind, Root, RootView},
+        tree::FileEntryTree,
     },
 };
 use chrono::{DateTime, Utc};
 use sqlx::{Executor, QueryBuilder};
+use std::collections::HashSet;
 use tracing::instrument;
 use uuid::Uuid;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum FileTable {
+    Live,
+    Trashed,
+}
+
+impl FileTable {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Live => "files",
+            Self::Trashed => "trashed_files",
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct FileRepository {
@@ -299,12 +316,9 @@ impl FileRepository {
                 hash,
                 size_bytes,
                 created_at,
-                updated_at,
-                deleted_at
+                updated_at
             FROM files
-            WHERE 
-                id = $1
-            AND deleted_at IS NULL
+            WHERE id = $1
             "#,
             id
         )
@@ -339,10 +353,9 @@ impl FileRepository {
                 hash,
                 size_bytes,
                 created_at,
-                updated_at,
-                deleted_at
+                updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, NULL)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
             RETURNING
                 id,
                 root_id,
@@ -354,8 +367,7 @@ impl FileRepository {
                 hash,
                 size_bytes,
                 created_at,
-                updated_at,
-                deleted_at
+                updated_at
             "#,
             file.id,
             file.root_id,
@@ -406,15 +418,14 @@ impl FileRepository {
                 hash,
                 size_bytes,
                 created_at,
-                updated_at,
-                deleted_at
+                updated_at
             FROM files
             WHERE
                 root_id =
             "#,
         );
 
-        query.push_bind(root).push(" AND deleted_at IS NULL");
+        query.push_bind(root);
 
         // Root entries have no parent. Everything else belongs to a directory.
         if let Some(parent) = parent {
@@ -455,8 +466,7 @@ impl FileRepository {
                 hash,
                 size_bytes,
                 created_at,
-                updated_at,
-                deleted_at
+                updated_at
             FROM files
             WHERE root_id = $1
             "#,
@@ -467,40 +477,98 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    /// Every child of a directory, including soft-deleted rows.
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn list_all_children<'e, E>(
+    /// Descendants of a directory in `files`, down to the leaf nodes.
+    pub async fn list_descendants(
         &self,
-        executor: E,
-        parent: Uuid,
-    ) -> Result<Vec<FileEntry>, AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
-        sqlx::query_as!(
-            FileEntry,
+        root_id: Uuid,
+        parent: Option<Uuid>,
+    ) -> Result<Vec<FileEntryTree>, AppError> {
+        self.list_descendants_in(FileTable::Live, root_id, parent)
+            .await
+    }
+
+    /// Trash for a root. Directly trashed rows have a null parent, so they are the roots.
+    pub async fn list_trash(&self, root_id: Uuid) -> Result<Vec<FileEntryTree>, AppError> {
+        self.list_descendants_in(FileTable::Trashed, root_id, None)
+            .await
+    }
+
+    async fn list_descendants_in(
+        &self,
+        table: FileTable,
+        root_id: Uuid,
+        parent: Option<Uuid>,
+    ) -> Result<Vec<FileEntryTree>, AppError> {
+        let table = table.name();
+        let mut query = QueryBuilder::<Db>::new(format!(
             r#"
+            WITH RECURSIVE tree AS (
+                SELECT
+                    id,
+                    root_id,
+                    "type" AS kind,
+                    name,
+                    parent,
+                    format AS file_type,
+                    hash,
+                    size_bytes,
+                    created_at,
+                    updated_at,
+                    TRUE AS query_root
+                FROM {table}
+                WHERE root_id =
+            "#
+        ));
+
+        query.push_bind(root_id).push(" AND ");
+
+        // `parent = $n` and `parent IS NULL` can each use an index.
+        if let Some(parent) = parent {
+            query.push("parent = ").push_bind(parent);
+        } else {
+            query.push("parent IS NULL");
+        }
+
+        query.push(format!(
+            r#"
+                UNION
+                SELECT
+                    f.id,
+                    f.root_id,
+                    f."type",
+                    f.name,
+                    f.parent,
+                    f.format,
+                    f.hash,
+                    f.size_bytes,
+                    f.created_at,
+                    f.updated_at,
+                    FALSE AS query_root
+                FROM {table} f
+                JOIN tree t ON f.parent = t.id
+            )
             SELECT
                 id,
                 root_id,
-                created_by,
-                "type" AS "kind: FileKind",
+                kind,
                 name,
                 parent,
-                format AS "file_type: FileType",
+                file_type,
                 hash,
                 size_bytes,
                 created_at,
                 updated_at,
-                deleted_at
-            FROM files
-            WHERE parent = $1
-            "#,
-            parent
-        )
-        .fetch_all(executor)
-        .await
-        .map_err(AppError::from)
+                query_root
+            FROM tree
+            ORDER BY CASE WHEN kind = 'd' THEN 0 ELSE 1 END, name, created_at, id
+            "#
+        ));
+
+        query
+            .build_query_as::<FileEntryTree>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)
     }
 
     /// Bytes stored in a root. Directory rows are excluded.
@@ -512,7 +580,6 @@ impl FileRepository {
             FROM files
             WHERE root_id = $1
               AND "type" = 'f'
-              AND deleted_at IS NULL
             "#,
             root_id
         )
@@ -521,36 +588,115 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    /// Move `ids` and every descendant out of `files` and into `trashed_files`.
+    ///
+    /// A moved row whose parent was not moved becomes a trash root. `original_parent` keeps the
+    /// parent it had in `files`.
     #[instrument(skip(self), err(Debug))]
-    pub async fn soft_delete(&self, root_id: Uuid, ids: &[Uuid]) -> Result<(), AppError> {
+    pub async fn trash(
+        &self,
+        root_id: Uuid,
+        trashed_by: Uuid,
+        ids: &[Uuid],
+    ) -> Result<(), AppError> {
         if ids.is_empty() {
             return Ok(());
         }
 
-        let now = Utc::now();
+        let mut tx = self.pool.begin().await?;
 
-        let mut query = QueryBuilder::<Db>::new("UPDATE files SET deleted_at = ");
+        let mut delete = QueryBuilder::<Db>::new(
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT id
+                FROM files
+                WHERE root_id =
+            "#,
+        );
+        delete.push_bind(root_id);
+        delete.push(" AND id IN (");
 
-        query.push_bind(now);
-        query.push(", updated_at = ");
-        query.push_bind(now);
-        query.push(" WHERE root_id = ");
-        query.push_bind(root_id);
-        query.push(" AND deleted_at IS NULL AND id IN (");
-
-        let mut separated = query.separated(", ");
-
+        let mut selected = delete.separated(", ");
         for id in ids {
-            separated.push_bind(*id);
+            selected.push_bind(*id);
         }
 
-        separated.push_unseparated(")");
+        selected.push_unseparated(
+            r#"
+                )
+                UNION ALL
+                SELECT f.id
+                FROM files f
+                JOIN tree t ON f.parent = t.id
+            )
+            DELETE FROM files
+            WHERE id IN (SELECT id FROM tree)
+            RETURNING
+                id,
+                root_id,
+                created_by,
+                "type" AS kind,
+                name,
+                parent,
+                format AS file_type,
+                hash,
+                size_bytes,
+                created_at,
+                updated_at
+            "#,
+        );
 
-        let result = query.build().execute(&self.pool).await?;
+        let moved = delete
+            .build_query_as::<FileEntry>()
+            .fetch_all(&mut *tx)
+            .await?;
 
-        if result.rows_affected() == 0 {
-            tracing::warn!("soft delete did not touch any rows");
+        if moved.is_empty() {
+            tracing::warn!("trash did not move any rows");
+            tx.commit().await?;
+            return Ok(());
         }
+
+        let moved_ids: HashSet<Uuid> = moved.iter().map(|row| row.id).collect();
+
+        let mut insert = QueryBuilder::<Db>::new(
+            r#"
+            INSERT INTO trashed_files (
+                id,
+                root_id,
+                trashed_by,
+                parent,
+                original_parent,
+                "type",
+                name,
+                format,
+                hash,
+                size_bytes,
+                created_at,
+                updated_at
+            )
+            "#,
+        );
+
+        insert.push_values(&moved, |mut row, file| {
+            let parent = file.parent.filter(|parent| moved_ids.contains(parent));
+
+            row.push_bind(file.id)
+                .push_bind(file.root_id)
+                .push_bind(trashed_by)
+                .push_bind(parent)
+                .push_bind(file.parent)
+                .push_bind(file.kind)
+                .push_bind(&file.name)
+                .push_bind(file.file_type.clone())
+                .push_bind(&file.hash)
+                .push_bind(file.size_bytes)
+                .push_bind(file.created_at)
+                .push_bind(file.updated_at);
+        });
+
+        insert.build().execute(&mut *tx).await?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -562,9 +708,10 @@ impl FileRepository {
     {
         sqlx::query_scalar!(
             r#"
-            SELECT COUNT(*) AS "count!"
-            FROM files
-            WHERE hash = $1
+            SELECT (
+                (SELECT COUNT(*) FROM files WHERE hash = $1) +
+                (SELECT COUNT(*) FROM trashed_files WHERE hash = $1)
+            ) AS "count!"
             "#,
             hash
         )
@@ -573,44 +720,65 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    /// Soft-deleted rows past the retention cutoff.
+    /// Delete trashed rows created before `cutoff`. Hashes come back for blob cleanup.
     #[instrument(skip(self, executor), err(Debug))]
-    pub async fn list_pending_deletion<'e, E>(
+    pub async fn delete_trashed_before<'e, E>(
         &self,
         executor: E,
         cutoff: DateTime<Utc>,
-    ) -> Result<Vec<FileEntry>, AppError>
+    ) -> Result<Vec<String>, AppError>
     where
         E: Executor<'e, Database = Db>,
     {
-        sqlx::query_as!(
-            FileEntry,
+        let hashes = sqlx::query_scalar!(
             r#"
-            SELECT
-                id,
-                root_id,
-                created_by,
-                "type" AS "kind: FileKind",
-                name,
-                parent,
-                format AS "file_type: FileType",
-                hash,
-                size_bytes,
-                created_at,
-                updated_at,
-                deleted_at
-            FROM files
-            WHERE deleted_at < $1
+            DELETE FROM trashed_files
+            WHERE created_at < $1
+            RETURNING hash
             "#,
             cutoff
+        )
+        .fetch_all(executor)
+        .await?;
+
+        Ok(hashes.into_iter().flatten().collect())
+    }
+
+    /// Trash roots in a root. Deleting these removes every trashed row in that root.
+    #[instrument(skip(self, executor), err(Debug))]
+    pub async fn list_trash_roots<'e, E>(
+        &self,
+        executor: E,
+        root_id: Uuid,
+    ) -> Result<Vec<Uuid>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query_scalar!(
+            r#"
+            SELECT id AS "id!"
+            FROM trashed_files
+            WHERE root_id = $1
+              AND parent IS NULL
+            "#,
+            root_id
         )
         .fetch_all(executor)
         .await
         .map_err(AppError::from)
     }
 
+    /// Deletes `ids` and every row beneath them.
+    ///
+    /// The recursive term is a select. `DELETE RETURNING` is the statement that uses it, which
+    /// Postgres and SQLite both accept. Hashes come back from the deleted rows; directories have none.
     #[instrument(skip(self, executor), err(Debug))]
-    pub async fn delete<'e, E>(&self, executor: E, ids: &[Uuid]) -> Result<Vec<String>, AppError>
+    pub async fn delete_tree<'e, E>(
+        &self,
+        executor: E,
+        table: FileTable,
+        ids: &[Uuid],
+    ) -> Result<Vec<String>, AppError>
     where
         E: Executor<'e, Database = Db>,
     {
@@ -618,7 +786,15 @@ impl FileRepository {
             return Ok(Vec::new());
         }
 
-        let mut query = QueryBuilder::<Db>::new("DELETE FROM files WHERE id IN (");
+        let table = table.name();
+        let mut query = QueryBuilder::<Db>::new(format!(
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT id
+                FROM {table}
+                WHERE id IN (
+            "#
+        ));
 
         let mut separated = query.separated(", ");
 
@@ -626,7 +802,19 @@ impl FileRepository {
             separated.push_bind(*id);
         }
 
-        separated.push_unseparated(") RETURNING hash");
+        separated.push_unseparated(format!(
+            r#"
+                )
+                UNION ALL
+                SELECT f.id
+                FROM {table} f
+                JOIN tree t ON f.parent = t.id
+            )
+            DELETE FROM {table}
+            WHERE id IN (SELECT id FROM tree)
+            RETURNING hash
+            "#
+        ));
 
         let hashes = query
             .build_query_scalar::<Option<String>>()

@@ -225,5 +225,4 @@ export type FileEntry = {
   sizeBytes: number;
   createdAt: string;
   updatedAt: string;
-  deletedAt: string | null;
 };

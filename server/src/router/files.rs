@@ -261,7 +261,7 @@ pub(crate) async fn download(
         ("root_id" = Uuid, Path, description = "Root id"),
         ("id" = Uuid, Path, description = "File id")
     ),
-    responses((status = 204, description = "File scheduled for deletion"))
+    responses((status = 204, description = "File moved to trash"))
 )]
 pub(crate) async fn delete_file(
     State(state): State<AppState>,
@@ -277,7 +277,7 @@ pub(crate) async fn delete_file(
     path = "/roots/{root_id}/files",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = TrashFiles,
-    responses((status = 204, description = "Files scheduled for deletion"))
+    responses((status = 204, description = "Files moved to trash"))
 )]
 pub(crate) async fn delete_files(
     State(state): State<AppState>,

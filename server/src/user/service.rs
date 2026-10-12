@@ -1,8 +1,11 @@
 use crate::{
     auth::crypto::hash_password,
     db::{
-        Transactor, files::FileRepository, sessions::SessionRepository,
-        user_folders::UserFolderRepository, users::UserRepository,
+        Transactor,
+        files::{FileRepository, FileTable},
+        sessions::SessionRepository,
+        user_folders::UserFolderRepository,
+        users::UserRepository,
     },
     email::EmailSender,
     error::AppError,
@@ -198,7 +201,30 @@ impl UserService {
             .list_all_files_with(&mut *tx, private_root.id)
             .await?;
 
-        let mut tx = FileService::delete_recursive(&self.files, &self.storage, tx, files).await?;
+        let live: Vec<Uuid> = files.iter().map(|entry| entry.id).collect();
+
+        let mut tx = FileService::delete_with_descendants(
+            &self.files,
+            &self.storage,
+            tx,
+            FileTable::Live,
+            &live,
+        )
+        .await?;
+
+        let trashed = self
+            .files
+            .list_trash_roots(&mut *tx, private_root.id)
+            .await?;
+
+        let mut tx = FileService::delete_with_descendants(
+            &self.files,
+            &self.storage,
+            tx,
+            FileTable::Trashed,
+            &trashed,
+        )
+        .await?;
 
         self.files
             .delete_root_with(&mut *tx, private_root.id)
@@ -373,8 +399,27 @@ impl UserService {
         let mut tx = self.tx.begin().await?;
 
         let files = self.files.list_all_files_with(&mut *tx, id).await?;
+        let live: Vec<Uuid> = files.iter().map(|entry| entry.id).collect();
 
-        let mut tx = FileService::delete_recursive(&self.files, &self.storage, tx, files).await?;
+        let mut tx = FileService::delete_with_descendants(
+            &self.files,
+            &self.storage,
+            tx,
+            FileTable::Live,
+            &live,
+        )
+        .await?;
+
+        let trashed = self.files.list_trash_roots(&mut *tx, id).await?;
+
+        let mut tx = FileService::delete_with_descendants(
+            &self.files,
+            &self.storage,
+            tx,
+            FileTable::Trashed,
+            &trashed,
+        )
+        .await?;
 
         self.files.delete_root_with(&mut *tx, id).await?;
 

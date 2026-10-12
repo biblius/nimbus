@@ -1,3 +1,5 @@
+use super::format::FileType;
+use crate::{db::Db, error::AppError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError, prelude::FromRow};
@@ -5,8 +7,47 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validify::{Validate, Validify};
 
-use super::format::FileType;
-use crate::{db::Db, error::AppError};
+/// Application native model. `parent` is null for entries that sit directly in a root.
+#[derive(Debug, Clone, Serialize, ToSchema, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntry {
+    pub id: Uuid,
+    pub root_id: Uuid,
+    pub created_by: Uuid,
+    pub kind: FileKind,
+    pub name: String,
+    pub parent: Option<Uuid>,
+    pub file_type: Option<FileType>,
+    pub hash: Option<String>,
+    pub size_bytes: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl FileEntry {
+    pub fn valid_name(name: &str) -> Result<&str, AppError> {
+        let name = name.trim();
+
+        if name.is_empty() || name.len() > 255 {
+            return Err(AppError::Unprocessable(
+                "File name must be between 1 and 255 bytes".into(),
+            ));
+        }
+
+        if name == "."
+            || name == ".."
+            || name.contains('/')
+            || name.contains('\\')
+            || name.chars().any(|character| character.is_control())
+        {
+            return Err(AppError::Unprocessable(
+                "File name contains invalid characters".into(),
+            ));
+        }
+
+        Ok(name)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -85,50 +126,7 @@ pub struct RootAssignment {
     pub user_id: Uuid,
 }
 
-/// Application native model. `parent` is null for entries that sit directly in a root.
-#[derive(Debug, Clone, Serialize, ToSchema, FromRow)]
-#[serde(rename_all = "camelCase")]
-pub struct FileEntry {
-    pub id: Uuid,
-    pub root_id: Uuid,
-    pub created_by: Uuid,
-    pub kind: FileKind,
-    pub name: String,
-    pub parent: Option<Uuid>,
-    pub file_type: Option<FileType>,
-    pub hash: Option<String>,
-    pub size_bytes: i64,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub deleted_at: Option<DateTime<Utc>>,
-}
-
-impl FileEntry {
-    pub fn valid_name(name: &str) -> Result<&str, AppError> {
-        let name = name.trim();
-
-        if name.is_empty() || name.len() > 255 {
-            return Err(AppError::Unprocessable(
-                "File name must be between 1 and 255 bytes".into(),
-            ));
-        }
-
-        if name == "."
-            || name == ".."
-            || name.contains('/')
-            || name.contains('\\')
-            || name.chars().any(|character| character.is_control())
-        {
-            return Err(AppError::Unprocessable(
-                "File name contains invalid characters".into(),
-            ));
-        }
-
-        Ok(name)
-    }
-}
-
-/// Files to soft-delete in one request.
+/// Files to move to the trash in one request.
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 pub struct TrashFiles {
     #[validate(length(min = 1, message = "At least 1 file must be provided"))]
