@@ -11,7 +11,7 @@ if [[ " $* " == *" -r "* ]]; then
 	docker compose down --volumes
 	docker compose up -d
 	sqlx migrate run --source server/migrations/postgres
-	# PGPASSWORD='nimbus' psql -U nimbus -h localhost -p 5432 -f seed.sql
+	PGPASSWORD='nimbus' psql -U nimbus -h localhost -p 5434 -f server/seeds/dev.sql
 fi
 
 if [[ " $* " == *" -c "* ]]; then
@@ -45,7 +45,7 @@ if [[ -e .env ]]; then
 		sleep 1
 	done
 	sqlx migrate run --source server/migrations/postgres
-	# PGPASSWORD='nimbus' psql -U nimbus -h localhost -p 5432 -f seed.sql
+	PGPASSWORD='nimbus' psql -U nimbus -h localhost -p 5434 -f server/seeds/dev.sql
 else
 	echo "No .env file found; Run 'cp example.env .env' to create one."
 	return 1 2>/dev/null || exit 1

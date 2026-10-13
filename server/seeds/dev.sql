@@ -1,5 +1,6 @@
 -- Postgres seed. Safe to run again: existing rows are left in place.
 --
+-- Admin: username `admin`, password `admin`.
 -- 20 users, seed-01 through seed-20. Password is `password`.
 -- Shared folder "Seed shared" includes seed-01 through seed-15.
 --
@@ -7,6 +8,7 @@
 
 INSERT INTO users (id, username, password, email, role, created_at, updated_at)
 VALUES
+  ('00000000-0000-4000-8000-000000000000', 'admin', '$argon2id$v=19$m=19456,t=2,p=1$c2VlZHNhbHQ$vh6ncdxQbKo/CUhSZy3PXcwHEt8SN1KuCmDVFruJTxo', NULL, 'admin', timestamptz '2026-01-01 00:00:00+00', timestamptz '2026-01-01 00:00:00+00'),
   ('00000000-0000-4000-8000-000000000001', 'seed-01', '$argon2id$v=19$m=19456,t=2,p=1$c2VlZHNhbHQ$GDjk0RZ9fyosjqd5ot0J/5U6ZtzA9JYcSEhuDL/8gXw', 'seed-01@example.com', 'user', timestamptz '2026-01-01 00:00:00+00', timestamptz '2026-01-01 00:01:00+00'),
   ('00000000-0000-4000-8000-000000000002', 'seed-02', '$argon2id$v=19$m=19456,t=2,p=1$c2VlZHNhbHQ$GDjk0RZ9fyosjqd5ot0J/5U6ZtzA9JYcSEhuDL/8gXw', 'seed-02@example.com', 'user', timestamptz '2026-01-01 00:00:00+00', timestamptz '2026-01-01 00:02:00+00'),
   ('00000000-0000-4000-8000-000000000003', 'seed-03', '$argon2id$v=19$m=19456,t=2,p=1$c2VlZHNhbHQ$GDjk0RZ9fyosjqd5ot0J/5U6ZtzA9JYcSEhuDL/8gXw', 'seed-03@example.com', 'user', timestamptz '2026-01-01 00:00:00+00', timestamptz '2026-01-01 00:03:00+00'),
@@ -30,14 +32,23 @@ VALUES
 ON CONFLICT (username) DO NOTHING;
 
 INSERT INTO roots (id, name, quota_bytes, owner, created_at, updated_at)
-VALUES (
-  '00000000-0000-4000-8000-0000000000c0',
-  'Seed shared',
-  0,
-  NULL,
-  timestamptz '2026-01-01 00:00:00+00',
-  timestamptz '2026-01-01 00:00:00+00'
-)
+VALUES
+  (
+    '00000000-0000-4000-8000-0000000000c1',
+    'admin',
+    0,
+    '00000000-0000-4000-8000-000000000000',
+    timestamptz '2026-01-01 00:00:00+00',
+    timestamptz '2026-01-01 00:00:00+00'
+  ),
+  (
+    '00000000-0000-4000-8000-0000000000c0',
+    'Seed shared',
+    0,
+    NULL,
+    timestamptz '2026-01-01 00:00:00+00',
+    timestamptz '2026-01-01 00:00:00+00'
+  )
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO user_folders (root_id, user_id)
