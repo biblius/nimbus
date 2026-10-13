@@ -20,13 +20,17 @@ use tracing::instrument;
 use uuid::Uuid;
 use validify::Validify;
 
-/// Sessions without "remember" expire after this long. Remembered sessions last until logout.
+/// Sessions without "remember" expire after this long.
 const SESSION_HOURS: i64 = 12;
+
+/// Web "remember me" sessions expire after this many days.
+const REMEMBER_SESSION_DAYS: i64 = 30;
 
 #[derive(Serialize, Deserialize)]
 struct PendingLogin {
     user_id: Uuid,
     remember: bool,
+    permanent: bool,
 }
 
 #[derive(Clone)]
@@ -75,7 +79,13 @@ impl AuthenticationService {
 
         if user.otp_secret.is_none() {
             let session = self
-                .create_session(user, remote_address, user_agent, credentials.remember)
+                .create_session(
+                    user,
+                    remote_address,
+                    user_agent,
+                    credentials.remember,
+                    credentials.permanent,
+                )
                 .await?;
             return Ok(LoginResult::Session {
                 session: session.into(),
@@ -91,6 +101,7 @@ impl AuthenticationService {
                 &PendingLogin {
                     user_id: user.id,
                     remember: credentials.remember,
+                    permanent: credentials.permanent,
                 },
             )
             .await?;
@@ -130,7 +141,13 @@ impl AuthenticationService {
         verify_otp(&decode_otp_secret(encoded)?, &otp.otp_code)?;
 
         let session = self
-            .create_session(user, remote_address, user_agent, pending.remember)
+            .create_session(
+                user,
+                remote_address,
+                user_agent,
+                pending.remember,
+                pending.permanent,
+            )
             .await?;
 
         Ok(LoginResult::Session {
@@ -321,12 +338,19 @@ impl AuthenticationService {
         remote_address: Option<String>,
         user_agent: Option<String>,
         remember: bool,
+        permanent: bool,
     ) -> Result<Session, AppError> {
         let first_login = self.sessions.count_for_user(user.id).await? == 0;
 
         let now = Utc::now();
 
-        let expires_at = (!remember).then(|| now + Duration::hours(SESSION_HOURS));
+        let expires_at = if permanent {
+            None
+        } else if remember {
+            Some(now + Duration::days(REMEMBER_SESSION_DAYS))
+        } else {
+            Some(now + Duration::hours(SESSION_HOURS))
+        };
 
         let record = self
             .sessions

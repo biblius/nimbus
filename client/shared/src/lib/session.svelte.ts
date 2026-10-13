@@ -9,6 +9,8 @@ export const session = $state<{
   client: NimbusClient;
   user: UserView | null;
   menuOpen: boolean;
+  /** Native (Tauri) client — login creates a permanent session. */
+  native: boolean;
 }>({
   /**
    * The Nimbus server API.
@@ -25,6 +27,8 @@ export const session = $state<{
    * Whether the sidebar is open (for small screens).
    */
   menuOpen: false,
+
+  native: false,
 });
 
 export async function logout() {

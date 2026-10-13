@@ -264,6 +264,7 @@ pub async fn login(
                 username: username.into(),
                 password: password.into(),
                 remember: false,
+                permanent: false,
             },
             None,
             None,

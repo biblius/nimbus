@@ -25,6 +25,7 @@ mod auth_service {
                     username: "admin".into(),
                     password: "admin".into(),
                     remember: false,
+                    permanent: false,
                 },
                 Some("127.0.0.1".into()),
                 None,

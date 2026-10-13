@@ -93,11 +93,16 @@ export class NimbusClient {
   login(
     username: string,
     password: string,
-    remember: boolean,
+    options: { remember?: boolean; permanent?: boolean } = {},
   ): Promise<LoginResult> {
     return this.request<LoginResult>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password, remember }),
+      body: JSON.stringify({
+        username,
+        password,
+        remember: options.remember ?? false,
+        permanent: options.permanent ?? false,
+      }),
     });
   }
 

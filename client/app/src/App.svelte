@@ -15,6 +15,7 @@
   onMount(async () => {
     endpoint = await loadEndpoint();
     draft = endpoint;
+    session.native = true;
     session.client = new NimbusClient(endpoint);
     client = session.client;
   });

@@ -25,7 +25,10 @@
     try {
       const result = pendingToken
         ? await session.client.loginOtp(pendingToken, otp)
-        : await session.client.login(username, password, remember);
+        : await session.client.login(username, password, {
+            remember: session.native ? false : remember,
+            permanent: session.native,
+          });
 
       if (result.status === "twoFactorRequired") {
         pendingToken = result.token;
@@ -85,10 +88,12 @@
           autocomplete="current-password"
         />
 
-        <label class="flex items-center gap-2 text-sm">
-          <input type="checkbox" bind:checked={remember} />
-          Remember this session
-        </label>
+        {#if !session.native}
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" bind:checked={remember} />
+            Remember this session
+          </label>
+        {/if}
       {/if}
 
       <Button type="submit" class="w-full" disabled={busy}>

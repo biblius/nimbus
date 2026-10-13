@@ -23,8 +23,14 @@ pub struct LoginCredentials {
 
     #[validate(length(min = 1, message = "Password cannot be empty"))]
     pub password: String,
+
+    /// Extend the session to 30 days (web "remember me"). Ignored when `permanent` is set.
     #[serde(default)]
     pub remember: bool,
+
+    /// Never expire until logout. For native (mobile/desktop) clients that store a Bearer token.
+    #[serde(default)]
+    pub permanent: bool,
 }
 
 /// Generated TOTP data used to set up 2FA.
