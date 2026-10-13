@@ -318,6 +318,22 @@ export class NimbusClient {
     return response.blob();
   }
 
+  /** Replace an existing file's blob (multipart `file` field). */
+  overwrite(
+    rootId: string,
+    id: string,
+    content: Blob,
+    name: string,
+  ): Promise<FileEntry> {
+    const body = new FormData();
+    body.set("file", content, name);
+
+    return this.request<FileEntry>(
+      `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/overwrite`,
+      { method: "PUT", body },
+    );
+  }
+
   async download(rootId: string, id: string, name: string): Promise<void> {
     const url = URL.createObjectURL(await this.content(rootId, id));
     const anchor = document.createElement("a");

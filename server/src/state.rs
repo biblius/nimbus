@@ -107,7 +107,6 @@ impl AppState {
             repository.metadata.clone(),
             storage.clone(),
             processing,
-            args.file_retention_days(),
             transactor,
         );
 

@@ -12,6 +12,7 @@ use crate::{
     },
     error::AppError,
     file::{
+        format::FileType,
         model::{FileContentPreview, RestoreFile, RootView, TrashFiles},
         tree::FileTree,
     },
@@ -29,7 +30,6 @@ pub struct FileService {
     metadata: MetadataRepository,
     storage: Storage,
     processing: ProcessingQueueHandle,
-    retention_days: u16,
     tx: Transactor,
 }
 
@@ -40,7 +40,6 @@ impl FileService {
         metadata: MetadataRepository,
         storage: Storage,
         processing: ProcessingQueueHandle,
-        retention_days: u16,
         tx: Transactor,
     ) -> Self {
         Self {
@@ -49,7 +48,6 @@ impl FileService {
             metadata,
             storage,
             processing,
-            retention_days,
             tx,
         }
     }
@@ -232,6 +230,104 @@ impl FileService {
 
         if let Err(e) = ProcessingQueue::submit(&self.processing, entry.clone()).await {
             tracing::error!(file=%entry.id, error=%e, "failed to enqueue file for processing");
+        }
+
+        Ok(entry)
+    }
+
+    /// Open a writer that will replace an existing file's blob.
+    #[instrument(skip(self, user), fields(user_id = %user.id, file_id = %file_id), err(Debug))]
+    pub async fn start_overwrite(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        file_id: Uuid,
+    ) -> Result<(FileEntry, UploadWriter), AppError> {
+        let file = self.readable(user, file_id).await?;
+
+        if file.root_id != root_id || file.kind != FileKind::File {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        if file
+            .file_type
+            .as_ref()
+            .is_none_or(|ty| !matches!(ty, FileType::Text(_)))
+        {
+            return Err(AppError::Unprocessable(
+                "Cannot overwrite contents - not a text file".into(),
+            ));
+        }
+
+        let writer = self.storage.writer(file.name.clone()).await?;
+
+        Ok((file, writer))
+    }
+
+    /// Persist new bytes and point the existing file row at them.
+    #[instrument(skip(self, user, existing, file), fields(user_id = %user.id, file_id = %existing.id, name = %file.name), err(Debug))]
+    pub async fn finish_overwrite(
+        &self,
+        user: &User,
+        existing: FileEntry,
+        mut file: TempFile,
+    ) -> Result<FileEntry, AppError> {
+        let Some(old_hash) = existing.hash.as_deref() else {
+            // Should never happen
+            return Err(AppError::Unprocessable(
+                "Original file is missing hash".into(),
+            ));
+        };
+
+        let content_changed = old_hash != file.hash.as_str();
+
+        if !content_changed {
+            tracing::info!("file contents are the same, skipping overwrite");
+            return Ok(existing);
+        }
+
+        let quota = self.files.root_quota(existing.root_id).await?;
+
+        if quota > 0 {
+            let used = self.files.root_quota_usage(existing.root_id).await?;
+
+            if used
+                .saturating_sub(existing.size_bytes)
+                .saturating_add(file.size)
+                > quota
+            {
+                return Err(AppError::QuotaExceeded);
+            }
+        }
+
+        let mut tx = self.tx.begin().await?;
+
+        let entry = self
+            .files
+            .update_content(
+                &mut *tx,
+                existing.id,
+                &file.hash,
+                file.size,
+                &file.file_type,
+            )
+            .await?;
+
+        self.storage.persist(&mut file).await?;
+
+        tx.commit().await?;
+
+        match self.files.count_hash(old_hash).await {
+            Ok(count) => {
+                if count == 0
+                    && let Err(error) = self.storage.remove(old_hash).await
+                {
+                    tracing::error!(%error, hash = %old_hash, "failed to remove replaced blob");
+                }
+            }
+            Err(error) => {
+                tracing::error!(%error, hash = %old_hash, "failed to count replaced blob");
+            }
         }
 
         Ok(entry)

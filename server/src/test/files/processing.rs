@@ -109,7 +109,10 @@ mod processing {
 
         assert_eq!(first_preview, second_preview);
         assert_eq!(first.hash, second.hash);
-        assert_eq!(test::preview_count(state.storage_dir()), before_previews + 1);
+        assert_eq!(
+            test::preview_count(state.storage_dir()),
+            before_previews + 1
+        );
         assert_eq!(test::blob_count(state.storage_dir()), before_blobs + 1);
     }
 
@@ -121,14 +124,7 @@ mod processing {
 
         let before = test::preview_count(state.storage_dir());
 
-        let red = test::upload(
-            state,
-            &session.user,
-            root,
-            "red.png",
-            &png_bytes(255, 0, 0),
-        )
-        .await;
+        let red = test::upload(state, &session.user, root, "red.png", &png_bytes(255, 0, 0)).await;
         let green = test::upload(
             state,
             &session.user,

@@ -3,11 +3,7 @@
 mod deletion {
     use super::super::{count, upload_in, user};
     use crate::{
-        db::{
-            DeletionRepository,
-            deletion::SYSTEM,
-            files::FileTable,
-        },
+        db::{DeletionRepository, deletion::SYSTEM, files::FileTable},
         file::model::{Cleanup, CreateDirectory, FileRef, TrashFiles},
         file::queue::DeletionQueue,
         test::{self, TestState},
@@ -124,11 +120,7 @@ mod deletion {
             0
         );
         assert_eq!(
-            count!(
-                state,
-                "SELECT COUNT(*) FROM roots WHERE id = $1",
-                shared.id
-            ),
+            count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", shared.id),
             0
         );
         assert_eq!(
@@ -161,13 +153,7 @@ mod deletion {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                root,
-                TrashFiles {
-                    ids: vec![file.id],
-                },
-            )
+            .delete_many(&session.user, root, TrashFiles { ids: vec![file.id] })
             .await
             .unwrap();
 
@@ -226,13 +212,7 @@ mod deletion {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                shared.id,
-                TrashFiles {
-                    ids: vec![file.id],
-                },
-            )
+            .delete_many(&session.user, shared.id, TrashFiles { ids: vec![file.id] })
             .await
             .unwrap();
 
@@ -268,11 +248,7 @@ mod deletion {
             0
         );
         assert_eq!(
-            count!(
-                state,
-                "SELECT COUNT(*) FROM roots WHERE id = $1",
-                shared.id
-            ),
+            count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", shared.id),
             0
         );
         assert_eq!(
@@ -325,11 +301,7 @@ mod deletion {
             0
         );
         assert_eq!(
-            count!(
-                state,
-                "SELECT COUNT(*) FROM files WHERE id = $1",
-                file.id
-            ),
+            count!(state, "SELECT COUNT(*) FROM files WHERE id = $1", file.id),
             1
         );
 

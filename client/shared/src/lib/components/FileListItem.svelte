@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Download, File as FileIcon, Folder, Trash } from "@lucide/svelte";
+  import { isImageFile, isPreviewable } from "../fileKind";
   import { formatBytes, formatDatetime } from "../format";
   import { session } from "../session.svelte";
   import type { FileView } from "../types";
@@ -35,20 +36,15 @@
 
   const file = $derived(entry.file);
 
-  const isImageFile = $derived(
-    file.kind === "file" && file.fileType != null && "image" in file.fileType,
-  );
+  const previewable = $derived(isPreviewable(entry));
+  const imageFile = $derived(isImageFile(entry));
 
   let previewUrl = $state<string | null>(null);
 
   $effect(() => {
     const fileId = entry.file.id;
     const hasPreview = entry.metadata?.preview != null;
-
-    const isImage =
-      entry.file.kind === "file" &&
-      entry.file.fileType != null &&
-      "image" in entry.file.fileType;
+    const isImage = isImageFile(entry);
 
     previewUrl = null;
 
@@ -131,13 +127,13 @@
       </span>
       <span class="truncate" title={name}>{name}</span>
     </button>
-  {:else if isImageFile}
+  {:else if previewable}
     <button
       type="button"
       class="flex min-h-11 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
       onclick={onPreview}
     >
-      {#if previewUrl}
+      {#if imageFile && previewUrl}
         <img
           src={previewUrl}
           alt=""

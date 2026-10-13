@@ -97,6 +97,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/roots/{root_id}/files/{id}", get(files::metadata))
         .route("/roots/{root_id}/files/{id}/blob", get(files::download))
+        .route(
+            "/roots/{root_id}/files/{id}/overwrite",
+            put(files::overwrite).layer(DefaultBodyLimit::max(upload_max)),
+        )
         .route("/roots/{root_id}/files/{id}/preview", get(files::preview))
         .route("/roots/{root_id}/tree", get(files::tree))
         .route("/roots/{root_id}/trash", get(files::trash))

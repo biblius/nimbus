@@ -7,11 +7,7 @@ use std::time::Duration as StdDuration;
 use tokio::time::{MissedTickBehavior, interval};
 use uuid::Uuid;
 
-pub async fn start(
-    files: FileRepository,
-    deletions: DeletionRepository,
-    retention_days: u16,
-) {
+pub async fn start(files: FileRepository, deletions: DeletionRepository, retention_days: u16) {
     let mut tick = interval(StdDuration::from_secs(60));
 
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);

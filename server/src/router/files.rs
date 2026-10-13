@@ -291,6 +291,72 @@ pub(crate) async fn metadata(
 }
 
 #[utoipa::path(
+    put,
+    path = "/roots/{root_id}/files/{id}/overwrite",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("id" = Uuid, Path, description = "File id")
+    ),
+    responses((status = 200, description = "Updated file", body = FileEntry))
+)]
+pub(crate) async fn overwrite(
+    Path((root_id, file_id)): Path<(Uuid, Uuid)>,
+    State(state): State<AppState>,
+    session: Session,
+    mut multipart: Multipart,
+) -> Result<Json<FileEntry>, AppError> {
+    let (existing, mut writer) = state
+        .services
+        .files
+        .start_overwrite(&session.user, root_id, file_id)
+        .await?;
+
+    let mut saw_file = false;
+
+    while let Some(mut field) = multipart.next_field().await.map_err(|error| {
+        tracing::error!(%error, "multipart read failed");
+        AppError::Unprocessable("Invalid upload".into())
+    })? {
+        if field.name() != Some("file") {
+            tracing::warn!("multipart field has unexpected name: {:?}", field.name());
+            continue;
+        }
+
+        saw_file = true;
+
+        while let Some(chunk) = field.chunk().await.map_err(|error| {
+            tracing::error!(%error, "multipart chunk failed");
+            AppError::Unprocessable("Invalid upload".into())
+        })? {
+            if let Err(error) = writer.write(&chunk).await {
+                tracing::error!(%error, "unable to write overwrite chunk");
+                return Err(error);
+            }
+        }
+    }
+
+    if !saw_file {
+        return Err(AppError::Unprocessable("File is required".into()));
+    }
+
+    let file = match writer.finish().await {
+        Ok(file) => file,
+        Err(error) => {
+            tracing::error!(%error, "unable to flush overwrite writer");
+            return Err(error);
+        }
+    };
+
+    let new = state
+        .services
+        .files
+        .finish_overwrite(&session.user, existing, file)
+        .await?;
+
+    Ok(Json(new))
+}
+
+#[utoipa::path(
     get,
     path = "/roots/{root_id}/files/{id}/blob",
     params(

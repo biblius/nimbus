@@ -232,12 +232,14 @@ impl DeletionQueue {
 
             if file.kind == FileKind::Directory {
                 tx.commit().await?;
+
                 self.unqueue(entry).await;
+
                 continue;
             }
 
+            // Should never happen
             let Some(hash) = file.hash else {
-                // Should never happen
                 tracing::error!(file=%file.id, "file has no hash");
 
                 self.fail_deletion(entry, "File does not have hash".into())
@@ -253,16 +255,18 @@ impl DeletionQueue {
                 Err(e) => {
                     tracing::error!(file=%file.id, error=%e, "cannot count remaining hash, will not delete BLOB");
 
-                    tx.commit().await?;
-
                     self.fail_deletion(entry, format!("Could not count file hash: {e}"))
                         .await;
+
+                    tx.commit().await?;
 
                     continue;
                 }
             };
 
             tx.commit().await?;
+
+            // At this point only the BLOB remains
 
             if remaining > 0 {
                 tracing::debug!(%remaining, file=%file.id, "file hash still in use");

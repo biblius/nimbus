@@ -19,8 +19,9 @@
   import { toastError } from "../toast";
   import { type FileEntry, type FileView, type Root } from "../types";
   import { cn } from "../utils";
+  import { isPreviewable } from "../fileKind";
   import FileListItem from "./FileListItem.svelte";
-  import ImagePreview from "./ImagePreview.svelte";
+  import FilePreview from "./FilePreview.svelte";
   import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
 
@@ -68,14 +69,7 @@
   let pendingDelete = $state<string[]>([]);
   let previewFileId = $state<string | null>(null);
 
-  const imageEntries = $derived(
-    entries.filter(
-      (entry) =>
-        entry.file.kind === "file" &&
-        entry.file.fileType != null &&
-        "image" in entry.file.fileType,
-    ),
-  );
+  const previewEntries = $derived(entries.filter(isPreviewable));
   let sort = $state<{ column: SortColumn; direction: SortDirection }>({
     column: "kind",
     direction: "asc",
@@ -956,13 +950,20 @@
     </div>
   </div>
 
-  {#if previewFileId !== null && imageEntries.some((entry) => entry.file.id === previewFileId)}
-    <ImagePreview
+  {#if previewFileId !== null && previewEntries.some((entry) => entry.file.id === previewFileId)}
+    <FilePreview
       rootId={root.id}
-      files={imageEntries}
+      files={previewEntries}
       fileId={previewFileId}
       onClose={() => (previewFileId = null)}
       onSelect={(id) => (previewFileId = id)}
+      onUpdated={(entry) => {
+        entries = entries.map((item) =>
+          item.file.id === entry.id
+            ? { file: entry, metadata: null }
+            : item,
+        );
+      }}
     />
   {/if}
 

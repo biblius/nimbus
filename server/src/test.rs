@@ -82,16 +82,8 @@ impl TestState {
         let expiry_files = repository.files.clone();
         let expiry_deletions = repository.deletions.clone();
         // Short sweep so SYSTEM-queue integration tests finish quickly.
-        let queue = DeletionQueue::start(
-            repository,
-            storage,
-            std::time::Duration::from_secs(1),
-        );
-        tokio::spawn(queue::expiry::start(
-            expiry_files,
-            expiry_deletions,
-            30,
-        ));
+        let queue = DeletionQueue::start(repository, storage, std::time::Duration::from_secs(1));
+        tokio::spawn(queue::expiry::start(expiry_files, expiry_deletions, 30));
 
         Self {
             services,
@@ -232,7 +224,6 @@ async fn build_services(
         repository.metadata.clone(),
         storage.clone(),
         processing,
-        30,
         Transactor::new(pool),
     );
     files.prepare().await.unwrap();

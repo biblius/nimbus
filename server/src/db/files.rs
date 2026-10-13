@@ -390,11 +390,6 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    #[instrument(skip(self), err(Debug))]
-    pub async fn get_trashed(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
-        self.get_trashed_with(&self.pool, id).await
-    }
-
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn get_trashed_with<'e, E>(
         &self,
@@ -837,6 +832,54 @@ impl FileRepository {
         tx.commit().await?;
 
         Ok(())
+    }
+
+    /// Replace the content-addressed fields of an existing live file.
+    #[instrument(skip(self, executor, file_type, hash), fields(file_id = %id), err(Debug))]
+    pub async fn update_content<'e, E>(
+        &self,
+        executor: E,
+        id: Uuid,
+        hash: &str,
+        size_bytes: i64,
+        file_type: &FileType,
+    ) -> Result<FileEntry, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        let now = Utc::now();
+
+        sqlx::query_as::<_, FileEntry>(
+            r#"
+            UPDATE files
+            SET
+                hash = $2,
+                size_bytes = $3,
+                format = $4,
+                updated_at = $5
+            WHERE id = $1
+            RETURNING
+                id,
+                root_id,
+                created_by,
+                "type" AS kind,
+                name,
+                parent,
+                format AS file_type,
+                hash,
+                size_bytes,
+                created_at,
+                updated_at
+            "#,
+        )
+        .bind(id)
+        .bind(hash)
+        .bind(size_bytes)
+        .bind(file_type)
+        .bind(now)
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)
     }
 
     #[instrument(skip(self), err(Debug))]
