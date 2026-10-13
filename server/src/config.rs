@@ -184,7 +184,7 @@ arg!(address, "ADDRESS", default "0.0.0.0:8080".to_string());
 
 arg!(cookie_name, "COOKIE_NAME", default "nimbus_session".to_string());
 arg!(cookie_domain, "COOKIE_DOMAIN", default String::new());
-arg!(cookie_secure, "COOKIE_SECURE", default false, bool);
+arg!(cookie_secure, "COOKIE_SECURE", default true, bool);
 arg!(csrf_header, "CSRF_HEADER", default "X-NIMBUS-CSRF".to_string());
 
 #[cfg(feature = "postgres")]
