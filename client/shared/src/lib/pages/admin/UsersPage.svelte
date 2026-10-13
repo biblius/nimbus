@@ -1,11 +1,10 @@
 <script lang="ts">
-  import { Pencil, Trash } from "@lucide/svelte";
+  import { Pencil, Trash, UserRound } from "@lucide/svelte";
   import { ApiError } from "../../api";
   import type { UserData, UserView, UserViewFull } from "../../types";
   import Button from "../../components/ui/button/button.svelte";
   import Chevron from "../../components/ui/chevron/chevron.svelte";
   import PaginatedList from "../../components/ui/paginated-list/paginated-list.svelte";
-  import Plus from "../../components/ui/plus/plus.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
   import UserForm from "../../components/user/UserForm.svelte";
   import { trackDeletion } from "../../deletion.svelte";
@@ -25,37 +24,21 @@
     { value: "updatedAt", label: "Updated" },
   ];
 
-  /**
-   * The currently selected user.
-   */
   let selectedId = $state<string | null>(null);
-
-  /**
-   * Whether a user is currently being edited.
-   */
   let editing = $state(false);
-
-  /**
-   * Whether a user is currently being created.
-   */
   let creating = $state(false);
-
-  /**
-   * Gets set when the delete icon is clicked to
-   * prompt for confirmation before actually deleting.
-   */
   let deleteUser = $state<UserViewFull | null>(null);
-
-  /**
-   * Gets set after deletion submition and reset back when
-   * the request finishes.
-   */
   let deleting = $state(false);
+  let listRevision = $state(0);
 
   function reset() {
     selectedId = null;
     editing = false;
     creating = false;
+  }
+
+  function reloadList() {
+    listRevision += 1;
   }
 
   function onLoaded(listed: UserViewFull[]) {
@@ -77,6 +60,7 @@
     });
 
     reset();
+    reloadList();
   }
 
   async function updateUser(data: UserData, userId: string) {
@@ -92,6 +76,7 @@
     }
 
     editing = false;
+    reloadList();
   }
 
   async function confirmDelete() {
@@ -109,6 +94,7 @@
       deleteUser = null;
 
       reset();
+      reloadList();
 
       if (session.user?.id === userId) {
         await logout();
@@ -126,40 +112,42 @@
     deleting = false;
   }
 
-  const selected = (user: UserView) => {
-    return selectedId === user.id;
-  };
+  const selected = (user: UserView) => selectedId === user.id;
 </script>
 
-<div class="space-y-3">
-  <div class="flex h-12 items-center justify-between gap-3 border-b px-1">
-    <h2 class="text-sm font-medium">Users</h2>
+<div class="space-y-5">
+  <div class="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
+    <div class="min-w-0 space-y-1">
+      <h2 class="text-lg font-semibold tracking-tight">Users</h2>
+      <p class="text-sm text-muted-foreground">
+        Accounts, roles, and private folder ownership.
+      </p>
+    </div>
     <Button
       type="button"
-      variant={creating ? "outline" : "ghost"}
+      variant={creating ? "outline" : "default"}
       size="sm"
-      class="size-9 p-0"
-      aria-label={creating ? "Close new user form" : "Add user"}
       aria-expanded={creating}
-      title="Add user"
       onclick={() => {
         const next = !creating;
         reset();
         creating = next;
       }}
     >
-      <Plus bind:rotated={creating} />
+      {creating ? "Cancel" : "Add user"}
     </Button>
   </div>
 
   {#if creating}
-    <div class="mx-auto max-w-lg">
-      <UserForm
-        title="Add user"
-        description="A private folder will be created with the account."
-        save={createUser}
-        cancel={reset}
-      />
+    <div class="rounded-xl border bg-card p-4 sm:p-5">
+      <div class="mx-auto max-w-lg">
+        <UserForm
+          title="Add user"
+          description="A private folder will be created with the account."
+          save={createUser}
+          cancel={reset}
+        />
+      </div>
     </div>
   {/if}
 
@@ -168,21 +156,30 @@
     {searchColumns}
     {sortColumns}
     {onLoaded}
+    revision={listRevision}
   >
     {#snippet children(users)}
       {#if users.length === 0}
-        <p class="text-sm text-muted-foreground">No users yet.</p>
+        <div
+          class="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center"
+        >
+          <UserRound class="size-9 text-muted-foreground opacity-50" />
+          <p class="text-sm font-medium">No users match</p>
+          <p class="max-w-sm text-sm text-muted-foreground">
+            Try another search, or add a user to get started.
+          </p>
+        </div>
       {:else}
-        <ul class="divide-y overflow-hidden rounded-lg border">
-          {#each users as user (user.id)}
-            <li>
+        <ul>
+          {#each users as user, index (user.id)}
+            <li class={index > 0 ? "border-t" : ""}>
               <button
                 type="button"
-                class="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2 text-left {selected(
+                class="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors {selected(
                   user,
                 )
                   ? 'bg-accent'
-                  : 'hover:bg-accent/60'}"
+                  : 'hover:bg-accent/50'}"
                 aria-expanded={selected(user)}
                 onclick={() => {
                   const next = selected(user) ? null : user.id;
@@ -190,22 +187,31 @@
                   selectedId = next;
                 }}
               >
-                <span class="min-w-0">
-                  <span class="block truncate text-sm font-medium"
-                    >{user.username}</span
+                <span class="min-w-0 flex-1">
+                  <span class="flex min-w-0 items-center gap-2">
+                    <span class="truncate text-sm font-medium"
+                      >{user.username}</span
+                    >
+                    <span
+                      class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize {user.role ===
+                      'admin'
+                        ? 'bg-primary/15 text-primary'
+                        : 'bg-muted text-muted-foreground'}"
+                    >
+                      {user.role}
+                    </span>
+                  </span>
+                  <span
+                    class="mt-0.5 block truncate text-xs text-muted-foreground"
                   >
-                  <span class="block truncate text-xs text-muted-foreground">
-                    {#if user.email}
-                      {user.email} ·
-                    {/if}
-                    <span class="capitalize">{user.role}</span>
+                    {user.email ?? "No email"}
                   </span>
                 </span>
                 <Chevron expanded={selected(user)} />
               </button>
 
               {#if selected(user)}
-                <div class="border-t bg-muted/30 p-3">
+                <div class="border-t bg-muted/25 px-3 py-4 sm:px-4">
                   {#if editing}
                     <div class="mx-auto max-w-lg">
                       <UserForm
@@ -217,32 +223,35 @@
                       />
                     </div>
                   {:else}
-                    <div class="flex justify-between gap-3">
+                    <div
+                      class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+                    >
                       <div class="min-w-0 flex-1">
                         <UserInfo {user} />
                       </div>
-                      <div class="flex flex-col self-stretch">
+                      <div class="flex shrink-0 gap-2">
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          class="size-8 p-0"
                           aria-label="Edit user"
                           title="Edit user"
                           onclick={() => (editing = true)}
                         >
-                          <Pencil size={16} />
+                          <Pencil size={15} />
+                          Edit
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          class="mt-auto size-8 p-0"
+                          class="text-destructive hover:bg-destructive/10 hover:text-destructive"
                           aria-label="Delete user"
                           title="Delete user"
                           onclick={() => (deleteUser = user)}
                         >
-                          <Trash size={16} />
+                          <Trash size={15} />
+                          Delete
                         </Button>
                       </div>
                     </div>

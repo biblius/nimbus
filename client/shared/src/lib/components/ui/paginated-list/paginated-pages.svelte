@@ -1,4 +1,5 @@
 <script lang="ts" generics="T">
+  import { ChevronLeft, ChevronRight } from "@lucide/svelte";
   import { onMount, type Snippet } from "svelte";
   import { toastError } from "../../../toast";
   import type { ListQuery, ListSearch, Page } from "../../../types";
@@ -83,40 +84,51 @@
   });
 </script>
 
-<div class="min-h-130">
-  {#if failed}
-    <p class="text-sm text-muted-foreground">Could not load this page.</p>
-  {:else if !items}
-    <p class="text-sm text-muted-foreground">Loading…</p>
-  {:else}
-    {@render children(items)}
-  {/if}
-</div>
+<div class="overflow-hidden rounded-xl border bg-card shadow-sm">
+  <div class="min-h-130">
+    {#if failed}
+      <p class="px-4 py-12 text-center text-sm text-muted-foreground">
+        Could not load this page.
+      </p>
+    {:else if !items}
+      <p class="px-4 py-12 text-center text-sm text-muted-foreground">
+        Loading…
+      </p>
+    {:else}
+      {@render children(items)}
+    {/if}
+  </div>
 
-<div class="ml-auto grid w-fit grid-cols-[2rem_8rem_2rem] items-center gap-2">
-  <Button
-    type="button"
-    variant="outline"
-    size="sm"
-    class="size-8 p-0"
-    aria-label="Previous page"
-    disabled={loading || page <= 1}
-    onclick={() => loadPage(page - 1)}
+  <div
+    class="flex items-center justify-between gap-3 border-t bg-muted/50 px-3 py-2.5"
   >
-    {"<"}
-  </Button>
-  <p class="text-center text-sm text-muted-foreground tabular-nums">
-    {page}/{pages} ({total} total)
-  </p>
-  <Button
-    type="button"
-    variant="outline"
-    size="sm"
-    class="size-8 p-0"
-    aria-label="Next page"
-    disabled={loading || page >= pages}
-    onclick={() => loadPage(page + 1)}
-  >
-    {">"}
-  </Button>
+    <p class="text-xs text-muted-foreground tabular-nums sm:text-sm">
+      Page {page} of {pages}
+      <span class="text-muted-foreground/80">· {total} total</span>
+    </p>
+    <div class="flex items-center gap-1.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        class="size-8 border-border bg-background p-0 shadow-sm"
+        aria-label="Previous page"
+        disabled={loading || page <= 1}
+        onclick={() => loadPage(page - 1)}
+      >
+        <ChevronLeft size={16} />
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        class="size-8 border-border bg-background p-0 shadow-sm"
+        aria-label="Next page"
+        disabled={loading || page >= pages}
+        onclick={() => loadPage(page + 1)}
+      >
+        <ChevronRight size={16} />
+      </Button>
+    </div>
+  </div>
 </div>

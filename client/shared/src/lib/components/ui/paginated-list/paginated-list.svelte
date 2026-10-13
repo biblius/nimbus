@@ -12,12 +12,15 @@
     searchColumns,
     sortColumns,
     onLoaded,
+    revision = 0,
     children,
   }: {
     load: (query: ListQuery) => Promise<Page<T>>;
     searchColumns: QueryColumn[];
     sortColumns: QueryColumn[];
     onLoaded?: (items: T[]) => void;
+    /** Bump to remount and reload the current query. */
+    revision?: number;
     children: Snippet<[T[]]>;
   } = $props();
 
@@ -89,7 +92,7 @@
     </div>
   </div>
 
-  {#key generation}
+  {#key `${generation}-${revision}`}
     <PaginatedPages
       {load}
       {search}

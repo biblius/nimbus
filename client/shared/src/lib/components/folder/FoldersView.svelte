@@ -1,9 +1,9 @@
 <script lang="ts">
+  import { Folder } from "@lucide/svelte";
   import { onMount } from "svelte";
   import FolderListItem from "./FolderListItem.svelte";
   import SharedRootForm from "./SharedRootForm.svelte";
   import Button from "../ui/button/button.svelte";
-  import Plus from "../ui/plus/plus.svelte";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import type { Root, RootData } from "../../types";
@@ -74,51 +74,80 @@
   }
 </script>
 
-<div class="space-y-3">
-  <div class="flex h-12 items-center justify-between gap-3 border-b px-1">
-    <h2 class="text-sm font-medium">
-      {shared ? "Shared folders" : "Private folders"}
-    </h2>
+<div class="space-y-5">
+  <div class="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
+    <div class="min-w-0 space-y-1">
+      <h2 class="text-lg font-semibold tracking-tight">
+        {shared ? "Shared folders" : "Private folders"}
+      </h2>
+      <p class="text-sm text-muted-foreground">
+        {#if shared}
+          Team roots with quotas and membership.
+        {:else}
+          Each user’s personal root and storage quota.
+        {/if}
+      </p>
+    </div>
     {#if shared}
       <Button
         type="button"
-        variant={creating ? "outline" : "ghost"}
+        variant={creating ? "outline" : "default"}
         size="sm"
-        class="size-9 p-0"
-        aria-label={creating ? "Close new folder form" : "Add folder"}
         aria-expanded={creating}
-        title="Add folder"
         onclick={() => (creating = !creating)}
       >
-        <Plus bind:rotated={creating} />
+        {creating ? "Cancel" : "Add folder"}
       </Button>
     {/if}
   </div>
 
   {#if creating}
-    <div class="mx-auto max-w-lg">
-      <SharedRootForm
-        title="Add folder"
-        description="A quota of 0 means unlimited. Choose who can use this shared folder."
-        save={createRoot}
-        cancel={reset}
-      />
+    <div class="rounded-xl border bg-card p-4 sm:p-5">
+      <div class="mx-auto max-w-lg">
+        <SharedRootForm
+          title="Add folder"
+          description="A quota of 0 means unlimited. Choose who can use this shared folder."
+          save={createRoot}
+          cancel={reset}
+        />
+      </div>
     </div>
   {/if}
 
   {#if failed}
-    <p class="text-sm text-muted-foreground">Could not load folders.</p>
+    <div
+      class="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground"
+    >
+      Could not load folders.
+    </div>
   {:else if !folders}
-    <p class="text-sm text-muted-foreground">Loading…</p>
+    <div
+      class="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground"
+    >
+      Loading…
+    </div>
   {:else if folders.length === 0}
-    <p class="text-sm text-muted-foreground">
-      {shared ? "No shared folders yet." : "No private folders yet."}
-    </p>
+    <div
+      class="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-6 py-16 text-center"
+    >
+      <Folder class="size-9 text-muted-foreground opacity-50" />
+      <p class="text-sm font-medium">
+        {shared ? "No shared folders yet" : "No private folders yet"}
+      </p>
+      <p class="max-w-sm text-sm text-muted-foreground">
+        {#if shared}
+          Create a shared folder to give people a common workspace.
+        {:else}
+          Private folders appear when users are created.
+        {/if}
+      </p>
+    </div>
   {:else}
-    <ul class="divide-y overflow-hidden rounded-lg border">
-      {#each folders as folder (folder.id)}
+    <ul class="overflow-hidden rounded-xl border bg-card">
+      {#each folders as folder, index (folder.id)}
         <FolderListItem
           {folder}
+          bordered={index > 0}
           onUpdate={updateFolder}
           onDelete={removeFolder}
         />
