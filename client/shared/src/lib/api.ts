@@ -339,7 +339,7 @@ export class NimbusClient {
   }
 
   deleteUser(id: string): Promise<void> {
-    return this.request<void>(`/admin/users/${encodeURIComponent(id)}`, {
+    return this.events(`/admin/users/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
   }
@@ -371,7 +371,7 @@ export class NimbusClient {
   }
 
   deleteFolder(id: string): Promise<void> {
-    return this.request<void>(`/admin/roots/${encodeURIComponent(id)}`, {
+    return this.events(`/admin/roots/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
   }
@@ -407,6 +407,68 @@ export class NimbusClient {
 
   folderUsage(id: string): Promise<number> {
     return this.request<number>(`/roots/${encodeURIComponent(id)}/usage`);
+  }
+
+  private async events(path: string, init: RequestInit): Promise<void> {
+    const headers = new Headers(init.headers);
+    headers.set("X-NIMBUS-CSRF", "1");
+
+    const response = await fetch(`${this.#root}${path}`, {
+      ...init,
+      headers,
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw parseError(response.status, body);
+    }
+
+    if (!response.body) {
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let failed = false;
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+
+      for (const part of parts) {
+        const data = part
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice("data:".length).trim())
+          .join("\n");
+
+        if (!data) {
+          continue;
+        }
+
+        const event = JSON.parse(data) as { success: boolean };
+        if (!event.success) {
+          failed = true;
+        }
+      }
+    }
+
+    if (failed) {
+      throw new ApiError(500, null);
+    }
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {

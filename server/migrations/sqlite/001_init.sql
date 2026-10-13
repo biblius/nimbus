@@ -5,7 +5,7 @@ CREATE TABLE users (
   username TEXT UNIQUE NOT NULL,
   password TEXT NOT NULL,
   email TEXT,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+  role TEXT NOT NULL,
   otp_secret TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -35,8 +35,8 @@ WHERE
 CREATE TABLE files (
   id BLOB PRIMARY KEY NOT NULL,
   root_id BLOB NOT NULL REFERENCES roots (id),
-  created_by BLOB NOT NULL REFERENCES users (id),
-  parent BLOB REFERENCES files (id) DEFERRABLE INITIALLY DEFERRED,
+  created_by BLOB REFERENCES users (id) ON DELETE SET NULL,
+  parent BLOB REFERENCES files (id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
   "type" TEXT NOT NULL,
   name TEXT NOT NULL,
   format TEXT,
@@ -59,9 +59,9 @@ CREATE INDEX files_hash_idx ON files (hash);
 CREATE TABLE trashed_files (
   id BLOB PRIMARY KEY NOT NULL,
   root_id BLOB NOT NULL REFERENCES roots (id),
-  created_by BLOB NOT NULL REFERENCES users (id),
-  trashed_by BLOB NOT NULL REFERENCES users (id),
-  parent BLOB REFERENCES trashed_files (id) DEFERRABLE INITIALLY DEFERRED,
+  created_by BLOB REFERENCES users (id) ON DELETE SET NULL,
+  trashed_by BLOB REFERENCES users (id) ON DELETE SET NULL,
+  parent BLOB REFERENCES trashed_files (id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
   "type" TEXT NOT NULL,
   name TEXT NOT NULL,
   format TEXT,
@@ -102,3 +102,23 @@ CREATE TABLE user_folders (
 );
 
 CREATE INDEX user_folders_user_idx ON user_folders (user_id);
+
+-- Deletion worker queue.
+CREATE TABLE file_deletion_queue (
+  id BLOB NOT NULL,
+  file_id BLOB NOT NULL,
+  origin TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  error TEXT
+);
+
+CREATE UNIQUE INDEX file_deletion_queue_file_idx ON file_deletion_queue (origin, file_id);
+
+CREATE INDEX file_deletion_queue_request_idx ON file_deletion_queue (id)
+WHERE
+  error IS NULL;
+
+CREATE INDEX file_deletion_queue_pending_idx ON file_deletion_queue (created_by)
+WHERE
+  error IS NULL;

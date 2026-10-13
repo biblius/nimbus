@@ -16,13 +16,15 @@ mod users;
 use crate::{
     auth::{service::AuthenticationService, token::TokenStore},
     cache::Cache,
-    db::{
-        self, DbPool, FileRepository, SessionRepository, Transactor, UserFolderRepository,
-        UserRepository,
-    },
+    db::{self, DbPool, Repository, Transactor},
     email::EmailSender,
     error::AppError,
-    file::{model::FileEntry, service::FileService, storage::Storage},
+    file::{
+        model::FileEntry,
+        queue::{self, DeletionQueue, DeletionQueueHandle, DeletionResult},
+        service::FileService,
+        storage::Storage,
+    },
     state::ServiceState,
     user::{model::User, service::UserService},
 };
@@ -48,6 +50,7 @@ pub struct TestState {
     _postgres: PostgresContainer,
     #[cfg(feature = "valkey")]
     _valkey: ValkeyContainer,
+    pub queue: DeletionQueueHandle,
 }
 
 impl TestState {
@@ -73,7 +76,22 @@ impl TestState {
         #[cfg(feature = "valkey")]
         let (cache, valkey) = init_valkey().await;
 
-        let services = build_services(pool.clone(), cache.clone(), &storage_dir).await;
+        let (services, repository, storage) =
+            build_services(pool.clone(), cache.clone(), &storage_dir).await;
+
+        let expiry_files = repository.files.clone();
+        let expiry_deletions = repository.deletions.clone();
+        // Short sweep so SYSTEM-queue integration tests finish quickly.
+        let queue = DeletionQueue::start(
+            repository,
+            storage,
+            std::time::Duration::from_secs(1),
+        );
+        tokio::spawn(queue::expiry::start(
+            expiry_files,
+            expiry_deletions,
+            30,
+        ));
 
         Self {
             services,
@@ -84,11 +102,24 @@ impl TestState {
             _postgres: postgres,
             #[cfg(feature = "valkey")]
             _valkey: valkey,
+            queue,
         }
     }
 
     pub fn storage_dir(&self) -> &Path {
         &self.storage_dir
+    }
+
+    /// Drain a deletion SSE stream until the worker drops the sender (cleanup finished).
+    pub async fn await_deletion(
+        &self,
+        mut rx: tokio::sync::mpsc::Receiver<DeletionResult>,
+    ) -> Vec<DeletionResult> {
+        let mut results = Vec::new();
+        while let Some(result) = rx.recv().await {
+            results.push(result);
+        }
+        results
     }
 }
 
@@ -158,42 +189,56 @@ async fn init_valkey() -> (Cache, ValkeyContainer) {
     (cache, valkey)
 }
 
-async fn build_services(pool: DbPool, cache: Cache, storage_dir: &Path) -> ServiceState {
+async fn build_services(
+    pool: DbPool,
+    cache: Cache,
+    storage_dir: &Path,
+) -> (ServiceState, Repository, Storage) {
     let email = EmailSender::new(
         String::new(),
         String::new(),
         "Nimbus".into(),
         "http://localhost".into(),
     );
+
     let storage = Storage::new(storage_dir.join("storage"), 1024 * 1024);
-    let users = UserRepository::new(pool.clone());
-    let sessions = SessionRepository::new(pool.clone());
-    let folders = UserFolderRepository::new(pool.clone());
-    let files_repo = FileRepository::new(pool.clone());
+    let repository = Repository::new(pool.clone());
     let auth = AuthenticationService::new(
-        users.clone(),
-        sessions.clone(),
+        repository.users.clone(),
+        repository.sessions.clone(),
         TokenStore::new(cache),
         email.clone(),
     );
+
     let user_service = UserService::new(
-        users,
-        files_repo.clone(),
-        folders.clone(),
-        sessions,
+        repository.users.clone(),
+        repository.files.clone(),
+        repository.folders.clone(),
+        repository.sessions.clone(),
         email,
         Transactor::new(pool.clone()),
-        storage.clone(),
+        repository.deletions.clone(),
     );
-    let files = FileService::new(files_repo, folders, storage, 30, Transactor::new(pool));
+
+    let files = FileService::new(
+        repository.files.clone(),
+        repository.folders.clone(),
+        storage.clone(),
+        30,
+        Transactor::new(pool),
+    );
     files.prepare().await.unwrap();
     user_service.ensure_initial_admin().await.unwrap();
 
-    ServiceState {
-        auth,
-        users: user_service,
-        files,
-    }
+    (
+        ServiceState {
+            auth,
+            users: user_service,
+            files,
+        },
+        repository,
+        storage,
+    )
 }
 
 pub async fn login(

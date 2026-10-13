@@ -1,11 +1,11 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt::Display};
 
 use crate::{
     db::{Db, DbPool},
     error::AppError,
     file::{
         format::FileType,
-        model::{FileEntry, FileKind, Root, RootView},
+        model::{FileEntry, FileKind, FileRef, Root, RootView},
         tree::FileEntryTree,
     },
 };
@@ -14,14 +14,29 @@ use sqlx::{Executor, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug)]
+/// Which table a queued/deleted file lives in. Stored as text: `files` or `trash`.
+#[derive(Clone, Copy, Debug, sqlx::Type)]
+#[sqlx(type_name = "text")]
 pub(crate) enum FileTable {
+    #[sqlx(rename = "files")]
     Live,
+    #[sqlx(rename = "trash")]
     Trashed,
 }
 
+impl Display for FileTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Queue `origin` column values (`files` | `trash`), not SQL relation names.
+        match self {
+            Self::Live => write!(f, "files"),
+            Self::Trashed => write!(f, "trash"),
+        }
+    }
+}
+
 impl FileTable {
-    fn name(self) -> &'static str {
+    /// Actual relation name for queries (`files` | `trashed_files`).
+    fn relation(self) -> &'static str {
         match self {
             Self::Live => "files",
             Self::Trashed => "trashed_files",
@@ -253,15 +268,8 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn get_private_root_with<'e, E>(
-        &self,
-        executor: E,
-        user_id: Uuid,
-    ) -> Result<Root, AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
+    #[instrument(skip(self), err(Debug))]
+    pub async fn get_private_root(&self, user_id: Uuid) -> Result<Root, AppError> {
         sqlx::query_as!(
             Root,
             r#"
@@ -277,7 +285,7 @@ impl FileRepository {
             "#,
             user_id
         )
-        .fetch_one(executor)
+        .fetch_one(&self.pool)
         .await
         .map_err(AppError::from)
     }
@@ -303,13 +311,25 @@ impl FileRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn get_live(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
+        self.get_live_with(&self.pool, id).await
+    }
+
+    #[instrument(skip(self, executor), err(Debug))]
+    pub async fn get_live_with<'e, E>(
+        &self,
+        executor: E,
+        id: Uuid,
+    ) -> Result<Option<FileEntry>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
         sqlx::query_as!(
             FileEntry,
             r#"
             SELECT
                 id,
                 root_id,
-                created_by,
+                created_by AS "created_by?",
                 "type" AS "kind: FileKind",
                 name,
                 parent,
@@ -323,7 +343,46 @@ impl FileRepository {
             "#,
             id
         )
-        .fetch_optional(&self.pool)
+        .fetch_optional(executor)
+        .await
+        .map_err(AppError::from)
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn get_trashed(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
+        self.get_trashed_with(&self.pool, id).await
+    }
+
+    #[instrument(skip(self, executor), err(Debug))]
+    pub async fn get_trashed_with<'e, E>(
+        &self,
+        executor: E,
+        id: Uuid,
+    ) -> Result<Option<FileEntry>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query_as!(
+            FileEntry,
+            r#"
+            SELECT
+                id,
+                root_id,
+                created_by AS "created_by?",
+                "type" AS "kind: FileKind",
+                name,
+                parent,
+                format AS "file_type: FileType",
+                hash,
+                size_bytes,
+                created_at,
+                updated_at
+            FROM trashed_files
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_optional(executor)
         .await
         .map_err(AppError::from)
     }
@@ -360,7 +419,7 @@ impl FileRepository {
             RETURNING
                 id,
                 root_id,
-                created_by,
+                created_by AS "created_by?",
                 "type" AS "kind: FileKind",
                 name,
                 parent,
@@ -500,40 +559,6 @@ impl FileRepository {
             .map_err(AppError::from)
     }
 
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn list_all_files_with<'e, E>(
-        &self,
-        executor: E,
-        root: Uuid,
-    ) -> Result<Vec<FileEntry>, AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
-        sqlx::query_as!(
-            FileEntry,
-            r#"
-            SELECT
-                id,
-                root_id,
-                created_by,
-                "type" AS "kind: FileKind",
-                name,
-                parent,
-                format AS "file_type: FileType",
-                hash,
-                size_bytes,
-                created_at,
-                updated_at
-            FROM files
-            WHERE root_id = $1
-            "#,
-            root
-        )
-        .fetch_all(executor)
-        .await
-        .map_err(AppError::from)
-    }
-
     /// Descendants of a directory in `files`, down to the leaf nodes.
     pub async fn list_descendants(
         &self,
@@ -556,7 +581,7 @@ impl FileRepository {
         root_id: Uuid,
         parent: Option<Uuid>,
     ) -> Result<Vec<FileEntryTree>, AppError> {
-        let table = table.name();
+        let relation = table.relation();
         let mut query = QueryBuilder::<Db>::new(format!(
             r#"
             WITH RECURSIVE tree AS (
@@ -572,7 +597,7 @@ impl FileRepository {
                     created_at,
                     updated_at,
                     TRUE AS query_root
-                FROM {table}
+                FROM {relation}
                 WHERE root_id =
             "#
         ));
@@ -601,7 +626,7 @@ impl FileRepository {
                     f.created_at,
                     f.updated_at,
                     FALSE AS query_root
-                FROM {table} f
+                FROM {relation} f
                 JOIN tree t ON f.parent = t.id
             )
             SELECT
@@ -766,8 +791,13 @@ impl FileRepository {
         Ok(())
     }
 
+    #[instrument(skip(self), err(Debug))]
+    pub async fn count_hash(&self, hash: &str) -> Result<i64, AppError> {
+        self.count_hash_with(&self.pool, hash).await
+    }
+
     #[instrument(skip(self, executor), err(Debug))]
-    pub async fn count_hash<'e, E>(&self, executor: E, hash: &str) -> Result<i64, AppError>
+    pub async fn count_hash_with<'e, E>(&self, executor: E, hash: &str) -> Result<i64, AppError>
     where
         E: Executor<'e, Database = Db>,
     {
@@ -783,30 +813,6 @@ impl FileRepository {
         .fetch_one(executor)
         .await
         .map_err(AppError::from)
-    }
-
-    /// Delete trashed rows whose `trashed_at` is before `cutoff`. Hashes come back for blob cleanup.
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn delete_trashed_before<'e, E>(
-        &self,
-        executor: E,
-        cutoff: DateTime<Utc>,
-    ) -> Result<Vec<String>, AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
-        let hashes = sqlx::query_scalar!(
-            r#"
-            DELETE FROM trashed_files
-            WHERE trashed_at < $1
-            RETURNING hash
-            "#,
-            cutoff
-        )
-        .fetch_all(executor)
-        .await?;
-
-        Ok(hashes.into_iter().flatten().collect())
     }
 
     /// Root of one trashed row.
@@ -854,7 +860,7 @@ impl FileRepository {
             RETURNING
                 id,
                 root_id,
-                created_by,
+                created_by AS "created_by?",
                 "type" AS "kind: FileKind",
                 name,
                 parent,
@@ -877,84 +883,43 @@ impl FileRepository {
         Ok(restored)
     }
 
-    /// Trash roots in a root. Deleting these removes every trashed row in that root.
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn list_trash_roots<'e, E>(
-        &self,
-        executor: E,
-        root_id: Uuid,
-    ) -> Result<Vec<Uuid>, AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
-        sqlx::query_scalar!(
-            r#"
-            SELECT id AS "id!"
-            FROM trashed_files
-            WHERE root_id = $1
-              AND parent IS NULL
-            "#,
-            root_id
-        )
-        .fetch_all(executor)
-        .await
-        .map_err(AppError::from)
+    #[instrument(skip(self), err(Debug))]
+    #[instrument(skip(self), err(Debug))]
+    pub async fn delete_live(&self, id: Uuid) -> Result<(), AppError> {
+        self.delete_live_with(&self.pool, id).await
     }
 
-    /// Deletes `ids` and every row beneath them.
-    ///
-    /// The recursive term is a select. `DELETE RETURNING` is the statement that uses it, which
-    /// Postgres and SQLite both accept. Hashes come back from the deleted rows; directories have none.
     #[instrument(skip(self, executor), err(Debug))]
-    pub async fn delete_tree<'e, E>(
-        &self,
-        executor: E,
-        table: FileTable,
-        ids: &[Uuid],
-    ) -> Result<Vec<String>, AppError>
+    pub async fn delete_live_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Db>,
     {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let table = table.name();
-        let mut query = QueryBuilder::<Db>::new(format!(
-            r#"
-            WITH RECURSIVE tree AS (
-                SELECT id
-                FROM {table}
-                WHERE id IN (
-            "#
-        ));
-
-        let mut separated = query.separated(", ");
-
-        for id in ids {
-            separated.push_bind(*id);
-        }
-
-        separated.push_unseparated(format!(
-            r#"
-                )
-                UNION ALL
-                SELECT f.id
-                FROM {table} f
-                JOIN tree t ON f.parent = t.id
-            )
-            DELETE FROM {table}
-            WHERE id IN (SELECT id FROM tree)
-            RETURNING hash
-            "#
-        ));
-
-        let hashes = query
-            .build_query_scalar::<Option<String>>()
-            .fetch_all(executor)
+        sqlx::query!(r#"DELETE FROM files WHERE id = $1"#, id)
+            .execute(executor)
             .await?;
 
-        Ok(hashes.into_iter().flatten().collect())
+        Ok(())
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn delete_trashed(&self, id: Uuid) -> Result<(), AppError> {
+        self.delete_trashed_with(&self.pool, id).await
+    }
+
+    #[instrument(skip(self, executor), err(Debug))]
+    pub async fn delete_trashed_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query!(r#"DELETE FROM trashed_files WHERE id = $1"#, id)
+            .execute(executor)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_root(&self, id: Uuid) -> Result<(), AppError> {
+        self.delete_root_with(&self.pool, id).await
     }
 
     #[instrument(skip(self, executor), err(Debug))]
@@ -971,5 +936,57 @@ impl FileRepository {
         }
 
         Ok(())
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_file_ids(&self, root_id: Uuid) -> Result<Vec<FileRef>, AppError> {
+        sqlx::query_as!(
+            FileRef,
+            r#"
+            SELECT id
+            FROM files
+            WHERE root_id = $1
+            "#,
+            root_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_trashed_ids(&self, root_id: Uuid) -> Result<Vec<FileRef>, AppError> {
+        sqlx::query_as!(
+            FileRef,
+            r#"
+            SELECT id
+            FROM trashed_files
+            WHERE root_id = $1
+            "#,
+            root_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// Trashed rows past `cutoff`.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_expired_trash(
+        &self,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<FileRef>, AppError> {
+        sqlx::query_as!(
+            FileRef,
+            r#"
+            SELECT id
+            FROM trashed_files
+            WHERE trashed_at < $1
+            "#,
+            cutoff
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
     }
 }

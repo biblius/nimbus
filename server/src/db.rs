@@ -1,3 +1,4 @@
+pub(crate) mod deletion;
 pub(crate) mod files;
 pub(crate) mod sessions;
 pub(crate) mod tx;
@@ -7,11 +8,40 @@ pub(crate) mod users;
 use crate::error::AppError;
 use std::time::Duration;
 
+pub use deletion::DeletionRepository;
 pub use files::FileRepository;
 pub use sessions::SessionRepository;
 pub use tx::Transactor;
 pub use user_folders::UserFolderRepository;
 pub use users::UserRepository;
+
+/// Every repository backed by the database pool.
+#[derive(Clone)]
+pub struct Repository {
+    pub users: UserRepository,
+    pub sessions: SessionRepository,
+    pub folders: UserFolderRepository,
+    pub files: FileRepository,
+    pub deletions: DeletionRepository,
+    pool: DbPool,
+}
+
+impl Repository {
+    pub fn new(pool: DbPool) -> Self {
+        Self {
+            users: UserRepository::new(pool.clone()),
+            sessions: SessionRepository::new(pool.clone()),
+            folders: UserFolderRepository::new(pool.clone()),
+            files: FileRepository::new(pool.clone()),
+            deletions: DeletionRepository::new(pool.clone()),
+            pool,
+        }
+    }
+
+    pub async fn start_tx(&self) -> Result<sqlx::Transaction<'static, Db>, AppError> {
+        self.pool.begin().await.map_err(AppError::from)
+    }
+}
 
 #[cfg(feature = "postgres")]
 pub type Db = sqlx::Postgres;

@@ -33,8 +33,8 @@ mod upload {
         let second = stored[1].as_ref().unwrap();
 
         assert_eq!(first.hash, second.hash);
-        assert_eq!(first.created_by, ada.id);
-        assert_eq!(second.created_by, ada.id);
+        assert_eq!(first.created_by, Some(ada.id));
+        assert_eq!(second.created_by, Some(ada.id));
         assert_eq!(test::blob_count(state.storage_dir()), 1);
     }
 
@@ -126,7 +126,7 @@ mod upload {
 
         let stored = test::upload(state, &session.user, shared.id, "shared.txt", b"abc").await;
         assert!(stored.hash.is_some());
-        assert_eq!(stored.created_by, ada.id);
+        assert_eq!(stored.created_by, Some(ada.id));
 
         let overflow = test::submit(
             state,

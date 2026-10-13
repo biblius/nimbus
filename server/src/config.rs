@@ -59,6 +59,10 @@ pub struct StartArgs {
     #[arg(long)]
     file_retention_days: Option<String>,
 
+    /// How often the deletion queue sweeps pending SYSTEM rows, in seconds.
+    #[arg(long)]
+    file_deletion_interval_secs: Option<String>,
+
     /// Maximum accepted upload body, in bytes.
     #[arg(long)]
     upload_max_bytes: Option<String>,
@@ -199,6 +203,12 @@ arg!(
 arg!(upload_dir, "UPLOAD_DIR", default "./data".to_string());
 arg!(file_retention_days, "FILE_RETENTION_DAYS", default 30, u16);
 arg!(
+    file_deletion_interval_secs,
+    "FILE_DELETION_INTERVAL_SECS",
+    default 30,
+    u64
+);
+arg!(
     upload_max_bytes,
     "UPLOAD_MAX_BYTES",
     default 1024usize.pow(3) * 10, // 10 GiB
@@ -247,6 +257,11 @@ impl fmt::Display for StartArgs {
         writeln!(f, "valkey_url: {}", self.valkey_url())?;
         writeln!(f, "upload_dir: {}", self.upload_dir())?;
         writeln!(f, "file_retention_days: {}", self.file_retention_days())?;
+        writeln!(
+            f,
+            "file_deletion_interval_secs: {}",
+            self.file_deletion_interval_secs()
+        )?;
         writeln!(
             f,
             "upload_max_bytes: {} GiB",

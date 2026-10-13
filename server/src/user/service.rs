@@ -2,6 +2,7 @@ use crate::{
     auth::crypto::hash_password,
     db::{
         Transactor,
+        deletion::DeletionRepository,
         files::{FileRepository, FileTable},
         sessions::SessionRepository,
         user_folders::UserFolderRepository,
@@ -10,9 +11,8 @@ use crate::{
     email::EmailSender,
     error::AppError,
     file::{
-        model::{FileEntry, RootAssignment, RootView},
-        service::FileService,
-        storage::Storage,
+        model::{Cleanup, FileEntry, RootAssignment, RootView},
+        queue::{DeletionQueue, DeletionQueueHandle, DeletionResult},
     },
     model::{List, PaginationSort},
     user::model::{
@@ -21,6 +21,7 @@ use crate::{
     },
 };
 use std::collections::HashSet;
+use tokio::sync::mpsc;
 use tracing::instrument;
 use uuid::Uuid;
 use validify::{Validate, Validify};
@@ -33,7 +34,7 @@ pub struct UserService {
     sessions: SessionRepository,
     email: EmailSender,
     tx: Transactor,
-    storage: Storage,
+    deletions: DeletionRepository,
 }
 
 impl UserService {
@@ -44,7 +45,7 @@ impl UserService {
         sessions: SessionRepository,
         email: EmailSender,
         tx: Transactor,
-        storage: Storage,
+        deletions: DeletionRepository,
     ) -> Self {
         Self {
             users,
@@ -53,7 +54,7 @@ impl UserService {
             sessions,
             email,
             tx,
-            storage,
+            deletions,
         }
     }
 
@@ -179,7 +180,11 @@ impl UserService {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn delete_user(&self, id: Uuid) -> Result<(), AppError> {
+    pub async fn delete_user(
+        &self,
+        id: Uuid,
+        handle: DeletionQueueHandle,
+    ) -> Result<mpsc::Receiver<DeletionResult>, AppError> {
         let user = self.users.get_by_id(id).await?;
 
         if user.role == Role::Admin {
@@ -192,49 +197,35 @@ impl UserService {
             }
         }
 
-        let mut tx = self.tx.begin().await?;
+        let private_root = self.files.get_private_root(id).await?;
 
-        let private_root = self.files.get_private_root_with(&mut *tx, id).await?;
+        let live = self.files.list_file_ids(private_root.id).await?;
 
-        let files = self
-            .files
-            .list_all_files_with(&mut *tx, private_root.id)
+        let trashed = self.files.list_trashed_ids(private_root.id).await?;
+
+        let request_id = Uuid::new_v4();
+
+        let created_by = id.to_string();
+
+        self.deletions
+            .enqueue(request_id, &created_by, FileTable::Live, &live)
             .await?;
 
-        let live: Vec<Uuid> = files.iter().map(|entry| entry.id).collect();
+        self.deletions
+            .enqueue(request_id, &created_by, FileTable::Trashed, &trashed)
+            .await?;
 
-        let mut tx = FileService::delete_with_descendants(
-            &self.files,
-            &self.storage,
-            tx,
-            FileTable::Live,
-            &live,
+        let rx = DeletionQueue::submit(
+            handle,
+            request_id,
+            Cleanup::User {
+                user_id: user.id,
+                root_id: private_root.id,
+            },
         )
         .await?;
 
-        let trashed = self
-            .files
-            .list_trash_roots(&mut *tx, private_root.id)
-            .await?;
-
-        let mut tx = FileService::delete_with_descendants(
-            &self.files,
-            &self.storage,
-            tx,
-            FileTable::Trashed,
-            &trashed,
-        )
-        .await?;
-
-        self.files
-            .delete_root_with(&mut *tx, private_root.id)
-            .await?;
-
-        self.users.delete_with(&mut *tx, id).await?;
-
-        tx.commit().await?;
-
-        Ok(())
+        Ok(rx)
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -383,7 +374,12 @@ impl UserService {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn delete_root(&self, id: Uuid) -> Result<(), AppError> {
+    pub async fn delete_root(
+        &self,
+        user: &User,
+        id: Uuid,
+        handle: DeletionQueueHandle,
+    ) -> Result<mpsc::Receiver<DeletionResult>, AppError> {
         let root = self
             .files
             .get_root(id)
@@ -396,36 +392,34 @@ impl UserService {
             ));
         }
 
-        let mut tx = self.tx.begin().await?;
+        let live = self.files.list_file_ids(id).await?;
+        let trashed = self.files.list_trashed_ids(id).await?;
 
-        let files = self.files.list_all_files_with(&mut *tx, id).await?;
-        let live: Vec<Uuid> = files.iter().map(|entry| entry.id).collect();
+        let request_id = Uuid::new_v4();
 
-        let mut tx = FileService::delete_with_descendants(
-            &self.files,
-            &self.storage,
-            tx,
-            FileTable::Live,
-            &live,
+        self.deletions
+            .enqueue(request_id, &user.id.to_string(), FileTable::Live, &live)
+            .await?;
+
+        self.deletions
+            .enqueue(
+                request_id,
+                &user.id.to_string(),
+                FileTable::Trashed,
+                &trashed,
+            )
+            .await?;
+
+        let rx = DeletionQueue::submit(
+            handle,
+            request_id,
+            Cleanup::Root {
+                root_id: root.id,
+            },
         )
         .await?;
 
-        let trashed = self.files.list_trash_roots(&mut *tx, id).await?;
-
-        let mut tx = FileService::delete_with_descendants(
-            &self.files,
-            &self.storage,
-            tx,
-            FileTable::Trashed,
-            &trashed,
-        )
-        .await?;
-
-        self.files.delete_root_with(&mut *tx, id).await?;
-
-        tx.commit().await?;
-
-        Ok(())
+        Ok(rx)
     }
 
     #[instrument(skip(self), err(Debug))]

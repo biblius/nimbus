@@ -1,4 +1,4 @@
-mod purge;
+mod deletion;
 mod roots;
 mod trash;
 mod tree;

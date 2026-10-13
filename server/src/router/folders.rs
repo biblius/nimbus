@@ -2,14 +2,18 @@ use axum::{
     Json,
     extract::{Path, Query, State},
     http::StatusCode,
+    response::sse::{Event, Sse},
 };
+use futures::Stream;
+use std::convert::Infallible;
 use uuid::Uuid;
 
 use crate::{
     auth::session::Session,
     error::AppError,
-    file::model::RootView,
+    file::{model::RootView, queue::DeletionResult},
     model::{List, PaginationSort},
+    router::sse,
     state::AppState,
     user::model::{CreateSharedFolder, Member, SetQuota, UpdateRoot, UserSearch, UserSort},
 };
@@ -166,15 +170,30 @@ pub(crate) async fn set_quota(
     delete,
     path = "/admin/roots/{root_id}",
     params(("root_id" = Uuid, Path, description = "Root id")),
-    responses((status = 204, description = "Shared root and its files removed"))
+    responses((status = 200, description = "Deletion progress", body = DeletionResult))
 )]
 pub(crate) async fn delete_root(
     State(state): State<AppState>,
-    _admin: Session,
+    admin: Session,
     Path(root_id): Path<Uuid>,
-) -> Result<StatusCode, AppError> {
-    state.services.users.delete_root(root_id).await?;
-    Ok(StatusCode::NO_CONTENT)
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>> + Send>, AppError> {
+    let rx = state
+        .services
+        .users
+        .delete_root(&admin.user, root_id, state.queue)
+        .await?;
+
+    Ok(sse(rx, |result| {
+        tracing::debug!(?result, "sending SSE event");
+        match Event::default().json_data(result) {
+            Ok(event) => event,
+            Err(error) => {
+                tracing::error!(%error,"error serializing SSE event");
+                let err = format!("{error}").replace('\n', " ");
+                Event::default().data(err)
+            }
+        }
+    }))
 }
 
 #[utoipa::path(

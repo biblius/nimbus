@@ -1,7 +1,9 @@
 use crate::{
     auth::session::Session,
     error::AppError,
+    file::queue::DeletionResult,
     model::{List, PaginationSort},
+    router::sse,
     state::AppState,
     user::model::{CreateUser, UpdateUser, UserSearch, UserSort, UserView, UserViewFull},
 };
@@ -9,7 +11,10 @@ use axum::{
     Json,
     extract::{Path, Query, State},
     http::StatusCode,
+    response::sse::{Event, Sse},
 };
+use futures::Stream;
+use std::convert::Infallible;
 use uuid::Uuid;
 
 #[utoipa::path(
@@ -62,13 +67,24 @@ pub(crate) async fn update_user(
     delete,
     path = "/admin/users/{id}",
     params(("id" = Uuid, Path, description = "User id")),
-    responses((status = 204, description = "User removed"))
+    responses((status = 200, description = "Deletion progress", body = DeletionResult))
 )]
 pub(crate) async fn delete_user(
     _session: Session,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<StatusCode, AppError> {
-    state.services.users.delete_user(id).await?;
-    Ok(StatusCode::NO_CONTENT)
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>> + Send>, AppError> {
+    let rx = state.services.users.delete_user(id, state.queue).await?;
+
+    Ok(sse(rx, |result| {
+        tracing::debug!(?result, "sending SSE event");
+        match Event::default().json_data(result) {
+            Ok(event) => event,
+            Err(error) => {
+                tracing::error!(%error,"error serializing SSE event");
+                let err = format!("{error}").replace('\n', " ");
+                Event::default().data(err)
+            }
+        }
+    }))
 }

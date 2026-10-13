@@ -10,10 +10,13 @@ use axum::{
     extract::DefaultBodyLimit,
     http::{HeaderName, HeaderValue, Method, StatusCode},
     middleware as axum_middleware,
-    response::IntoResponse,
+    response::{IntoResponse, Sse, sse::Event},
     routing::{delete, get, post, put},
 };
-use std::{str::FromStr, time::Duration};
+use futures::Stream;
+use std::{convert::Infallible, str::FromStr, time::Duration};
+use tokio::sync::mpsc;
+use tokio_stream::StreamExt;
 use tower_http::{
     cors::{AllowCredentials, CorsLayer},
     trace::TraceLayer,
@@ -162,4 +165,21 @@ pub fn router(state: AppState) -> Router {
 
 async fn health() -> impl IntoResponse {
     StatusCode::NO_CONTENT
+}
+
+pub fn sse<T, F>(
+    rx: mpsc::Receiver<T>,
+    map_fn: F,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>> + Send>
+where
+    T: Send + 'static,
+    F: FnMut(T) -> Event + Send + 'static,
+{
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(map_fn);
+
+    Sse::new(stream.map(Ok)).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(Duration::from_secs(1))
+            .text("keep-alive"),
+    )
 }

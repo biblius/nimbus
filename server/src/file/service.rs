@@ -4,8 +4,7 @@ use super::{
 };
 use crate::{
     db::{
-        Db,
-        files::{FileRepository, FileTable, NewFile},
+        files::{FileRepository, NewFile},
         tx::Transactor,
         user_folders::UserFolderRepository,
     },
@@ -16,8 +15,6 @@ use crate::{
     },
     user::model::{Role, User},
 };
-use chrono::{Duration, Utc};
-use sqlx::{Transaction, migrate::MigrateError::Source};
 use std::collections::HashSet;
 use tracing::instrument;
 use uuid::Uuid;
@@ -395,73 +392,6 @@ impl FileService {
             kind: FileKind::Directory,
             children: FileTree::from_entries(files),
         })
-    }
-
-    #[instrument(skip(self), err(Debug))]
-    pub async fn purge_expired(&self) -> Result<(), AppError> {
-        let cutoff = Utc::now() - Duration::days(self.retention_days as i64);
-        self.purge_deleted_before(cutoff).await
-    }
-
-    #[instrument(skip(self), err(Debug))]
-    pub async fn purge_deleted_before(
-        &self,
-        cutoff: chrono::DateTime<Utc>,
-    ) -> Result<(), AppError> {
-        let mut tx = self.tx.begin().await?;
-
-        let deleted = self.files.delete_trashed_before(&mut *tx, cutoff).await?;
-
-        let tx = Self::remove_unreferenced(&self.files, &self.storage, tx, deleted).await?;
-
-        tx.commit().await?;
-
-        Ok(())
-    }
-
-    pub async fn delete_with_descendants<'tx>(
-        files: &FileRepository,
-        storage: &Storage,
-        mut tx: Transaction<'tx, Db>,
-        table: FileTable,
-        ids: &[Uuid],
-    ) -> Result<Transaction<'tx, Db>, AppError> {
-        tracing::info!(
-            roots = ids.len(),
-            "removing file trees that are pending deletion"
-        );
-
-        let deleted = files.delete_tree(&mut *tx, table, ids).await?;
-
-        Self::remove_unreferenced(files, storage, tx, deleted).await
-    }
-
-    async fn remove_unreferenced<'tx>(
-        files: &FileRepository,
-        storage: &Storage,
-        mut tx: Transaction<'tx, Db>,
-        hashes: Vec<String>,
-    ) -> Result<Transaction<'tx, Db>, AppError> {
-        for hash in hashes {
-            let remaining = files.count_hash(&mut *tx, &hash).await?;
-
-            if remaining > 0 {
-                tracing::info!(%remaining, "file {hash} is still in use");
-                continue;
-            }
-
-            match storage.remove(&hash).await {
-                Ok(()) => {
-                    tracing::info!("deleted file {hash}")
-                }
-                Err(e) => {
-                    tracing::error!(error=%e,"unable to delete file: {hash}");
-                    return Err(e);
-                }
-            }
-        }
-
-        Ok(tx)
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]

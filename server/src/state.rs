@@ -8,17 +8,20 @@ use crate::{
     auth::{service::AuthenticationService, token::TokenStore},
     cache::Cache,
     config::StartArgs,
-    db::{
-        self, FileRepository, SessionRepository, Transactor, UserFolderRepository, UserRepository,
-    },
+    db::{self, Repository, Transactor},
     email::EmailSender,
-    file::{service::FileService, storage::Storage},
+    file::{
+        queue::{self, DeletionQueue, DeletionQueueHandle},
+        service::FileService,
+        storage::Storage,
+    },
     user::service::UserService,
 };
 
 #[derive(Clone)]
 pub struct AppState {
     pub services: ServiceState,
+    pub queue: DeletionQueueHandle,
     pub http_config: HttpConfiguration,
     pub upload_max_bytes: usize,
 }
@@ -70,30 +73,32 @@ impl AppState {
             args.frontend_url(),
         );
 
-        let users = UserRepository::new(db.clone());
-        let sessions = SessionRepository::new(db.clone());
-        let folders = UserFolderRepository::new(db.clone());
-        let files = FileRepository::new(db.clone());
+        let repository = Repository::new(db.clone());
         let tokens = TokenStore::new(cache);
+
         let transactor = Transactor::new(db);
 
-        let auth =
-            AuthenticationService::new(users.clone(), sessions.clone(), tokens, email.clone());
+        let auth = AuthenticationService::new(
+            repository.users.clone(),
+            repository.sessions.clone(),
+            tokens,
+            email.clone(),
+        );
 
         let user_service = UserService::new(
-            users,
-            files.clone(),
-            folders.clone(),
-            sessions,
+            repository.users.clone(),
+            repository.files.clone(),
+            repository.folders.clone(),
+            repository.sessions.clone(),
             email,
             transactor.clone(),
-            storage.clone(),
+            repository.deletions.clone(),
         );
 
         let file_service = FileService::new(
-            files,
-            folders,
-            storage,
+            repository.files.clone(),
+            repository.folders.clone(),
+            storage.clone(),
             args.file_retention_days(),
             transactor,
         );
@@ -108,11 +113,6 @@ impl AppState {
             .await
             .expect("unable to seed the initial admin");
 
-        file_service
-            .purge_expired()
-            .await
-            .expect("unable to purge expired files");
-
         let http_config = HttpConfiguration {
             cors_origins: Arc::from(args.allowed_origins()),
             cors_headers: Arc::from(args.allowed_headers()),
@@ -125,12 +125,29 @@ impl AppState {
             ),
         };
 
+        let services = ServiceState {
+            auth,
+            users: user_service,
+            files: file_service,
+        };
+
+        let retention_days = args.file_retention_days();
+        let expiry_files = repository.files.clone();
+        let expiry_deletions = repository.deletions.clone();
+        let queue = DeletionQueue::start(
+            repository,
+            storage,
+            std::time::Duration::from_secs(args.file_deletion_interval_secs()),
+        );
+        tokio::spawn(queue::expiry::start(
+            expiry_files,
+            expiry_deletions,
+            retention_days,
+        ));
+
         Self {
-            services: ServiceState {
-                auth,
-                users: user_service,
-                files: file_service,
-            },
+            services,
+            queue,
             http_config,
             upload_max_bytes: args.upload_max_bytes(),
         }

@@ -13,7 +13,7 @@ use validify::{Validate, Validify};
 pub struct FileEntry {
     pub id: Uuid,
     pub root_id: Uuid,
-    pub created_by: Uuid,
+    pub created_by: Option<Uuid>,
     pub kind: FileKind,
     pub name: String,
     pub parent: Option<Uuid>,
@@ -47,6 +47,12 @@ impl FileEntry {
 
         Ok(name)
     }
+}
+
+/// A file id used when enqueueing hard deletes.
+#[derive(Debug, Clone, Copy)]
+pub struct FileRef {
+    pub id: Uuid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
@@ -148,4 +154,14 @@ pub struct CreateDirectory {
     #[validate(length(min = 1, message = "Directory name cannot be empty"))]
     #[validate(length(max = 255, message = "Directory name too long"))]
     pub name: String,
+}
+
+/// Works as a command for user initiated deletion requests,
+/// indicating what to do after file deletion completes.
+#[derive(Debug)]
+pub enum Cleanup {
+    /// Remove the user and their root (for deleting users).
+    User { user_id: Uuid, root_id: Uuid },
+    /// Remove the root (for shared roots).
+    Root { root_id: Uuid },
 }

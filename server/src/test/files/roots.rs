@@ -62,7 +62,13 @@ mod roots {
         )
         .await;
 
-        state.services.users.delete_user(ada.id).await.unwrap();
+        let rx = state
+            .services
+            .users
+            .delete_user(ada.id, state.queue.clone())
+            .await
+            .unwrap();
+        state.await_deletion(rx).await;
 
         for id in [notes.id, nested.id, top.id, copy.id] {
             assert!(matches!(
@@ -120,7 +126,13 @@ mod roots {
             .unwrap();
         assert_eq!(kept.0.id, bob_file.id);
 
-        state.services.users.delete_user(empty.id).await.unwrap();
+        let rx = state
+            .services
+            .users
+            .delete_user(empty.id, state.queue.clone())
+            .await
+            .unwrap();
+        state.await_deletion(rx).await;
         assert_eq!(
             count!(
                 state,
@@ -134,7 +146,11 @@ mod roots {
             0
         );
 
-        let missing = state.services.users.delete_user(Uuid::new_v4()).await;
+        let missing = state
+            .services
+            .users
+            .delete_user(Uuid::new_v4(), state.queue.clone())
+            .await;
         assert!(matches!(missing, Err(AppError::ResourceMissing(_))));
     }
 
@@ -144,7 +160,11 @@ mod roots {
         let root = test::private_root(state, &admin.user).await;
         let file = test::upload(state, &admin.user, root, "admin.txt", b"admin-file").await;
 
-        let forbidden = state.services.users.delete_user(admin.user.id).await;
+        let forbidden = state
+            .services
+            .users
+            .delete_user(admin.user.id, state.queue.clone())
+            .await;
         assert!(matches!(forbidden, Err(AppError::Forbidden(_))));
         assert_eq!(
             count!(
@@ -184,7 +204,13 @@ mod roots {
         )
         .await;
 
-        state.services.users.delete_user(extra.id).await.unwrap();
+        let rx = state
+            .services
+            .users
+            .delete_user(extra.id, state.queue.clone())
+            .await
+            .unwrap();
+        state.await_deletion(rx).await;
         assert!(matches!(
             state
                 .services
@@ -326,7 +352,11 @@ mod roots {
         assert_eq!(renamed.quota, 128);
         assert_eq!(renamed.owner, Some(ada.id));
 
-        let deleted = state.services.users.delete_root(root).await;
+        let deleted = state
+            .services
+            .users
+            .delete_root(&session.user, root, state.queue.clone())
+            .await;
         assert!(matches!(deleted, Err(AppError::Forbidden(_))));
         assert_eq!(
             count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", root),
