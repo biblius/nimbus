@@ -76,15 +76,20 @@ impl EmailSender {
         token: Uuid,
     ) -> Result<(), AppError> {
         let link = format!("{}/reset-password/{token}", self.frontend_url);
+
         let username = escape(username);
+
         let html = format!(
             "<p>{username}, a password reset was requested for your Nimbus account.</p>\
              <p><a href=\"{link}\">Choose a new password</a></p>\
              <p>If you did not ask for this, you can ignore the message.</p>"
         );
+
+        #[cfg(debug_assertions)]
         if self.mailer.is_none() {
             tracing::info!(%link, "gmail is not configured; password reset link");
         }
+
         self.send(to, "Reset your Nimbus password", &html).await
     }
 
