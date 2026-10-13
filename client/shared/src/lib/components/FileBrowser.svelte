@@ -20,6 +20,7 @@
   import { type FileEntry, type FileView, type Root } from "../types";
   import { cn } from "../utils";
   import FileListItem from "./FileListItem.svelte";
+  import ImagePreview from "./ImagePreview.svelte";
   import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
 
@@ -65,6 +66,16 @@
   let deleteOpen = $state(false);
   let deleting = $state(false);
   let pendingDelete = $state<string[]>([]);
+  let previewFileId = $state<string | null>(null);
+
+  const imageEntries = $derived(
+    entries.filter(
+      (entry) =>
+        entry.file.kind === "file" &&
+        entry.file.fileType != null &&
+        "image" in entry.file.fileType,
+    ),
+  );
   let sort = $state<{ column: SortColumn; direction: SortDirection }>({
     column: "kind",
     direction: "asc",
@@ -215,6 +226,7 @@
 
     entries = [];
     selected = [];
+    previewFileId = null;
 
     loadAncestors(rootId, parent, currentLoad);
 
@@ -934,6 +946,7 @@
               selected={selected.includes(entry.file.id)}
               onToggle={() => toggle(entry.file.id)}
               onOpen={() => openDirectory(entry)}
+              onPreview={() => (previewFileId = entry.file.id)}
               onDownload={() => download(entry)}
               onDelete={() => askDelete([entry.file.id])}
             />
@@ -942,6 +955,16 @@
       {/if}
     </div>
   </div>
+
+  {#if previewFileId !== null && imageEntries.some((entry) => entry.file.id === previewFileId)}
+    <ImagePreview
+      rootId={root.id}
+      files={imageEntries}
+      fileId={previewFileId}
+      onClose={() => (previewFileId = null)}
+      onSelect={(id) => (previewFileId = id)}
+    />
+  {/if}
 
   <ConfirmDialog
     open={deleteOpen}

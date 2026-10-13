@@ -96,7 +96,7 @@ pub fn router(state: AppState) -> Router {
             get(files::ancestors),
         )
         .route("/roots/{root_id}/files/{id}", get(files::metadata))
-        .route("/roots/{root_id}/files/{id}/download", get(files::download))
+        .route("/roots/{root_id}/files/{id}/blob", get(files::download))
         .route("/roots/{root_id}/files/{id}/preview", get(files::preview))
         .route("/roots/{root_id}/tree", get(files::tree))
         .route("/roots/{root_id}/trash", get(files::trash))

@@ -84,7 +84,9 @@ impl ProcessingQueue {
         })?;
 
         let source = self.storage.path(hash);
+
         let source_path = source.clone();
+
         let webp = tokio::task::spawn_blocking(move || encode_preview_webp(&source_path))
             .await
             .map_err(|e| {

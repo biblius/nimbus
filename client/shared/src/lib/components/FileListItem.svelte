@@ -17,6 +17,7 @@
     selected,
     onToggle,
     onOpen,
+    onPreview,
     onDownload,
     onDelete,
   }: {
@@ -27,11 +28,16 @@
     selected: boolean;
     onToggle: () => void;
     onOpen: () => void;
+    onPreview: () => void;
     onDownload: () => void;
     onDelete: () => void;
   } = $props();
 
   const file = $derived(entry.file);
+
+  const isImageFile = $derived(
+    file.kind === "file" && file.fileType != null && "image" in file.fileType,
+  );
 
   let previewUrl = $state<string | null>(null);
 
@@ -125,9 +131,11 @@
       </span>
       <span class="truncate" title={name}>{name}</span>
     </button>
-  {:else}
-    <div
+  {:else if isImageFile}
+    <button
+      type="button"
       class="flex min-h-11 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
+      onclick={onPreview}
     >
       {#if previewUrl}
         <img
@@ -144,6 +152,17 @@
           <FileIcon size={18} strokeWidth={1.75} />
         </span>
       {/if}
+      <span class="truncate font-medium" title={name}>{name}</span>
+    </button>
+  {:else}
+    <div
+      class="flex min-h-11 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
+    >
+      <span
+        class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
+      >
+        <FileIcon size={18} strokeWidth={1.75} />
+      </span>
       <span class="truncate font-medium" title={name}>{name}</span>
     </div>
   {/if}

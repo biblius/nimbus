@@ -292,7 +292,7 @@ pub(crate) async fn metadata(
 
 #[utoipa::path(
     get,
-    path = "/roots/{root_id}/files/{id}/download",
+    path = "/roots/{root_id}/files/{id}/blob",
     params(
         ("root_id" = Uuid, Path, description = "Root id"),
         ("id" = Uuid, Path, description = "File id")

@@ -290,9 +290,10 @@ export class NimbusClient {
     });
   }
 
-  async download(rootId: string, id: string, name: string): Promise<void> {
+  /** Fetch a file's bytes (same auth as download). */
+  async content(rootId: string, id: string): Promise<Blob> {
     const response = await fetch(
-      `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/download`,
+      `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob`,
       {
         credentials: "include",
         headers: { "X-NIMBUS-CSRF": "1" },
@@ -309,7 +310,11 @@ export class NimbusClient {
       throw parseError(response.status, body);
     }
 
-    const url = URL.createObjectURL(await response.blob());
+    return response.blob();
+  }
+
+  async download(rootId: string, id: string, name: string): Promise<void> {
+    const url = URL.createObjectURL(await this.content(rootId, id));
     const anchor = document.createElement("a");
 
     anchor.href = url;
