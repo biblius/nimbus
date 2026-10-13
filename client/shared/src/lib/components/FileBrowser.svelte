@@ -17,7 +17,7 @@
   import { formatQuota, formatDatetime } from "../format";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
-  import { type FileEntry, type Root } from "../types";
+  import { type FileEntry, type FileView, type Root } from "../types";
   import { cn } from "../utils";
   import FileListItem from "./FileListItem.svelte";
   import Button from "./ui/button/button.svelte";
@@ -60,7 +60,7 @@
   const columns =
     "grid grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_5.5rem] @2xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_5.5rem] @4xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_minmax(0,11.5rem)_5.5rem]";
 
-  let entries = $state<FileEntry[]>([]);
+  let entries = $state<FileView[]>([]);
   let selected = $state<string[]>([]);
   let deleteOpen = $state(false);
   let deleting = $state(false);
@@ -75,14 +75,14 @@
     const labels: Record<string, string> = {};
 
     for (const entry of entries) {
-      const prior = seen[entry.name] ?? 0;
+      const prior = seen[entry.file.name] ?? 0;
 
-      seen[entry.name] = prior + 1;
+      seen[entry.file.name] = prior + 1;
 
       if (prior > 0) {
-        labels[entry.id] = `${entry.name} (${prior})`;
+        labels[entry.file.id] = `${entry.file.name} (${prior})`;
       } else {
-        labels[entry.id] = entry.name;
+        labels[entry.file.id] = entry.file.name;
       }
     }
 
@@ -225,7 +225,7 @@
         return;
       }
 
-      entries = next.filter((entry) => entry.parent === parent);
+      entries = next.filter((entry) => entry.file.parent === parent);
 
       order();
     } catch (cause) {
@@ -259,26 +259,28 @@
 
   function order() {
     entries.sort((left, right) => {
+      const a = left.file;
+      const b = right.file;
       let byColumn = 0;
 
       switch (sort.column) {
         case "kind":
-          byColumn = left.kind.localeCompare(right.kind);
+          byColumn = a.kind.localeCompare(b.kind);
           break;
         case "name":
-          byColumn = left.name.localeCompare(right.name, undefined, {
+          byColumn = a.name.localeCompare(b.name, undefined, {
             numeric: true,
             sensitivity: "base",
           });
           break;
         case "size":
-          byColumn = left.sizeBytes - right.sizeBytes;
+          byColumn = a.sizeBytes - b.sizeBytes;
           break;
         case "created":
-          byColumn = left.createdAt.localeCompare(right.createdAt);
+          byColumn = a.createdAt.localeCompare(b.createdAt);
           break;
         case "modified":
-          byColumn = left.updatedAt.localeCompare(right.updatedAt);
+          byColumn = a.updatedAt.localeCompare(b.updatedAt);
           break;
       }
 
@@ -288,7 +290,7 @@
         return directed;
       }
 
-      const byName = left.name.localeCompare(right.name, undefined, {
+      const byName = a.name.localeCompare(b.name, undefined, {
         numeric: true,
         sensitivity: "base",
       });
@@ -297,15 +299,15 @@
         return byName;
       }
 
-      if (left.createdAt !== right.createdAt) {
-        return left.createdAt < right.createdAt ? -1 : 1;
+      if (a.createdAt !== b.createdAt) {
+        return a.createdAt < b.createdAt ? -1 : 1;
       }
 
-      if (left.id === right.id) {
+      if (a.id === b.id) {
         return 0;
       }
 
-      return left.id < right.id ? -1 : 1;
+      return a.id < b.id ? -1 : 1;
     });
   }
 
@@ -316,23 +318,30 @@
     return sort.direction === "asc" ? "ascending" : "descending";
   }
 
+  function asView(file: FileEntry): FileView {
+    return { file, metadata: null };
+  }
+
   /// Drop the returned entry into the open folder.
   function insertEntry(created: FileEntry) {
     if (created.parent !== location.id) {
       return;
     }
 
-    entries.push(created);
+    entries.push(asView(created));
     order();
   }
 
-  function label(entry: FileEntry) {
-    return occurences[entry.id] ?? entry.name;
+  function label(entry: FileView) {
+    return occurences[entry.file.id] ?? entry.file.name;
   }
 
-  function openDirectory(entry: FileEntry) {
-    ancestors = [...ancestors, { id: entry.id, name: entry.name }];
-    showDirectory(entry.id);
+  function openDirectory(entry: FileView) {
+    ancestors = ancestors.concat({
+      id: entry.file.id,
+      name: entry.file.name,
+    });
+    showDirectory(entry.file.id);
   }
 
   async function upload(event: Event) {
@@ -592,17 +601,17 @@
       return;
     }
 
-    selected = entries.map((entry) => entry.id);
+    selected = entries.map((entry) => entry.file.id);
   }
 
   function askDelete(ids: string[]) {
-    pendingDelete = [...ids];
+    pendingDelete = ids.slice();
     deleteOpen = true;
   }
 
   const deleteDescription = $derived.by(() => {
     if (pendingDelete.length === 1) {
-      const entry = entries.find((item) => item.id === pendingDelete[0]);
+      const entry = entries.find((item) => item.file.id === pendingDelete[0]);
       return `Delete ${entry ? label(entry) : "this item"}?`;
     }
     return `Delete ${pendingDelete.length} items?`;
@@ -624,7 +633,7 @@
 
       const gone = new Set(ids);
 
-      entries = entries.filter((entry) => !gone.has(entry.id));
+      entries = entries.filter((entry) => !gone.has(entry.file.id));
       selected = selected.filter((id) => !gone.has(id));
 
       pendingDelete = [];
@@ -643,9 +652,9 @@
     }
   }
 
-  async function download(entry: FileEntry) {
+  async function download(entry: FileView) {
     try {
-      await session.client.download(root.id, entry.id, entry.name);
+      await session.client.download(root.id, entry.file.id, entry.file.name);
     } catch (cause) {
       toastError(
         cause instanceof TypeError
@@ -916,16 +925,17 @@
 
           <!-- FILES -->
 
-          {#each entries as entry (entry.id)}
+          {#each entries as entry (entry.file.id)}
             <FileListItem
               {entry}
+              rootId={root.id}
               name={label(entry)}
               {columns}
-              selected={selected.includes(entry.id)}
-              onToggle={() => toggle(entry.id)}
+              selected={selected.includes(entry.file.id)}
+              onToggle={() => toggle(entry.file.id)}
               onOpen={() => openDirectory(entry)}
               onDownload={() => download(entry)}
-              onDelete={() => askDelete([entry.id])}
+              onDelete={() => askDelete([entry.file.id])}
             />
           {/each}
         </ul>

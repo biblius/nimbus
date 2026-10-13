@@ -21,7 +21,7 @@ use crate::{
     error::AppError,
     file::{
         model::FileEntry,
-        queue::{self, DeletionQueue, DeletionQueueHandle, DeletionResult},
+        queue::{self, DeletionQueue, DeletionQueueHandle, DeletionResult, ProcessingQueue},
         service::FileService,
         storage::Storage,
     },
@@ -201,7 +201,11 @@ async fn build_services(
         "http://localhost".into(),
     );
 
-    let storage = Storage::new(storage_dir.join("storage"), 1024 * 1024);
+    let storage = Storage::new(
+        storage_dir.join("storage"),
+        storage_dir.join("preview"),
+        1024 * 1024,
+    );
     let repository = Repository::new(pool.clone());
     let auth = AuthenticationService::new(
         repository.users.clone(),
@@ -220,10 +224,14 @@ async fn build_services(
         repository.deletions.clone(),
     );
 
+    let processing = ProcessingQueue::start(storage.clone(), repository.metadata.clone());
+
     let files = FileService::new(
         repository.files.clone(),
         repository.folders.clone(),
+        repository.metadata.clone(),
         storage.clone(),
+        processing,
         30,
         Transactor::new(pool),
     );
@@ -342,10 +350,27 @@ pub fn blob_count(dir: &Path) -> usize {
     walk(&root)
 }
 
+pub fn preview_count(dir: &Path) -> usize {
+    let root = dir.join("preview");
+    if !root.exists() {
+        return 0;
+    }
+    walk(&root)
+}
+
+pub fn preview_path(dir: &Path, hash: &str) -> PathBuf {
+    dir.join("preview").join(hash)
+}
+
 fn walk(path: &Path) -> usize {
     let mut count = 0;
     for entry in std::fs::read_dir(path).unwrap() {
         let entry = entry.unwrap();
+        let name = entry.file_name();
+        // Skip atomic-write temps (`.{hash}.tmp`).
+        if name.to_string_lossy().starts_with('.') {
+            continue;
+        }
         if entry.file_type().unwrap().is_dir() {
             count += walk(&entry.path());
         } else {

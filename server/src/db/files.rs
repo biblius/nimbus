@@ -5,12 +5,12 @@ use crate::{
     error::AppError,
     file::{
         format::FileType,
-        model::{FileEntry, FileKind, FileRef, Root, RootView},
+        model::{FileEntry, FileKind, FileMetadata, FileRef, FileView, Root, RootView},
         tree::FileEntryTree,
     },
 };
 use chrono::{DateTime, Utc};
-use sqlx::{Executor, QueryBuilder};
+use sqlx::{Executor, FromRow, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -60,6 +60,48 @@ pub struct NewFile {
     pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
+}
+
+/// Flat join row for directory listings (`files` ⟕ `file_metadata`).
+#[derive(Debug, FromRow)]
+struct FileViewRow {
+    id: Uuid,
+    root_id: Uuid,
+    created_by: Option<Uuid>,
+    kind: FileKind,
+    name: String,
+    parent: Option<Uuid>,
+    file_type: Option<FileType>,
+    hash: Option<String>,
+    size_bytes: i64,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    preview: Option<String>,
+}
+
+impl From<FileViewRow> for FileView {
+    fn from(row: FileViewRow) -> Self {
+        let metadata = row.preview.map(|preview| FileMetadata {
+            preview: Some(preview),
+        });
+
+        FileView::new(
+            FileEntry {
+                id: row.id,
+                root_id: row.root_id,
+                created_by: row.created_by,
+                kind: row.kind,
+                name: row.name,
+                parent: row.parent,
+                file_type: row.file_type,
+                hash: row.hash,
+                size_bytes: row.size_bytes,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            },
+            metadata,
+        )
+    }
 }
 
 impl FileRepository {
@@ -506,38 +548,40 @@ impl FileRepository {
         &self,
         root: Uuid,
         parent: Option<Uuid>,
-    ) -> Result<Vec<FileEntry>, AppError> {
+    ) -> Result<Vec<FileView>, AppError> {
         self.list_files_with(&self.pool, root, parent).await
     }
 
-    /// Live children of a directory.
+    /// Live children of a directory, with `file_metadata` left-joined.
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn list_files_with<'e, E>(
         &self,
         executor: E,
         root: Uuid,
         parent: Option<Uuid>,
-    ) -> Result<Vec<FileEntry>, AppError>
+    ) -> Result<Vec<FileView>, AppError>
     where
         E: Executor<'e, Database = Db>,
     {
         let mut query = QueryBuilder::new(
             r#"
             SELECT
-                id,
-                root_id,
-                created_by,
-                "type" AS kind,
-                name,
-                parent,
-                format AS file_type,
-                hash,
-                size_bytes,
-                created_at,
-                updated_at
-            FROM files
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.created_at,
+                f.updated_at,
+                m.preview
+            FROM files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
             WHERE
-                root_id =
+                f.root_id =
             "#,
         );
 
@@ -545,18 +589,22 @@ impl FileRepository {
 
         // Root entries have no parent. Everything else belongs to a directory.
         if let Some(parent) = parent {
-            query.push(" AND parent = ").push_bind(parent);
+            query.push(" AND f.parent = ").push_bind(parent);
         } else {
-            query.push(" AND parent IS NULL");
+            query.push(" AND f.parent IS NULL");
         }
 
-        query.push(r#" ORDER BY CASE WHEN "type" = 'd' THEN 0 ELSE 1 END, name, created_at, id"#);
+        query.push(
+            r#" ORDER BY CASE WHEN f."type" = 'd' THEN 0 ELSE 1 END, f.name, f.created_at, f.id"#,
+        );
 
-        query
-            .build_query_as::<FileEntry>()
+        let rows = query
+            .build_query_as::<FileViewRow>()
             .fetch_all(executor)
             .await
-            .map_err(AppError::from)
+            .map_err(AppError::from)?;
+
+        Ok(rows.into_iter().map(FileView::from).collect())
     }
 
     /// Descendants of a directory in `files`, down to the leaf nodes.

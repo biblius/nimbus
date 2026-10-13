@@ -234,6 +234,17 @@ export type FileEntry = {
   updatedAt: string;
 };
 
+/** Derived per-file data from `file_metadata`. */
+export type FileMetadata = {
+  preview: string | null;
+};
+
+/** Directory listing row: file entry with optional joined metadata. */
+export type FileView = {
+  file: FileEntry;
+  metadata: FileMetadata | null;
+};
+
 /** One file the deletion worker finished attempting. */
 export type DeletionResult = {
   requestId: string;

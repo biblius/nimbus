@@ -2,7 +2,7 @@ use crate::{
     auth::session::Session,
     error::AppError,
     file::{
-        model::{CreateDirectory, FileEntry, RestoreFile, RootView, TrashFiles},
+        model::{CreateDirectory, FileEntry, FileView, RestoreFile, RootView, TrashFiles},
         tree::FileTree,
     },
     state::AppState,
@@ -49,14 +49,14 @@ pub(crate) async fn roots(
         ("root_id" = Uuid, Path, description = "Root id"),
         ("parent" = Option<Uuid>, Query, description = "Directory to list. Omit to list the root itself.")
     ),
-    responses((status = 200, description = "Children of the directory", body = Vec<FileEntry>))
+    responses((status = 200, description = "Children of the directory", body = Vec<FileView>))
 )]
 pub(crate) async fn list(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
     session: Session,
     Query(query): Query<ParentQuery>,
-) -> Result<Json<Vec<FileEntry>>, AppError> {
+) -> Result<Json<Vec<FileView>>, AppError> {
     Ok(Json(
         state
             .services
@@ -318,6 +318,33 @@ pub(crate) async fn download(
         .body(Body::from_stream(ReaderStream::new(file)))
         .map_err(|error| {
             tracing::error!(%error, "building download response");
+            AppError::Internal
+        })
+}
+
+#[utoipa::path(
+    get,
+    path = "/roots/{root_id}/files/{id}/preview",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("id" = Uuid, Path, description = "File id")
+    ),
+    responses((status = 200, description = "Preview image bytes"))
+)]
+pub(crate) async fn preview(
+    State(state): State<AppState>,
+    session: Session,
+    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
+) -> Result<Response, AppError> {
+    let preview = state.services.files.preview(&session.user, file_id).await?;
+
+    Response::builder()
+        .header(header::CONTENT_TYPE, preview.mime)
+        .header(header::CONTENT_LENGTH, preview.len.to_string())
+        .header(header::CACHE_CONTROL, "private, max-age=86400")
+        .body(Body::from_stream(ReaderStream::new(preview.file)))
+        .map_err(|error| {
+            tracing::error!(%error, "building preview response");
             AppError::Internal
         })
 }

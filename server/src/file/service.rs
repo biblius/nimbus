@@ -1,21 +1,23 @@
 use super::{
-    model::{CreateDirectory, FileEntry, FileKind},
+    model::{CreateDirectory, FileEntry, FileKind, FileView},
+    queue::{ProcessingQueue, ProcessingQueueHandle},
     storage::{Storage, TempFile, UploadWriter},
 };
 use crate::{
     db::{
+        MetadataRepository,
         files::{FileRepository, NewFile},
         tx::Transactor,
         user_folders::UserFolderRepository,
     },
     error::AppError,
     file::{
-        model::{RestoreFile, RootView, TrashFiles},
+        model::{FileContentPreview, RestoreFile, RootView, TrashFiles},
         tree::FileTree,
     },
     user::model::{Role, User},
 };
-use std::collections::HashSet;
+use std::{collections::HashSet, path::PathBuf};
 use tracing::instrument;
 use uuid::Uuid;
 use validify::{Validate, Validify};
@@ -24,7 +26,9 @@ use validify::{Validate, Validify};
 pub struct FileService {
     files: FileRepository,
     folders: UserFolderRepository,
+    metadata: MetadataRepository,
     storage: Storage,
+    processing: ProcessingQueueHandle,
     retention_days: u16,
     tx: Transactor,
 }
@@ -33,14 +37,18 @@ impl FileService {
     pub fn new(
         files: FileRepository,
         folders: UserFolderRepository,
+        metadata: MetadataRepository,
         storage: Storage,
+        processing: ProcessingQueueHandle,
         retention_days: u16,
         tx: Transactor,
     ) -> Self {
         Self {
             files,
             folders,
+            metadata,
             storage,
+            processing,
             retention_days,
             tx,
         }
@@ -78,7 +86,7 @@ impl FileService {
         user: &User,
         root_id: Uuid,
         dir_id: Option<Uuid>,
-    ) -> Result<Vec<FileEntry>, AppError> {
+    ) -> Result<Vec<FileView>, AppError> {
         if !self.folders.can_access(user.id, root_id).await? {
             return Err(AppError::Forbidden(
                 "You do not have access to this folder".into(),
@@ -222,6 +230,10 @@ impl FileService {
 
         tx.commit().await?;
 
+        if let Err(e) = ProcessingQueue::submit(&self.processing, entry.clone()).await {
+            tracing::error!(file=%entry.id, error=%e, "failed to enqueue file for processing");
+        }
+
         Ok(entry)
     }
 
@@ -230,7 +242,7 @@ impl FileService {
         &self,
         user: &User,
         id: Uuid,
-    ) -> Result<(FileEntry, std::path::PathBuf, &'static str), AppError> {
+    ) -> Result<(FileEntry, PathBuf, &'static str), AppError> {
         let file = self.readable(user, id).await?;
 
         if file.kind != FileKind::File {
@@ -255,6 +267,34 @@ impl FileService {
             .unwrap_or("application/octet-stream");
 
         Ok((file, path, mime))
+    }
+
+    /// Serve the generated preview image for a file, when one exists.
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
+    pub async fn preview(&self, user: &User, id: Uuid) -> Result<FileContentPreview, AppError> {
+        let file = self.readable(user, id).await?;
+
+        if file.kind != FileKind::File {
+            return Err(AppError::Unprocessable(
+                "Directories do not have previews".into(),
+            ));
+        }
+
+        let meta = self
+            .metadata
+            .get(file.id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
+
+        let hash = meta
+            .preview
+            .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
+
+        let path = self.storage.preview_path(&hash);
+
+        let preview = FileContentPreview::new(path, "image/webp").await?;
+
+        Ok(preview)
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]

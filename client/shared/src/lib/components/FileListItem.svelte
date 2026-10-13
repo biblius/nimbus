@@ -1,12 +1,17 @@
 <script lang="ts">
   import { Download, File as FileIcon, Folder, Trash } from "@lucide/svelte";
   import { formatBytes, formatDatetime } from "../format";
-  import type { FileEntry } from "../types";
+  import { session } from "../session.svelte";
+  import type { FileView } from "../types";
   import { cn } from "../utils";
   import Button from "./ui/button/button.svelte";
 
+  const PREVIEW_POLL_MS = 3000;
+  const PREVIEW_MAX_ATTEMPTS = 5;
+
   let {
     entry,
+    rootId,
     name,
     columns,
     selected,
@@ -15,7 +20,8 @@
     onDownload,
     onDelete,
   }: {
-    entry: FileEntry;
+    entry: FileView;
+    rootId: string;
     name: string;
     columns: string;
     selected: boolean;
@@ -24,12 +30,78 @@
     onDownload: () => void;
     onDelete: () => void;
   } = $props();
+
+  const file = $derived(entry.file);
+
+  let previewUrl = $state<string | null>(null);
+
+  $effect(() => {
+    const fileId = entry.file.id;
+    const hasPreview = entry.metadata?.preview != null;
+
+    const isImage =
+      entry.file.kind === "file" &&
+      entry.file.fileType != null &&
+      "image" in entry.file.fileType;
+
+    previewUrl = null;
+
+    if (entry.file.kind !== "file" || (!hasPreview && !isImage)) {
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    let attempts = 0;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    function stop() {
+      if (interval !== undefined) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+    }
+
+    function load() {
+      attempts += 1;
+
+      session.client
+        .preview(rootId, fileId)
+        .then((blob) => {
+          if (cancelled) {
+            return;
+          }
+          stop();
+          objectUrl = URL.createObjectURL(blob);
+          previewUrl = objectUrl;
+        })
+        .catch(() => {
+          if (cancelled || attempts >= PREVIEW_MAX_ATTEMPTS) {
+            stop();
+          }
+        });
+    }
+
+    load();
+
+    if (!hasPreview) {
+      interval = setInterval(load, PREVIEW_POLL_MS);
+    }
+
+    return () => {
+      cancelled = true;
+      stop();
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  });
 </script>
 
 <li
   class={cn(
     columns,
-    "min-h-11 py-1 hover:bg-accent/60",
+    "min-h-14 py-1.5 hover:bg-accent/60",
     selected && "bg-accent/40",
   )}
 >
@@ -40,36 +112,58 @@
     checked={selected}
     onchange={onToggle}
   />
-  {#if entry.kind === "directory"}
+  {#if file.kind === "directory"}
     <button
       type="button"
-      class="flex min-h-11 w-full min-w-0 items-center gap-2.5 overflow-hidden text-left text-sm font-medium"
+      class="flex min-h-11 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm font-medium"
       onclick={onOpen}
     >
-      <Folder size={18} class="shrink-0 text-primary" />
+      <span
+        class="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
+      >
+        <Folder size={20} strokeWidth={1.75} />
+      </span>
       <span class="truncate" title={name}>{name}</span>
     </button>
   {:else}
     <div
-      class="flex min-h-11 w-full min-w-0 items-center gap-2.5 overflow-hidden text-left text-sm"
+      class="flex min-h-11 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
     >
-      <FileIcon size={18} class="shrink-0 text-muted-foreground" />
-      <span class="truncate" title={name}>{name}</span>
+      {#if previewUrl}
+        <img
+          src={previewUrl}
+          alt=""
+          width="36"
+          height="36"
+          class="size-9 shrink-0 rounded-md object-cover shadow-sm ring-1 ring-border"
+        />
+      {:else}
+        <span
+          class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
+        >
+          <FileIcon size={18} strokeWidth={1.75} />
+        </span>
+      {/if}
+      <span class="truncate font-medium" title={name}>{name}</span>
     </div>
   {/if}
   <span
     class="hidden min-w-0 overflow-hidden text-right text-sm text-muted-foreground tabular-nums @lg:block"
   >
-    {entry.kind === "directory" ? "—" : formatBytes(entry.sizeBytes)}
+    {file.kind === "directory" ? "—" : formatBytes(file.sizeBytes)}
   </span>
-  <span class="hidden min-w-0 truncate text-sm text-muted-foreground @4xl:block">
-    {formatDatetime(entry.createdAt)}
+  <span
+    class="hidden min-w-0 truncate text-sm text-muted-foreground @4xl:block"
+  >
+    {formatDatetime(file.createdAt)}
   </span>
-  <span class="hidden min-w-0 truncate text-sm text-muted-foreground @2xl:block">
-    {formatDatetime(entry.updatedAt)}
+  <span
+    class="hidden min-w-0 truncate text-sm text-muted-foreground @2xl:block"
+  >
+    {formatDatetime(file.updatedAt)}
   </span>
   <div class="flex items-center justify-end gap-4">
-    {#if entry.kind === "file"}
+    {#if file.kind === "file"}
       <Button
         type="button"
         variant="ghost"

@@ -55,6 +55,10 @@ pub struct StartArgs {
     #[arg(long)]
     upload_dir: Option<String>,
 
+    /// Directory for generated file previews (content-addressed by hash).
+    #[arg(long)]
+    preview_dir: Option<String>,
+
     /// Days a soft-deleted file stays recoverable.
     #[arg(long)]
     file_retention_days: Option<String>,
@@ -201,6 +205,7 @@ arg!(
 );
 
 arg!(upload_dir, "UPLOAD_DIR", default "./data".to_string());
+arg!(preview_dir, "PREVIEW_DIR", default "./preview".to_string());
 arg!(file_retention_days, "FILE_RETENTION_DAYS", default 30, u16);
 arg!(
     file_deletion_interval_secs,
@@ -252,10 +257,12 @@ impl fmt::Display for StartArgs {
         writeln!(f, "cookie_domain: {}", show(&self.cookie_domain()))?;
         writeln!(f, "cookie_secure: {}", self.cookie_secure())?;
         writeln!(f, "csrf_header: {}", self.csrf_header())?;
+        #[cfg(debug_assertions)]
         writeln!(f, "db_url: {}", self.db_url())?;
         #[cfg(feature = "valkey")]
         writeln!(f, "valkey_url: {}", self.valkey_url())?;
         writeln!(f, "upload_dir: {}", self.upload_dir())?;
+        writeln!(f, "preview_dir: {}", self.preview_dir())?;
         writeln!(f, "file_retention_days: {}", self.file_retention_days())?;
         writeln!(
             f,

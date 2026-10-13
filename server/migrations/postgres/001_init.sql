@@ -143,3 +143,13 @@ WHERE
 CREATE INDEX file_deletion_queue_pending_idx ON file_deletion_queue (created_by)
 WHERE
   error IS NULL;
+
+-- Per-file derived data such as preview blob hashes.
+CREATE TABLE file_metadata (
+  file_id UUID PRIMARY KEY NOT NULL REFERENCES files (id) ON DELETE CASCADE,
+  preview TEXT
+);
+
+CREATE INDEX file_metadata_preview_idx ON file_metadata (preview)
+WHERE
+  preview IS NOT NULL;

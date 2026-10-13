@@ -7,7 +7,10 @@ use crate::{
     },
     auth::session::SessionView,
     file::{
-        model::{CreateDirectory, FileEntry, RestoreFile, Root, RootView, TrashFiles},
+        model::{
+            CreateDirectory, FileEntry, FileMetadata, FileView, RestoreFile, Root, RootView,
+            TrashFiles,
+        },
         tree::FileTree,
     },
     router::{auth, files, folders, users},
@@ -57,6 +60,7 @@ use crate::{
         files::ancestors,
         files::metadata,
         files::download,
+        files::preview,
         files::delete_file,
         files::delete_files,
         files::tree,
@@ -80,6 +84,8 @@ use crate::{
         RootView,
         UserView,
         FileEntry,
+        FileMetadata,
+        FileView,
         FileTree,
         CreateDirectory,
         TrashFiles,

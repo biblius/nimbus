@@ -17,6 +17,12 @@ pub struct Storage {
     ///
     /// See [crate::config::StartArgs::upload_dir]
     root: PathBuf,
+
+    /// Directory for generated preview blobs (content-addressed by hash).
+    ///
+    /// See [crate::config::StartArgs::preview_dir]
+    preview: PathBuf,
+
     max_bytes: i64,
 }
 
@@ -71,9 +77,10 @@ pub struct TempFile {
 }
 
 impl Storage {
-    pub fn new(root: PathBuf, max_bytes: usize) -> Self {
+    pub fn new(root: PathBuf, preview: PathBuf, max_bytes: usize) -> Self {
         Self {
             root,
+            preview,
             max_bytes: max_bytes as i64,
         }
     }
@@ -81,6 +88,7 @@ impl Storage {
     pub async fn prepare(&self) -> Result<(), AppError> {
         tokio::fs::create_dir_all(self.root.join(DATA_DIR)).await?;
         tokio::fs::create_dir_all(self.root.join(TMP_DIR)).await?;
+        tokio::fs::create_dir_all(&self.preview).await?;
         Ok(())
     }
 
@@ -129,6 +137,46 @@ impl Storage {
 
     pub fn path(&self, hash: &str) -> PathBuf {
         self.root.join(DATA_DIR).join(hash)
+    }
+
+    pub fn preview_path(&self, hash: &str) -> PathBuf {
+        self.preview.join(hash)
+    }
+
+    /// Write preview bytes under their content hash. Returns whether this hash was new.
+    pub async fn persist_preview(&self, hash: &str, bytes: &[u8]) -> Result<bool, AppError> {
+        let dest = self.preview_path(hash);
+
+        if tokio::fs::try_exists(&dest).await? {
+            return Ok(false);
+        }
+
+        // Same directory as `dest` so rename stays on one filesystem.
+        let temp = self.preview.join(format!(".{hash}.tmp"));
+
+        tokio::fs::write(&temp, bytes).await?;
+
+        match tokio::fs::rename(&temp, &dest).await {
+            Ok(()) => Ok(true),
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&temp).await;
+                // Another worker may have won the race.
+                if tokio::fs::try_exists(&dest).await? {
+                    return Ok(false);
+                }
+                Err(error.into())
+            }
+        }
+    }
+
+    pub async fn remove_preview(&self, hash: &str) -> Result<(), AppError> {
+        let path = self.preview_path(hash);
+
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 }
 

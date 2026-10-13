@@ -1,4 +1,5 @@
 mod deletion;
+mod processing;
 mod roots;
 mod trash;
 mod tree;

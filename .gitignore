@@ -2,6 +2,7 @@
 **/*.rs.bk
 .env
 /data
+/preview
 /node_modules
 .npm-logs/
 npm-debug.log*

@@ -99,12 +99,15 @@ mod upload {
         assert_eq!(
             listed
                 .iter()
-                .filter(|entry| entry.name == "same.txt")
+                .filter(|entry| entry.file.name == "same.txt")
                 .count(),
             2
         );
         assert_eq!(
-            listed.iter().filter(|entry| entry.name == "notes").count(),
+            listed
+                .iter()
+                .filter(|entry| entry.file.name == "notes")
+                .count(),
             2
         );
     }

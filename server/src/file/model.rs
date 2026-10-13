@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::format::FileType;
 use crate::{db::Db, error::AppError};
 use chrono::{DateTime, Utc};
@@ -22,6 +24,28 @@ pub struct FileEntry {
     pub size_bytes: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Derived per-file data stored in `file_metadata`.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMetadata {
+    /// Content hash of the generated preview blob, when one exists.
+    pub preview: Option<String>,
+}
+
+/// A file entry with optional joined metadata for client listings.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FileView {
+    pub file: FileEntry,
+    pub metadata: Option<FileMetadata>,
+}
+
+impl FileView {
+    pub fn new(file: FileEntry, metadata: Option<FileMetadata>) -> Self {
+        Self { file, metadata }
+    }
 }
 
 impl FileEntry {
@@ -154,6 +178,24 @@ pub struct CreateDirectory {
     #[validate(length(min = 1, message = "Directory name cannot be empty"))]
     #[validate(length(max = 255, message = "Directory name too long"))]
     pub name: String,
+}
+
+pub struct FileContentPreview {
+    /// File handle.
+    pub file: tokio::fs::File,
+    /// Content type.
+    pub mime: &'static str,
+    /// Size of the file in bytes.
+    pub len: u64,
+}
+
+impl FileContentPreview {
+    pub async fn new(path: PathBuf, mime: &'static str) -> Result<Self, AppError> {
+        let file = tokio::fs::File::open(&path).await?;
+        let len = tokio::fs::metadata(&path).await?.len();
+
+        Ok(Self { file, mime, len })
+    }
 }
 
 /// Works as a command for user initiated deletion requests,

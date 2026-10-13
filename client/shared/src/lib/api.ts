@@ -4,6 +4,7 @@ import type {
   DeletionResult,
   FileEntry,
   FileTree,
+  FileView,
   LoginResult,
   Member,
   ListQuery,
@@ -140,9 +141,9 @@ export class NimbusClient {
     return this.request<Root[]>("/roots");
   }
 
-  list(rootId: string, parent: string | null): Promise<FileEntry[]> {
+  list(rootId: string, parent: string | null): Promise<FileView[]> {
     const query = parent ? `?parent=${encodeURIComponent(parent)}` : "";
-    return this.request<FileEntry[]>(
+    return this.request<FileView[]>(
       `/roots/${encodeURIComponent(rootId)}${query}`,
     );
   }
@@ -272,9 +273,7 @@ export class NimbusClient {
   }
 
   trashTree(rootId: string): Promise<FileTree> {
-    return this.request<FileTree>(
-      `/roots/${encodeURIComponent(rootId)}/trash`,
-    );
+    return this.request<FileTree>(`/roots/${encodeURIComponent(rootId)}/trash`);
   }
 
   restore(rootId: string, id: string, parent: string | null): Promise<void> {
@@ -285,10 +284,10 @@ export class NimbusClient {
   }
 
   trash(rootId: string, ids: string[]): Promise<void> {
-    return this.request<void>(
-      `/roots/${encodeURIComponent(rootId)}/files`,
-      { method: "DELETE", body: JSON.stringify({ ids }) },
-    );
+    return this.request<void>(`/roots/${encodeURIComponent(rootId)}/files`, {
+      method: "DELETE",
+      body: JSON.stringify({ ids }),
+    });
   }
 
   async download(rootId: string, id: string, name: string): Promise<void> {
@@ -318,6 +317,29 @@ export class NimbusClient {
     anchor.click();
 
     URL.revokeObjectURL(url);
+  }
+
+  /** Fetch a file's preview image as a blob (requires session + CSRF). */
+  async preview(rootId: string, id: string): Promise<Blob> {
+    const response = await fetch(
+      `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview`,
+      {
+        credentials: "include",
+        headers: { "X-NIMBUS-CSRF": "1" },
+      },
+    );
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw parseError(response.status, body);
+    }
+
+    return response.blob();
   }
 
   listUsers(query: ListQuery): Promise<Page<UserViewFull>> {
@@ -443,12 +465,15 @@ export class NimbusClient {
 
       for (;;) {
         const { done, value } = await reader.read();
+
         if (done) {
           break;
         }
 
         buffer += decoder.decode(value, { stream: true });
+
         const parts = buffer.split("\n\n");
+
         buffer = parts.pop() ?? "";
 
         for (const part of parts) {
@@ -458,11 +483,13 @@ export class NimbusClient {
             .map((line) => line.slice("data:".length).trim())
             .join("\n");
 
-          if (!data) {
+          // Empty frames, or axum keep-alives (`data: keep-alive`), are not JSON results.
+          if (!data || data === "keep-alive") {
             continue;
           }
 
           const result = JSON.parse(data) as DeletionResult;
+
           if (!result.success) {
             failed = true;
           }

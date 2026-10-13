@@ -11,7 +11,7 @@ use crate::{
     db::{self, Repository, Transactor},
     email::EmailSender,
     file::{
-        queue::{self, DeletionQueue, DeletionQueueHandle},
+        queue::{self, DeletionQueue, DeletionQueueHandle, ProcessingQueue},
         service::FileService,
         storage::Storage,
     },
@@ -65,7 +65,11 @@ impl AppState {
         #[cfg(feature = "memory-cache")]
         let cache = Cache::new();
 
-        let storage = Storage::new(args.upload_dir().into(), args.upload_max_bytes());
+        let storage = Storage::new(
+            args.upload_dir().into(),
+            args.preview_dir().into(),
+            args.upload_max_bytes(),
+        );
         let email = EmailSender::new(
             args.gmail_address(),
             args.gmail_app_password(),
@@ -95,10 +99,14 @@ impl AppState {
             repository.deletions.clone(),
         );
 
+        let processing = ProcessingQueue::start(storage.clone(), repository.metadata.clone());
+
         let file_service = FileService::new(
             repository.files.clone(),
             repository.folders.clone(),
+            repository.metadata.clone(),
             storage.clone(),
+            processing,
             args.file_retention_days(),
             transactor,
         );
