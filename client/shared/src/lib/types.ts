@@ -223,7 +223,7 @@ export type FileTree = {
 export type FileEntry = {
   id: string;
   rootId: string;
-  createdBy: string;
+  createdBy: string | null;
   kind: "file" | "directory";
   name: string;
   parent: string | null;
@@ -233,3 +233,16 @@ export type FileEntry = {
   createdAt: string;
   updatedAt: string;
 };
+
+/** One file the deletion worker finished attempting. */
+export type DeletionResult = {
+  requestId: string;
+  fileId: string;
+  name: string;
+  success: boolean;
+};
+
+/** Messages on the deletion SSE channel. */
+export type DeletionEvent =
+  | { type: "progress"; result: DeletionResult }
+  | { type: "end" };

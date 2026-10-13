@@ -8,6 +8,7 @@
   import Button from "../../components/ui/button/button.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
   import { formatBytes, formatDatetime, formatQuota } from "../../format";
+  import { trackDeletion } from "../../deletion.svelte";
   import { navigate, route } from "../../router";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
@@ -121,10 +122,13 @@
     }
 
     deleting = true;
+    deleteOpen = false;
+    const id = folder.id;
+    const href = listHref();
 
     try {
-      await session.client.deleteFolder(folder.id);
-      navigate(listHref());
+      await trackDeletion(session.client.deleteFolder(id));
+      navigate(href);
     } catch (cause) {
       toastError(
         cause instanceof TypeError

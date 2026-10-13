@@ -6,6 +6,7 @@
   import Button from "../ui/button/button.svelte";
   import Chevron from "../ui/chevron/chevron.svelte";
   import ConfirmDialog from "../ui/confirm-dialog/confirm-dialog.svelte";
+  import { trackDeletion } from "../../deletion.svelte";
   import { formatBytes, formatDatetime, formatQuota } from "../../format";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
@@ -84,9 +85,10 @@
     }
 
     deleting = true;
+    deleteOpen = false;
 
     try {
-      await session.client.deleteFolder(folder.id);
+      await trackDeletion(session.client.deleteFolder(folder.id));
       onDelete(folder);
     } catch (cause) {
       toastError(

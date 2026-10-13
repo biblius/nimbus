@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import AdminSidebar from "../../components/AdminSidebar.svelte";
+  import DeletionBanner from "../../components/DeletionBanner.svelte";
   import PanelShell from "../../components/PanelShell.svelte";
   import { navigate } from "../../router";
   import { session } from "../../session.svelte";
@@ -29,4 +30,6 @@
       </div>
     </div>
   </PanelShell>
+
+  <DeletionBanner />
 {/if}

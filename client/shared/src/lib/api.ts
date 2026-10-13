@@ -1,5 +1,7 @@
 import type {
   CreateUserInput,
+  DeletionEvent,
+  DeletionResult,
   FileEntry,
   FileTree,
   LoginResult,
@@ -338,7 +340,7 @@ export class NimbusClient {
     });
   }
 
-  deleteUser(id: string): Promise<void> {
+  deleteUser(id: string): AsyncGenerator<DeletionEvent> {
     return this.events(`/admin/users/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
@@ -370,7 +372,7 @@ export class NimbusClient {
     });
   }
 
-  deleteFolder(id: string): Promise<void> {
+  deleteFolder(id: string): AsyncGenerator<DeletionEvent> {
     return this.events(`/admin/roots/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
@@ -409,7 +411,10 @@ export class NimbusClient {
     return this.request<number>(`/roots/${encodeURIComponent(id)}/usage`);
   }
 
-  private async events(path: string, init: RequestInit): Promise<void> {
+  private async *events(
+    path: string,
+    init: RequestInit,
+  ): AsyncGenerator<DeletionEvent> {
     const headers = new Headers(init.headers);
     headers.set("X-NIMBUS-CSRF", "1");
 
@@ -429,42 +434,45 @@ export class NimbusClient {
       throw parseError(response.status, body);
     }
 
-    if (!response.body) {
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
     let failed = false;
 
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
+    if (response.body) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() ?? "";
-
-      for (const part of parts) {
-        const data = part
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice("data:".length).trim())
-          .join("\n");
-
-        if (!data) {
-          continue;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
         }
 
-        const event = JSON.parse(data) as { success: boolean };
-        if (!event.success) {
-          failed = true;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const data = part
+            .split("\n")
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice("data:".length).trim())
+            .join("\n");
+
+          if (!data) {
+            continue;
+          }
+
+          const result = JSON.parse(data) as DeletionResult;
+          if (!result.success) {
+            failed = true;
+          }
+
+          yield { type: "progress", result };
         }
       }
     }
+
+    yield { type: "end" };
 
     if (failed) {
       throw new ApiError(500, null);

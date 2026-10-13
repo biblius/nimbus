@@ -8,6 +8,7 @@
   import Plus from "../../components/ui/plus/plus.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
   import UserForm from "../../components/user/UserForm.svelte";
+  import { trackDeletion } from "../../deletion.svelte";
   import { logout, session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import UserInfo from "../../components/user/UserInfo.svelte";
@@ -103,7 +104,7 @@
     deleting = true;
 
     try {
-      await session.client.deleteUser(userId);
+      await trackDeletion(session.client.deleteUser(userId));
 
       deleteUser = null;
 
@@ -190,19 +191,14 @@
                 }}
               >
                 <span class="min-w-0">
-                  <span class="flex min-w-0 items-baseline gap-1.5 text-sm">
-                    <span class="truncate font-medium">{user.username}</span>
-                    <span class="shrink-0 text-muted-foreground">|</span>
-                    <span
-                      class="shrink-0 text-xs text-muted-foreground capitalize"
-                    >
-                      {user.role}
-                    </span>
-                  </span>
-                  <span
-                    class="block h-4 truncate text-xs leading-4 text-muted-foreground"
+                  <span class="block truncate text-sm font-medium"
+                    >{user.username}</span
                   >
-                    {user.email ?? ""}
+                  <span class="block truncate text-xs text-muted-foreground">
+                    {#if user.email}
+                      {user.email} ·
+                    {/if}
+                    <span class="capitalize">{user.role}</span>
                   </span>
                 </span>
                 <Chevron expanded={selected(user)} />
@@ -221,11 +217,10 @@
                       />
                     </div>
                   {:else}
-                    <div class="flex justify-between">
-                      <!-- USER INFO CARD -->
-
-                      <UserInfo {user} />
-
+                    <div class="flex justify-between gap-3">
+                      <div class="min-w-0 flex-1">
+                        <UserInfo {user} />
+                      </div>
                       <div class="flex flex-col self-stretch">
                         <Button
                           type="button"
@@ -238,7 +233,6 @@
                         >
                           <Pencil size={16} />
                         </Button>
-
                         <Button
                           type="button"
                           variant="outline"
@@ -264,11 +258,13 @@
 </div>
 
 <ConfirmDialog
-  open={deleteUser !== null}
+  open={deleteUser !== null && !deleting}
   title="Delete user"
-  description={deleteUser!.id === session.user?.id
-    ? `Delete ${deleteUser!.username}? You will be signed out.`
-    : `Delete ${deleteUser!.username}? This cannot be undone.`}
+  description={deleteUser == null
+    ? ""
+    : deleteUser.id === session.user?.id
+      ? `Delete ${deleteUser.username}? You will be signed out.`
+      : `Delete ${deleteUser.username}? This cannot be undone.`}
   confirmLabel={deleteUser?.id === session.user?.id
     ? "Delete and sign out"
     : "Delete"}
