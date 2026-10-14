@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Trash } from "@lucide/svelte";
-  import { formatQuota } from "../format";
   import { isActive, navigate } from "../router";
   import { session } from "../session.svelte";
   import type { Root } from "../types";
+  import RootSidebarItem from "./RootSidebarItem.svelte";
 
   let {
     roots,
@@ -28,23 +28,7 @@
       <p class="px-3 text-sm text-muted-foreground">No roots are assigned.</p>
     {:else}
       {#each priv as root (root.id)}
-        <button
-          type="button"
-          class="flex min-h-11 items-center gap-2 rounded-md px-3 text-left text-sm {selected?.id ===
-          root.id
-            ? 'bg-accent font-medium text-accent-foreground'
-            : 'hover:bg-accent'}"
-          aria-current={selected?.id === root.id ? "page" : undefined}
-          onclick={() => {
-            session.menuOpen = false;
-            navigate("/files/:root_id", { params: { root_id: root.id } });
-          }}
-        >
-          <span class="min-w-0 flex-1 truncate">{root.name}</span>
-          <span class="shrink-0 text-xs text-muted-foreground tabular-nums">
-            {formatQuota(root.quota)}
-          </span>
-        </button>
+        <RootSidebarItem {root} selected={selected?.id === root.id} />
       {/each}
       <div
         class="mt-2 flex flex-col gap-1 border-t pt-2"
@@ -58,23 +42,7 @@
           Shared
         </p>
         {#each shared as root (root.id)}
-          <button
-            type="button"
-            class="flex min-h-11 items-center gap-2 rounded-md pr-3 pl-6 text-left text-sm {selected?.id ===
-            root.id
-              ? 'bg-accent font-medium text-accent-foreground'
-              : 'hover:bg-accent'}"
-            aria-current={selected?.id === root.id ? "page" : undefined}
-            onclick={() => {
-              session.menuOpen = false;
-              navigate("/files/:root_id", { params: { root_id: root.id } });
-            }}
-          >
-            <span class="min-w-0 flex-1 truncate">{root.name}</span>
-            <span class="shrink-0 text-xs text-muted-foreground tabular-nums">
-              {formatQuota(root.quota)}
-            </span>
-          </button>
+          <RootSidebarItem {root} selected={selected?.id === root.id} inset />
         {/each}
       </div>
     {/if}

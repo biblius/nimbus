@@ -102,15 +102,13 @@
   </div>
 
   {#if creating}
-    <div class="rounded-xl border bg-card p-4 sm:p-5">
-      <div class="mx-auto max-w-lg">
-        <SharedRootForm
-          title="Add folder"
-          description="A quota of 0 means unlimited. Choose who can use this shared folder."
-          save={createRoot}
-          cancel={reset}
-        />
-      </div>
+    <div class="mx-auto w-full max-w-lg">
+      <SharedRootForm
+        title="Add folder"
+        description="Set a storage cap and choose who can use this folder."
+        save={createRoot}
+        cancel={reset}
+      />
     </div>
   {/if}
 

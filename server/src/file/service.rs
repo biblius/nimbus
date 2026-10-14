@@ -15,12 +15,16 @@ use crate::{
     error::AppError,
     file::{
         format::FileType,
-        model::{FileContentPreview, MoveFiles, RestoreFile, RootView, TrashFiles},
+        model::{CopyFile, FileContentPreview, MoveFiles, RestoreFile, RootView, TrashFiles},
         tree::FileTree,
     },
     user::model::{Role, User},
 };
-use std::{collections::HashSet, path::PathBuf};
+use chrono::Utc;
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 use tokio::sync::mpsc;
 use tracing::instrument;
 use uuid::Uuid;
@@ -454,6 +458,89 @@ impl FileService {
         self.files.move_to_parent(root_id, input.parent, &ids).await
     }
 
+    /// Copy a live file (and its descendants, if a directory) into `input.target_root_id`.
+    ///
+    /// Each copied row gets a new id and `created_at`; other metadata is retained.
+    /// Blob content is shared by hash — no filesystem copy is performed.
+    #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
+    pub async fn copy_file(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        input: CopyFile,
+    ) -> Result<(), AppError> {
+        self.accessible(user, root_id).await?;
+        self.accessible(user, input.target_root_id).await?;
+
+        if let Some(parent) = input.parent {
+            let entry =
+                self.files.get_live(parent).await?.ok_or_else(|| {
+                    AppError::Unprocessable("Target directory does not exist".into())
+                })?;
+
+            if entry.root_id != input.target_root_id || entry.kind != FileKind::Directory {
+                return Err(AppError::Unprocessable("Target is not a directory".into()));
+            }
+        }
+
+        let subtree = self.files.list_live_subtree(root_id, input.id).await?;
+
+        let now = Utc::now();
+
+        let mut id_map = HashMap::with_capacity(subtree.len());
+        let mut copies = Vec::with_capacity(subtree.len());
+        let mut bytes = 0_i64;
+
+        for entry in subtree.iter() {
+            id_map.insert(entry.id, Uuid::new_v4());
+        }
+
+        for entry in subtree {
+            if entry.kind == FileKind::File {
+                bytes = bytes.saturating_add(entry.size_bytes);
+            }
+
+            let parent = if entry.id == input.id {
+                input.parent
+            } else {
+                entry.parent.and_then(|parent| id_map.get(&parent).copied())
+            };
+
+            copies.push(FileEntry {
+                id: id_map[&entry.id],
+                root_id: input.target_root_id,
+                created_by: entry.created_by,
+                kind: entry.kind,
+                name: entry.name,
+                parent,
+                file_type: entry.file_type,
+                hash: entry.hash,
+                size_bytes: entry.size_bytes,
+                preview: entry.preview,
+                created_at: now,
+                updated_at: entry.updated_at,
+            });
+        }
+
+        let quota = self.files.root_quota(input.target_root_id).await?;
+
+        if quota > 0 {
+            let used = self.files.root_quota_usage(input.target_root_id).await?;
+
+            if used.saturating_add(bytes) > quota {
+                return Err(AppError::QuotaExceeded);
+            }
+        }
+
+        let mut tx = self.tx.begin().await?;
+
+        self.files.insert_many(&mut *tx, copies).await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
     /// Permanently delete one trashed item and its descendants.
     #[instrument(skip(self, user, handle), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
     pub async fn delete_trash(
@@ -498,7 +585,9 @@ impl FileService {
         };
 
         if trashed_root != root_id {
-            return Err(AppError::ResourceMissing("File does not exist".into()));
+            return Err(AppError::Unprocessable(
+                "Files can only be restored to their original roots".into(),
+            ));
         }
 
         if let Some(parent) = input.parent {
@@ -537,7 +626,7 @@ impl FileService {
             return Err(AppError::QuotaExceeded);
         }
 
-        for file in &mut restored {
+        for file in restored.iter_mut() {
             if file.id == id {
                 file.parent = input.parent;
                 break;

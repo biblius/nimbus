@@ -89,13 +89,14 @@
 {#snippet rows(nodes: FileTree[], depth: number)}
   <ul class="flex flex-col">
     {#each nodes as node (node.id)}
+      {@const children = node.children ?? []}
       {#if node.kind === "directory"}
         <li>
           <div
             class="flex h-7 items-center pr-1"
             style:padding-left="{depth * 0.75}rem"
           >
-            {#if node.children.some((child) => child.kind === "directory")}
+            {#if children.some((child) => child.kind === "directory")}
               <button
                 type="button"
                 class="inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -132,7 +133,7 @@
             </button>
           </div>
           {#if expanded[node.id]}
-            {@render rows(node.children, depth + 1)}
+            {@render rows(children, depth + 1)}
           {/if}
         </li>
       {/if}
@@ -155,13 +156,11 @@
       aria-modal="true"
       aria-labelledby="folder-picker-title"
       tabindex="-1"
-      class="relative flex max-h-[min(32rem,80dvh)] w-full max-w-md flex-col rounded-xl border bg-card p-6 shadow-lg outline-none"
+      class="relative w-full max-w-md rounded-xl border bg-card p-6 shadow-lg outline-none"
     >
       <h2 id="folder-picker-title" class="text-base font-medium">{title}</h2>
       <p class="mt-2 text-sm text-muted-foreground">{description}</p>
-      <div
-        class="mt-4 min-h-0 flex-1 overflow-y-auto rounded-md border p-3"
-      >
+      <div class="mt-4 max-h-64 overflow-y-auto rounded-md border p-3">
         <div class="flex h-7 items-center pr-1">
           <span class="size-4 shrink-0"></span>
           <button
@@ -179,7 +178,7 @@
             <span class="truncate">{rootName}</span>
           </button>
         </div>
-        {@render rows(tree.children, 1)}
+        {@render rows(tree.children ?? [], 1)}
       </div>
       <div class="mt-5 flex justify-end gap-2">
         <Button type="button" variant="outline" onclick={cancel} disabled={busy}

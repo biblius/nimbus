@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, Eye, Folder, Trash } from "@lucide/svelte";
+  import { Download, Eye, Folder, Share2, Trash } from "@lucide/svelte";
   import { createDraggable, createDroppable } from "@dnd-kit/svelte";
   import { untrack } from "svelte";
   import { hasListThumbnail, isPreviewable } from "../fileKind";
@@ -23,6 +23,7 @@
     onOpen,
     onPreview,
     onDownload,
+    onCopy,
     onDelete,
   }: {
     entry: FileView;
@@ -34,10 +35,18 @@
     onOpen: () => void;
     onPreview: () => void;
     onDownload: () => void;
+    onCopy: () => void;
     onDelete: () => void;
   } = $props();
 
   const file = $derived(entry.file);
+
+  let shareOpen = $state(false);
+  let shareMenu: HTMLDivElement | undefined = $state();
+
+  function closeShare() {
+    shareOpen = false;
+  }
 
   const fileId = untrack(() => entry.file.id);
   const directory = untrack(() => entry.file.kind === "directory");
@@ -112,6 +121,22 @@
     };
   });
 </script>
+
+<svelte:window
+  onclick={(event) => {
+    if (!shareOpen || !shareMenu) {
+      return;
+    }
+    if (!shareMenu.contains(event.target as Node)) {
+      closeShare();
+    }
+  }}
+  onkeydown={(event) => {
+    if (event.key === "Escape") {
+      closeShare();
+    }
+  }}
+/>
 
 <li
   {@attach draggable.attach}
@@ -204,7 +229,7 @@
   >
     {formatDatetime(file.createdAt)}
   </span>
-  <div class="flex items-center justify-end gap-4" data-no-drag>
+  <div class="flex items-center justify-end gap-1" data-no-drag>
     {#if file.kind === "file"}
       <Button
         type="button"
@@ -217,6 +242,43 @@
         <Download size={16} />
       </Button>
     {/if}
+    <div class="relative" bind:this={shareMenu}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="size-8 px-0 text-muted-foreground"
+        aria-label="Share {name}"
+        aria-haspopup="menu"
+        aria-expanded={shareOpen}
+        onclick={(event) => {
+          event.stopPropagation();
+          shareOpen = !shareOpen;
+        }}
+      >
+        <Share2 size={16} />
+      </Button>
+      {#if shareOpen}
+        <div
+          role="menu"
+          class="absolute top-full right-0 z-50 mt-1 w-40 overflow-hidden rounded-xl border bg-card shadow-lg"
+        >
+          <div class="p-1">
+            <button
+              type="button"
+              role="menuitem"
+              class="flex min-h-11 w-full items-center rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
+              onclick={() => {
+                closeShare();
+                onCopy();
+              }}
+            >
+              Copy to…
+            </button>
+          </div>
+        </div>
+      {/if}
+    </div>
     <Button
       type="button"
       variant="ghost"

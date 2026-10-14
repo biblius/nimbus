@@ -995,6 +995,79 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    /// Live file `id` and all of its descendants in `root_id`.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_live_subtree(
+        &self,
+        root_id: Uuid,
+        id: Uuid,
+    ) -> Result<Vec<FileEntry>, AppError> {
+        let rows = sqlx::query_as!(
+            FileEntry,
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT
+                    id,
+                    root_id,
+                    created_by,
+                    "type",
+                    name,
+                    parent,
+                    format,
+                    hash,
+                    size_bytes,
+                    preview,
+                    created_at,
+                    updated_at
+                FROM files
+                WHERE id = $1
+                  AND root_id = $2
+                UNION ALL
+                SELECT
+                    child.id,
+                    child.root_id,
+                    child.created_by,
+                    child."type",
+                    child.name,
+                    child.parent,
+                    child.format,
+                    child.hash,
+                    child.size_bytes,
+                    child.preview,
+                    child.created_at,
+                    child.updated_at
+                FROM files child
+                JOIN tree t ON child.parent = t.id
+            )
+            SELECT
+                id AS "id!",
+                root_id AS "root_id!",
+                created_by AS "created_by?",
+                "type" AS "kind!: FileKind",
+                name AS "name!",
+                parent,
+                format AS "file_type: FileType",
+                hash,
+                size_bytes AS "size_bytes!",
+                preview,
+                created_at AS "created_at!",
+                updated_at AS "updated_at!"
+            FROM tree
+            "#,
+            id,
+            root_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)?;
+
+        if rows.iter().all(|row| row.id != id) {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        Ok(rows)
+    }
+
     /// Delete `id` and its descendants from `trashed_files`. Returns the removed rows.
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_trashed_tree<'e, E>(

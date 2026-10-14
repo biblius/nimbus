@@ -21,21 +21,30 @@
   import { ApiError, ValidationError } from "../api";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
-  import { type FileEntry, type FileView, type Root } from "../types";
+  import {
+    type FileEntry,
+    type FileTree,
+    type FileView,
+    type Root,
+  } from "../types";
   import { cn } from "../utils";
   import { isPreviewable } from "../fileKind";
   import FileListItem from "./FileListItem.svelte";
   import FilePreview from "./FilePreview.svelte";
+  import FolderPicker from "./FolderPicker.svelte";
+  import RootPicker from "./RootPicker.svelte";
   import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
 
   let {
     folder: root,
     parentId = null,
+    roots,
   }: {
     folder: Root;
     /** Directory open in this root. Null lists the root itself. */
     parentId?: string | null;
+    roots: Root[];
   } = $props();
 
   type PendingUpload = {
@@ -74,7 +83,7 @@
   type SortDirection = "asc" | "desc";
 
   const columns =
-    "grid grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_5.5rem] @2xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_5.5rem]";
+    "grid grid-cols-[1.75rem_minmax(0,1fr)_7.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_7.5rem] @2xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_7.5rem]";
 
   let entries = $state<FileView[]>([]);
   let selected = $state<string[]>([]);
@@ -82,6 +91,10 @@
   let deleting = $state(false);
   let pendingDelete = $state<string[]>([]);
   let previewFileId = $state<string | null>(null);
+  let pendingCopy = $state<FileView | null>(null);
+  let copyBusy = $state(false);
+  let copyPicker = $state<{ root: Root; entry: FileView } | null>(null);
+  let copyTree = $state<FileTree | null>(null);
 
   const previewEntries = $derived(entries.filter(isPreviewable));
   let sort = $state<{ column: SortColumn; direction: SortDirection }>({
@@ -150,6 +163,14 @@
    * i.e. which directory are we located in.
    */
   const location = $derived(trail[trail.length - 1]);
+
+  const deleteDescription = $derived.by(() => {
+    if (pendingDelete.length === 1) {
+      const entry = entries.find((item) => item.file.id === pendingDelete[0]);
+      return `Delete ${entry ? label(entry) : "this item"}?`;
+    }
+    return `Delete ${pendingDelete.length} items?`;
+  });
 
   $effect(() => {
     // Deliberate assignment so $effect keeps track of these
@@ -626,14 +647,6 @@
     deleteOpen = true;
   }
 
-  const deleteDescription = $derived.by(() => {
-    if (pendingDelete.length === 1) {
-      const entry = entries.find((item) => item.file.id === pendingDelete[0]);
-      return `Delete ${entry ? label(entry) : "this item"}?`;
-    }
-    return `Delete ${pendingDelete.length} items?`;
-  });
-
   async function confirmDelete() {
     const ids = pendingDelete;
     const rootId = root.id;
@@ -750,6 +763,88 @@
         cause instanceof TypeError
           ? "The server could not be reached"
           : "Could not download that file",
+      );
+    }
+  }
+
+  function askCopy(entry: FileView) {
+    const destinations = roots.filter((item) => item.id !== root.id);
+
+    if (destinations.length === 0) {
+      toastError("No other roots available");
+      return;
+    }
+
+    if (destinations.length === 1) {
+      void openCopyPicker(destinations[0], entry);
+      return;
+    }
+
+    pendingCopy = entry;
+  }
+
+  function resetCopy() {
+    pendingCopy = null;
+    copyBusy = false;
+    copyPicker = null;
+    copyTree = null;
+  }
+
+  /** Match TrashBrowser.openPicker: set picker, clear tree, then load. */
+  async function openCopyPicker(targetRoot: Root, entry: FileView) {
+    copyPicker = { root: targetRoot, entry };
+    copyTree = null;
+
+    try {
+      copyTree = await session.client.tree(targetRoot.id);
+    } catch {
+      copyPicker = null;
+      toastError("Could not load folders");
+    }
+  }
+
+  async function pickCopyRoot(targetRootId: string) {
+    const target = roots.find((item) => item.id === targetRootId);
+    const entry = pendingCopy;
+
+    if (!entry || !target) {
+      return;
+    }
+
+    // Load first so FolderPicker can mount as soon as RootPicker closes.
+    copyBusy = true;
+
+    try {
+      const tree = await session.client.tree(targetRootId);
+      copyPicker = { root: target, entry };
+      copyTree = tree;
+      pendingCopy = null;
+    } catch {
+      toastError("Could not load folders");
+      resetCopy();
+    } finally {
+      copyBusy = false;
+    }
+  }
+
+  async function confirmCopy(parent: string | null) {
+    if (!copyPicker) {
+      return;
+    }
+
+    try {
+      await session.client.copy(
+        root.id,
+        copyPicker.entry.file.id,
+        copyPicker.root.id,
+        parent,
+      );
+      resetCopy();
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not copy that item",
       );
     }
   }
@@ -1004,6 +1099,7 @@
                 onOpen={() => openDirectory(entry)}
                 onPreview={() => (previewFileId = entry.file.id)}
                 onDownload={() => download(entry)}
+                onCopy={() => askCopy(entry)}
                 onDelete={() => askDelete([entry.file.id])}
               />
             {/each}
@@ -1049,7 +1145,33 @@
     }}
     onConfirm={confirmDelete}
   />
+
+  {#if pendingCopy}
+    <RootPicker
+      open={true}
+      roots={roots.filter((item) => item.id !== root.id)}
+      title="Copy to…"
+      description={`Choose a root for “${label(pendingCopy)}”.`}
+      confirmLabel="Continue"
+      busy={copyBusy}
+      onCancel={resetCopy}
+      onConfirm={pickCopyRoot}
+    />
+  {/if}
 </div>
+
+{#if copyTree != null}
+  <FolderPicker
+    enabled={copyPicker !== null}
+    tree={copyTree}
+    rootName={copyPicker?.root.name ?? ""}
+    title={copyPicker ? `Copy ${label(copyPicker.entry)}` : ""}
+    description="Choose a folder"
+    confirmLabel="Copy"
+    onCancel={resetCopy}
+    onConfirm={confirmCopy}
+  />
+{/if}
 
 {#snippet columnHeader(
   column: SortColumn,

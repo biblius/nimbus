@@ -57,7 +57,7 @@
       {#if viewingTrash && loaded}
         <TrashBrowser {roots} />
       {:else if selected}
-        <FileBrowser folder={selected} {parentId} />
+        <FileBrowser folder={selected} {parentId} {roots} />
       {:else if loaded && rootId}
         <p class="text-sm text-muted-foreground">This folder does not exist.</p>
       {/if}

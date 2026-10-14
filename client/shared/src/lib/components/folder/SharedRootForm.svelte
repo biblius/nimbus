@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { ApiError, ValidationError } from "../../api";
-  import { formatQuota } from "../../format";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import type { Root, RootData, UserViewFull } from "../../types";
   import Button from "../ui/button/button.svelte";
   import Field from "../ui/field/field.svelte";
   import InfiniteList from "../ui/infinite-list/infinite-list.svelte";
+  import QuotaField from "./QuotaField.svelte";
 
   let {
     title,
@@ -32,9 +32,10 @@
   let membersFailed = $state(false);
 
   let name = $state(untrack(() => folder?.name ?? ""));
-  let quota = $state(untrack(() => (folder ? String(folder.quota) : "0")));
+  let quotaBytes = $state(untrack(() => folder?.quota ?? 0));
   let selected = $state<string[]>([]);
   let quotaError = $state("");
+  let quotaValid = $state(true);
   let validation = $state<ValidationError | undefined>();
   let busy = $state(false);
 
@@ -63,13 +64,6 @@
       });
   });
 
-  const quotaPreview = $derived.by(() => {
-    if (!/^\d+$/.test(quota.trim())) {
-      return "";
-    }
-    return formatQuota(Number(quota));
-  });
-
   function toggle(id: string) {
     const index = selected.indexOf(id);
     if (index === -1) {
@@ -82,11 +76,9 @@
   async function onSubmit(event: SubmitEvent) {
     event.preventDefault();
 
-    quotaError = "";
     validation = undefined;
 
-    if (!/^\d+$/.test(quota.trim()) || !Number.isSafeInteger(Number(quota))) {
-      quotaError = "Quota must be a whole number of bytes, or 0 for unlimited";
+    if (!quotaValid) {
       return;
     }
 
@@ -95,7 +87,7 @@
     try {
       await save({
         name,
-        quotaBytes: Number(quota),
+        quotaBytes,
         members: selected,
       });
     } catch (cause) {
@@ -116,88 +108,95 @@
   }
 </script>
 
-<form
-  class="max-w-lg space-y-4 rounded-xl border bg-card p-4"
-  onsubmit={onSubmit}
->
-  <div>
-    <h3 class="text-base font-medium">{title}</h3>
-    <p class="text-sm text-muted-foreground">{description}</p>
+<form class="overflow-hidden rounded-xl border bg-card" onsubmit={onSubmit}>
+  <div class="border-b px-5 py-4">
+    <h3 class="text-sm font-semibold tracking-tight">{title}</h3>
+    <p class="mt-1 text-sm text-muted-foreground">{description}</p>
   </div>
 
-  <Field
-    label="Name"
-    id="folder-name"
-    bind:value={name}
-    error={validation?.field("name")}
-    required
-  />
+  <div class="space-y-4 px-5 py-4">
+    <Field
+      label="Name"
+      id="folder-name"
+      bind:value={name}
+      error={validation?.field("name")}
+      required
+    />
 
-  <Field
-    label="Quota (bytes)"
-    id="folder-quota"
-    inputmode="numeric"
-    bind:value={quota}
-    error={validation?.field("quota_bytes")}
-    class={quotaError
-      ? "border-destructive focus-visible:ring-destructive"
-      : ""}
-    required
-  />
-  {#if quotaPreview}
-    <p class="text-xs text-muted-foreground">{quotaPreview}</p>
-  {/if}
-  {#if quotaError}
-    <p class="text-sm text-destructive">{quotaError}</p>
-  {/if}
+    <QuotaField
+      bind:bytes={quotaBytes}
+      bind:error={quotaError}
+      bind:valid={quotaValid}
+      serverError={validation?.field("quota_bytes")}
+    />
 
-  <fieldset class="space-y-2">
-    <legend class="text-sm leading-none font-medium">Members</legend>
-    {#if !membersReady && !membersFailed}
-      <p class="text-sm text-muted-foreground">Loading…</p>
-    {:else}
-      {#if membersFailed}
-        <p class="text-sm text-muted-foreground">Could not load members.</p>
+    <div class="space-y-2">
+      <div class="flex items-baseline justify-between gap-3">
+        <span class="text-sm leading-none font-medium">Members</span>
+        <span class="text-xs text-muted-foreground">
+          {selected.length} selected
+        </span>
+      </div>
+      {#if !membersReady && !membersFailed}
+        <p class="text-sm text-muted-foreground">Loading…</p>
+      {:else}
+        {#if membersFailed}
+          <p class="text-sm text-muted-foreground">Could not load members.</p>
+        {/if}
+        <InfiniteList
+          columns={searchColumns}
+          errorMessage="Could not load users."
+          load={(query) =>
+            session.client.listUsers({
+              ...query,
+              sort: { column: "username", direction: "asc" },
+            })}
+        >
+          {#snippet children(users: UserViewFull[])}
+            {#if users.length === 0}
+              <p class="px-3 py-6 text-center text-sm text-muted-foreground">
+                No users to assign.
+              </p>
+            {:else}
+              <ul class="divide-y">
+                {#each users as user (user.id)}
+                  <li>
+                    <label
+                      class="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm hover:bg-accent"
+                    >
+                      <input
+                        type="checkbox"
+                        class="size-4 shrink-0"
+                        checked={selected.includes(user.id)}
+                        onchange={() => toggle(user.id)}
+                      />
+                      <span class="min-w-0">
+                        <span class="block truncate">{user.username}</span>
+                        {#if user.email}
+                          <span
+                            class="block truncate text-xs text-muted-foreground"
+                          >
+                            {user.email}
+                          </span>
+                        {/if}
+                      </span>
+                    </label>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          {/snippet}
+        </InfiniteList>
       {/if}
-      <InfiniteList
-        columns={searchColumns}
-        errorMessage="Could not load users."
-        load={(query) =>
-          session.client.listUsers({
-            ...query,
-            sort: { column: "username", direction: "asc" },
-          })}
-      >
-        {#snippet children(users: UserViewFull[])}
-          {#if users.length === 0}
-            <p class="px-3 py-2 text-sm text-muted-foreground">
-              No users to assign.
-            </p>
-          {:else}
-            <ul class="divide-y">
-              {#each users as user (user.id)}
-                <li class="px-3 py-2">
-                  <label class="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(user.id)}
-                      onchange={() => toggle(user.id)}
-                    />
-                    <span class="truncate">{user.username}</span>
-                  </label>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        {/snippet}
-      </InfiniteList>
-    {/if}
-  </fieldset>
+    </div>
+  </div>
 
-  <div class="flex flex-wrap items-center gap-2">
-    <Button type="submit" disabled={busy || !membersReady}>Confirm</Button>
+  <div
+    class="flex items-center justify-end gap-2 border-t bg-muted/30 px-5 py-3"
+  >
     {#if cancel}
       <Button type="button" variant="outline" onclick={cancel}>Cancel</Button>
     {/if}
+    <Button type="submit" disabled={busy || !membersReady}>Save</Button>
   </div>
 </form>

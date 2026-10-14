@@ -1,3 +1,4 @@
+mod copying;
 mod deletion;
 mod moving;
 mod overwrite;

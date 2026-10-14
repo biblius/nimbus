@@ -3,7 +3,8 @@ use crate::{
     error::AppError,
     file::{
         model::{
-            CreateDirectory, FileEntry, FileView, MoveFiles, RestoreFile, RootView, TrashFiles,
+            CopyFile, CreateDirectory, FileEntry, FileView, MoveFiles, RestoreFile, RootView,
+            TrashFiles,
         },
         queue::DeletionResult,
         tree::FileTree,
@@ -574,6 +575,27 @@ pub(crate) async fn move_files(
         .services
         .files
         .move_files(&session.user, root_id, input)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/roots/{root_id}/copy",
+    params(("root_id" = Uuid, Path, description = "Source root id")),
+    request_body = CopyFile,
+    responses((status = 204, description = "File copied"))
+)]
+pub(crate) async fn copy_file(
+    Path(root_id): Path<Uuid>,
+    State(state): State<AppState>,
+    session: Session,
+    Json(input): Json<CopyFile>,
+) -> Result<StatusCode, AppError> {
+    state
+        .services
+        .files
+        .copy_file(&session.user, root_id, input)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
