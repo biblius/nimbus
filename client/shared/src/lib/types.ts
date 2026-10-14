@@ -217,6 +217,10 @@ export type FileTree = {
   id: string;
   name: string;
   kind: "file" | "directory";
+  /** Detected format for files; null for directories. */
+  fileType?: FileType | null;
+  /** Content hash of the generated preview blob, when one exists. */
+  preview?: string | null;
   children: FileTree[];
 };
 

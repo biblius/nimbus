@@ -362,9 +362,11 @@ impl FileService {
     }
 
     /// Serve the generated preview image for a file, when one exists.
+    ///
+    /// Works for both live and trashed files so trash trees can show thumbnails.
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn preview(&self, user: &User, id: Uuid) -> Result<FileContentPreview, AppError> {
-        let file = self.readable(user, id).await?;
+        let file = self.readable_any(user, id).await?;
 
         if file.kind != FileKind::File {
             return Err(AppError::Unprocessable(
@@ -495,6 +497,8 @@ impl FileService {
             id: root_id,
             name: String::new(),
             kind: FileKind::Directory,
+            file_type: None,
+            preview: None,
             children: FileTree::from_entries(files),
         })
     }
@@ -517,6 +521,8 @@ impl FileService {
             id: parent.unwrap_or(root_id),
             name: String::new(),
             kind: FileKind::Directory,
+            file_type: None,
+            preview: None,
             children: FileTree::from_entries(files),
         })
     }
@@ -529,11 +535,26 @@ impl FileService {
             .await?
             .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
-        if user.role != Role::Admin && !self.folders.can_access(user.id, file.root_id).await? {
-            return Err(AppError::Forbidden(
-                "You do not have access to this folder".into(),
-            ));
+        self.ensure_root_access(user, file.root_id).await?;
+
+        Ok(file)
+    }
+
+    /// Resolve a live file, falling back to trash.
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
+    async fn readable_any(&self, user: &User, id: Uuid) -> Result<FileEntry, AppError> {
+        if let Some(file) = self.files.get_live(id).await? {
+            self.ensure_root_access(user, file.root_id).await?;
+            return Ok(file);
         }
+
+        let file = self
+            .files
+            .get_trashed(id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
+
+        self.ensure_root_access(user, file.root_id).await?;
 
         Ok(file)
     }
@@ -542,12 +563,17 @@ impl FileService {
     async fn writable(&self, user: &User, root: Uuid, name: &str) -> Result<String, AppError> {
         let name = FileEntry::valid_name(name)?.to_string();
 
-        if user.role != Role::Admin && !self.folders.can_access(user.id, root).await? {
+        self.ensure_root_access(user, root).await?;
+
+        Ok(name)
+    }
+
+    async fn ensure_root_access(&self, user: &User, root_id: Uuid) -> Result<(), AppError> {
+        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
             return Err(AppError::Forbidden(
                 "You do not have access to this folder".into(),
             ));
         }
-
-        Ok(name)
+        Ok(())
     }
 }

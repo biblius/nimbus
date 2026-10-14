@@ -1,17 +1,12 @@
 <script lang="ts">
-  import {
-    ChevronRight,
-    File as FileIcon,
-    Folder,
-    RotateCcw,
-  } from "@lucide/svelte";
+  import { ChevronRight } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
   import type { FileTree, Root } from "../types";
   import { cn } from "../utils";
   import FolderPicker from "./FolderPicker.svelte";
-  import Button from "./ui/button/button.svelte";
+  import TrashTreeItem from "./TrashTreeItem.svelte";
 
   let { roots }: { roots: Root[] } = $props();
 
@@ -22,9 +17,6 @@
 
   let picker = $state<{ root: Root; node: FileTree } | null>(null);
   let selectedTree = $state<FileTree | null>(null);
-
-  const columns =
-    "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-3";
 
   onMount(() => {
     const owned = roots.find((root) => root.owner === session.user?.id);
@@ -105,53 +97,14 @@
   <ul class="divide-y">
     {#each nodes as node (node.id)}
       <li>
-        <div class="{columns} min-h-11 hover:bg-accent/60">
-          <div
-            class="flex min-w-0 items-center gap-2.5"
-            style:padding-left="{depth * 1.25}rem"
-          >
-            {#if node.children.length > 0}
-              <button
-                type="button"
-                class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-expanded={expanded[node.id] ? "true" : "false"}
-                aria-label={expanded[node.id]
-                  ? `Collapse ${node.name}`
-                  : `Expand ${node.name}`}
-                onclick={() => toggleNode(node.id)}
-              >
-                <ChevronRight
-                  size={16}
-                  class={cn(
-                    "transition-transform",
-                    expanded[node.id] && "rotate-90",
-                  )}
-                />
-              </button>
-            {:else}
-              <span class="size-8 shrink-0"></span>
-            {/if}
-            {#if node.kind === "directory"}
-              <Folder size={18} class="shrink-0 text-primary" />
-            {:else}
-              <FileIcon size={18} class="shrink-0 text-muted-foreground" />
-            {/if}
-            <span class="min-w-0 flex-1 truncate text-sm" title={node.name}
-              >{node.name}</span
-            >
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            class="text-muted-foreground"
-            aria-label="Restore {node.name}"
-            onclick={() => openPicker(root, node)}
-          >
-            <RotateCcw size={16} />
-            Restore
-          </Button>
-        </div>
+        <TrashTreeItem
+          {root}
+          {node}
+          {depth}
+          expanded={!!expanded[node.id]}
+          onToggle={() => toggleNode(node.id)}
+          onRestore={() => openPicker(root, node)}
+        />
         {#if expanded[node.id] && node.children.length > 0}
           <div class="border-t">
             {@render rows(root, node.children, depth + 1)}
@@ -162,59 +115,61 @@
   </ul>
 {/snippet}
 
-<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-  <h1 class="text-lg font-medium">Trash</h1>
-  {#if roots.length === 0}
-    <p class="text-sm text-muted-foreground">No roots are assigned.</p>
-  {:else}
-    {#each roots as root (root.id)}
-      <section class="overflow-hidden rounded-lg border bg-card">
-        <button
-          type="button"
-          class="flex min-h-11 w-full items-center gap-2.5 px-3 text-left text-sm font-medium"
-          aria-expanded={openRoots[root.id] ? "true" : "false"}
-          onclick={() => toggleRoot(root)}
-        >
-          <ChevronRight
-            size={16}
-            class={cn(
-              "shrink-0 text-muted-foreground transition-transform",
-              openRoots[root.id] && "rotate-90",
-            )}
-          />
-          <span class="truncate">{root.name}</span>
-          <span
-            class="text-xs font-normal tracking-wide text-muted-foreground uppercase"
+<div class="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden">
+  <h1 class="shrink-0 text-lg font-medium">Trash</h1>
+  <div class="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain">
+    {#if roots.length === 0}
+      <p class="text-sm text-muted-foreground">No roots are assigned.</p>
+    {:else}
+      {#each roots as root (root.id)}
+        <section class="overflow-hidden rounded-lg border bg-card">
+          <button
+            type="button"
+            class="flex min-h-11 w-full items-center gap-2.5 px-3 text-left text-sm font-medium"
+            aria-expanded={openRoots[root.id] ? "true" : "false"}
+            onclick={() => toggleRoot(root)}
           >
-            {root.owner ? "Private" : "Shared"}
-          </span>
-          {#if trees[root.id]}
+            <ChevronRight
+              size={16}
+              class={cn(
+                "shrink-0 text-muted-foreground transition-transform",
+                openRoots[root.id] && "rotate-90",
+              )}
+            />
+            <span class="truncate">{root.name}</span>
             <span
-              class="ml-auto text-xs font-normal text-muted-foreground tabular-nums"
+              class="text-xs font-normal tracking-wide text-muted-foreground uppercase"
             >
-              {trees[root.id].children.length}
+              {root.owner ? "Private" : "Shared"}
             </span>
-          {/if}
-        </button>
-
-        {#if openRoots[root.id]}
-          <div class="border-t">
-            {#if loading[root.id]}
-              <p class="px-3 py-6 text-center text-sm text-muted-foreground">
-                Loading…
-              </p>
-            {:else if (trees[root.id]?.children.length ?? 0) === 0}
-              <p class="px-3 py-8 text-center text-sm text-muted-foreground">
-                Trash is empty
-              </p>
-            {:else}
-              {@render rows(root, trees[root.id].children, 0)}
+            {#if trees[root.id]}
+              <span
+                class="ml-auto text-xs font-normal text-muted-foreground tabular-nums"
+              >
+                {trees[root.id].children.length}
+              </span>
             {/if}
-          </div>
-        {/if}
-      </section>
-    {/each}
-  {/if}
+          </button>
+
+          {#if openRoots[root.id]}
+            <div class="border-t">
+              {#if loading[root.id]}
+                <p class="px-3 py-6 text-center text-sm text-muted-foreground">
+                  Loading…
+                </p>
+              {:else if (trees[root.id]?.children.length ?? 0) === 0}
+                <p class="px-3 py-8 text-center text-sm text-muted-foreground">
+                  Trash is empty
+                </p>
+              {:else}
+                {@render rows(root, trees[root.id].children, 0)}
+              {/if}
+            </div>
+          {/if}
+        </section>
+      {/each}
+    {/if}
+  </div>
 </div>
 
 {#if selectedTree != null}

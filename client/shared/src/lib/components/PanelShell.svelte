@@ -52,7 +52,7 @@
     {@render sidebar()}
   </aside>
 
-  <div class="min-w-0 flex-1">
+  <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
     {@render children()}
   </div>
 </div>

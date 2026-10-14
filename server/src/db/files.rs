@@ -649,6 +649,7 @@ impl FileRepository {
                     format AS file_type,
                     hash,
                     size_bytes,
+                    preview,
                     created_at,
                     updated_at,
                     TRUE AS query_root
@@ -678,6 +679,7 @@ impl FileRepository {
                     f.format,
                     f.hash,
                     f.size_bytes,
+                    f.preview,
                     f.created_at,
                     f.updated_at,
                     FALSE AS query_root
@@ -693,6 +695,7 @@ impl FileRepository {
                 file_type,
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at,
                 query_root

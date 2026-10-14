@@ -13,6 +13,10 @@ pub struct FileTree {
     pub id: Uuid,
     pub name: String,
     pub kind: FileKind,
+    /// Detected format for files; null for directories.
+    pub file_type: Option<FileType>,
+    /// Content hash of the generated preview blob, when one exists.
+    pub preview: Option<String>,
     /// OpenAPI cannot expand this field; the value is the same `FileTree` shape.
     #[schema(no_recursion)]
     pub children: Vec<FileTree>,
@@ -67,6 +71,8 @@ impl From<FileEntryTree> for FileTree {
             id: value.id,
             name: value.name,
             kind: value.kind,
+            file_type: value.file_type,
+            preview: value.preview,
             children: vec![],
         }
     }
@@ -82,6 +88,7 @@ pub struct FileEntryTree {
     pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
+    pub preview: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub query_root: bool,
@@ -111,6 +118,7 @@ mod tests {
             file_type: None,
             hash: None,
             size_bytes: 0,
+            preview: None,
             created_at: now,
             updated_at: now,
             query_root,

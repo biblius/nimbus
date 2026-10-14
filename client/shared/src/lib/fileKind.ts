@@ -92,6 +92,18 @@ export function hasListThumbnail(entry: FileView): boolean {
   return isImageFile(entry) || isVideoFile(entry);
 }
 
+/** Tree nodes (live or trash) that can show a generated WebP thumbnail. */
+export function treeHasThumbnail(
+  kind: "file" | "directory",
+  fileType: FileType | null | undefined,
+): boolean {
+  if (kind !== "file") {
+    return false;
+  }
+  const family = fileFamily(fileType);
+  return family === "image" || family === "video";
+}
+
 export function isPreviewable(entry: FileView): boolean {
   return isImageFile(entry) || isVideoFile(entry) || isTextFile(entry);
 }

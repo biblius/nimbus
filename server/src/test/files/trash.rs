@@ -3,11 +3,13 @@
 mod trash {
     use super::super::{count, upload_in, user};
     use crate::{
+        db::FileRepository,
         error::AppError,
         file::model::{CreateDirectory, RestoreFile, TrashFiles},
         test::{self, TestState},
     };
     use chrono::Utc;
+    use image::ImageFormat;
     use suitest::before_all;
     use uuid::Uuid;
 
@@ -522,5 +524,87 @@ mod trash {
             .await
             .unwrap();
         assert_eq!(restored_leaf.parent, Some(boxed.id));
+    }
+
+    async fn wait_until<F, Fut>(timeout: std::time::Duration, mut check: F)
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = bool>,
+    {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if check().await {
+                return;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                panic!("condition not met within {timeout:?}");
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    #[test]
+    async fn trash_tree_and_preview_endpoint_keep_image_thumbs(state: TestState) {
+        let _ada = user(state, "ada-trash-preview").await;
+        let session = test::login(state, "ada-trash-preview", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let img = image::RgbImage::from_fn(24, 24, |_, _| image::Rgb([10, 200, 90]));
+        let mut buf = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut buf), ImageFormat::Png)
+            .unwrap();
+
+        let file = test::upload(state, &session.user, root, "thumb.png", &buf).await;
+        let files = FileRepository::new(state.pool.clone());
+
+        wait_until(std::time::Duration::from_secs(5), || {
+            let files = files.clone();
+            async move {
+                matches!(
+                    files.get_live(file.id).await,
+                    Ok(Some(row)) if row.preview.is_some()
+                )
+            }
+        })
+        .await;
+
+        let preview_hash = files
+            .get_live(file.id)
+            .await
+            .unwrap()
+            .expect("live row")
+            .preview
+            .expect("preview hash");
+
+        state
+            .services
+            .files
+            .delete(&session.user, file.id)
+            .await
+            .unwrap();
+
+        let tree = state
+            .services
+            .files
+            .get_trash_tree(&session.user, root)
+            .await
+            .unwrap();
+        let node = tree
+            .children
+            .iter()
+            .find(|entry| entry.id == file.id)
+            .expect("trashed image in tree");
+        assert_eq!(node.preview.as_deref(), Some(preview_hash.as_str()));
+        assert!(node.file_type.is_some());
+
+        let preview = state
+            .services
+            .files
+            .preview(&session.user, file.id)
+            .await
+            .unwrap();
+        assert_eq!(preview.mime, "image/webp");
+        assert!(preview.len > 0);
     }
 }
