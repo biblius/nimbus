@@ -13,6 +13,34 @@ export type FileFamily =
   | "text"
   | "other";
 
+/** Preview carousel filter: all families or one family. */
+export type PreviewFilter = "all" | FileFamily;
+
+export const FILE_FAMILY_LABELS: Record<FileFamily, string> = {
+  app: "App",
+  book: "Book",
+  image: "Image",
+  video: "Video",
+  audio: "Audio",
+  font: "Font",
+  doc: "Document",
+  archive: "Archive",
+  text: "Text",
+  other: "Other",
+};
+
+const FILE_FAMILIES = new Set<string>(Object.keys(FILE_FAMILY_LABELS));
+
+export function parsePreviewFilter(value: string | null | undefined): PreviewFilter {
+  if (value == null || value === "all") {
+    return "all";
+  }
+  if (FILE_FAMILIES.has(value)) {
+    return value as FileFamily;
+  }
+  return "all";
+}
+
 export function fileFamily(fileType: FileType | null | undefined): FileFamily {
   if (fileType == null) {
     return "other";

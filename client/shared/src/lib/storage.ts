@@ -63,4 +63,5 @@ export const kv = {
   theme: stringEntry("nimbus-theme", "dark"),
   editorVim: boolEntry("nimbus-editor-vim", false),
   editorWrap: boolEntry("nimbus-editor-wrap", true),
+  previewFilter: stringEntry("nimbus-preview-filter", "all"),
 } as const;

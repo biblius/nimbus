@@ -23,6 +23,17 @@
     editing?: boolean;
   } = $props();
 
+  // Called from parent
+  export function cancelIfEditing(): boolean {
+    if (!editing) {
+      return false;
+    }
+
+    cancelEdit();
+
+    return true;
+  }
+
   let text = $state("");
   let draft = $state("");
   let saving = $state(false);
@@ -91,14 +102,6 @@
     } finally {
       saving = false;
     }
-  }
-
-  export function cancelIfEditing(): boolean {
-    if (!editing) {
-      return false;
-    }
-    cancelEdit();
-    return true;
   }
 
   $effect(() => {
