@@ -6,7 +6,6 @@
     ChevronRight,
     Folder,
     FolderPlus,
-    Settings,
     Trash,
     Upload,
     X,
@@ -20,7 +19,6 @@
   import { tick, untrack } from "svelte";
   import { navigate } from "../router";
   import { ApiError, ValidationError } from "../api";
-  import { formatQuota, formatDatetime } from "../format";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
   import { type FileEntry, type FileView, type Root } from "../types";
@@ -34,12 +32,10 @@
   let {
     folder: root,
     parentId = null,
-    admin = false,
   }: {
     folder: Root;
     /** Directory open in this root. Null lists the root itself. */
     parentId?: string | null;
-    admin?: boolean;
   } = $props();
 
   type PendingUpload = {
@@ -760,27 +756,6 @@
 </script>
 
 <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-  <div
-    class="flex shrink-0 items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2"
-  >
-    <div class="min-w-0">
-      <p class="truncate text-sm font-medium">{root.name}</p>
-      <p class="truncate text-xs text-muted-foreground">
-        {root.owner ? "Private" : "Shared"}
-        · {formatQuota(root.quota)}
-      </p>
-    </div>
-    {#if admin}
-      <a
-        href="/admin/folders/{root.owner ? 'private' : 'shared'}/{root.id}"
-        class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-        aria-label="Folder settings"
-      >
-        <Settings size={16} />
-      </a>
-    {/if}
-  </div>
-
   <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
     <nav
       class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm"

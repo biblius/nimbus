@@ -126,12 +126,6 @@
         role="menu"
         class="absolute top-full right-0 z-50 mt-2 w-56 overflow-hidden rounded-xl border bg-card shadow-lg"
       >
-        <div class="border-b px-3 py-2.5">
-          <p class="truncate text-sm font-medium">{user.username}</p>
-          <p class="truncate text-xs text-muted-foreground capitalize">
-            {user.role}
-          </p>
-        </div>
         <div class="p-1">
           {#if admin}
             <button

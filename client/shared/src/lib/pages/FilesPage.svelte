@@ -57,11 +57,7 @@
       {#if viewingTrash && loaded}
         <TrashBrowser {roots} />
       {:else if selected}
-        <FileBrowser
-          folder={selected}
-          {parentId}
-          admin={session.user?.role === "admin"}
-        />
+        <FileBrowser folder={selected} {parentId} />
       {:else if loaded && rootId}
         <p class="text-sm text-muted-foreground">This folder does not exist.</p>
       {/if}

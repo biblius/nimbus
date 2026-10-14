@@ -1068,11 +1068,9 @@ impl FileRepository {
         query.push_bind(root_id);
         query.push(" AND id IN (");
 
-        {
-            let mut separated = query.separated(", ");
-            for id in ids {
-                separated.push_bind(id);
-            }
+        let mut separated = query.separated(", ");
+        for id in ids {
+            separated.push_bind(id);
         }
 
         query.push(")");
