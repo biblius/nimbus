@@ -8,7 +8,7 @@ RUN cargo build --release -p nimbus-server --features postgres,valkey
 FROM debian:bookworm-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/target/release/nimbus-server /usr/local/bin/nimbus-server

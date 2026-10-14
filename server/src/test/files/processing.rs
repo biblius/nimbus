@@ -65,6 +65,40 @@ mod processing {
         buf
     }
 
+    /// Tiny 2s solid-color MP4 via system ffmpeg (same dependency as video preview).
+    fn mp4_bytes() -> Vec<u8> {
+        let output = std::process::Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:s=320x240:d=2",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:v",
+                "mpeg4",
+                // mp4 normally needs a seekable file; these flags make stdout work.
+                "-movflags",
+                "frag_keyframe+empty_moov",
+                "-f",
+                "mp4",
+                "pipe:1",
+            ])
+            .output()
+            .expect("spawn ffmpeg to synthesize test video");
+
+        assert!(
+            output.status.success(),
+            "ffmpeg failed to synthesize test video: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!output.stdout.is_empty(), "synthesized mp4 was empty");
+        output.stdout
+    }
+
     #[test]
     async fn image_upload_creates_64x64_webp_preview(state: TestState) {
         let _ada = user(state, "ada-preview").await;
@@ -159,6 +193,32 @@ mod processing {
             .unwrap();
         assert!(metadata.is_none());
         assert_eq!(test::preview_count(state.storage_dir()), before);
+    }
+
+    #[test]
+    async fn video_upload_creates_64x64_webp_preview(state: TestState) {
+        let _ada = user(state, "ada-preview-video").await;
+        let session = test::login(state, "ada-preview-video", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let before = test::preview_count(state.storage_dir());
+        let mp4 = mp4_bytes();
+        let entry = test::upload(state, &session.user, root, "clip.mp4", &mp4).await;
+
+        let preview_hash = await_preview(state, entry.id).await;
+        let path = test::preview_path(state.storage_dir(), &preview_hash);
+
+        assert!(path.is_file(), "preview blob missing at {}", path.display());
+        assert_eq!(test::preview_count(state.storage_dir()), before + 1);
+
+        let reader = image::ImageReader::open(&path)
+            .unwrap()
+            .with_guessed_format()
+            .unwrap();
+        assert_eq!(reader.format(), Some(ImageFormat::WebP));
+
+        let img = reader.decode().expect("preview must be readable");
+        assert_eq!(img.dimensions(), (64, 64));
     }
 
     #[test]

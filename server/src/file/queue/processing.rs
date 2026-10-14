@@ -3,9 +3,9 @@ use crate::{
     error::AppError,
     file::{format::FileType, model::FileEntry, storage::Storage},
 };
-use image::imageops::FilterType;
+use image::{DynamicImage, imageops::FilterType};
 use sha2::{Digest, Sha256};
-use std::io::Cursor;
+use std::{io::Cursor, path::Path, process::Command};
 use tokio::sync::mpsc;
 use tracing::instrument;
 
@@ -71,6 +71,7 @@ impl ProcessingQueue {
     async fn process(&self, file: FileEntry) -> Result<(), AppError> {
         match file.file_type {
             Some(FileType::Image(_)) => self.process_image(file).await,
+            Some(FileType::Video(_)) => self.process_video(file).await,
             _ => Ok(()),
         }
     }
@@ -83,9 +84,7 @@ impl ProcessingQueue {
             AppError::Internal
         })?;
 
-        let source = self.storage.path(hash);
-
-        let source_path = source.clone();
+        let source_path = self.storage.path(hash);
 
         let webp = tokio::task::spawn_blocking(move || encode_preview_webp(&source_path))
             .await
@@ -94,15 +93,39 @@ impl ProcessingQueue {
                 AppError::Internal
             })??;
 
-        let preview_hash = hex::encode(Sha256::digest(&webp));
+        self.store_preview(file.id, &webp).await
+    }
 
-        self.storage.persist_preview(&preview_hash, &webp).await?;
-        self.metadata.set_preview(file.id, &preview_hash).await?;
+    /// Extract one video frame with system `ffmpeg`, then store the same 64×64 WebP preview.
+    #[instrument(skip(self, file), fields(file_id = %file.id), err(Debug))]
+    async fn process_video(&self, file: FileEntry) -> Result<(), AppError> {
+        let hash = file.hash.as_deref().ok_or_else(|| {
+            tracing::error!(file=%file.id, "video file has no hash");
+            AppError::Internal
+        })?;
+
+        let source_path = self.storage.path(hash);
+
+        let webp = tokio::task::spawn_blocking(move || encode_video_preview_webp(&source_path))
+            .await
+            .map_err(|e| {
+                tracing::error!(error=%e, "video preview encoding task failed");
+                AppError::Internal
+            })??;
+
+        self.store_preview(file.id, &webp).await
+    }
+
+    async fn store_preview(&self, file_id: uuid::Uuid, webp: &[u8]) -> Result<(), AppError> {
+        let preview_hash = hex::encode(Sha256::digest(webp));
+
+        self.storage.persist_preview(&preview_hash, webp).await?;
+        self.metadata.set_preview(file_id, &preview_hash).await?;
 
         tracing::info!(
-            file=%file.id,
+            file=%file_id,
             preview=%preview_hash,
-            "stored image preview"
+            "stored file preview"
         );
 
         Ok(())
@@ -110,7 +133,7 @@ impl ProcessingQueue {
 }
 
 /// Decode `path`, crop/resize to [`PREVIEW_SIZE`], and encode as WebP.
-fn encode_preview_webp(path: &std::path::Path) -> Result<Vec<u8>, AppError> {
+fn encode_preview_webp(path: &Path) -> Result<Vec<u8>, AppError> {
     // Blobs are stored by content hash with no extension; sniff magic bytes.
     let img = image::ImageReader::open(path)
         .map_err(|e| {
@@ -128,6 +151,38 @@ fn encode_preview_webp(path: &std::path::Path) -> Result<Vec<u8>, AppError> {
             AppError::Internal
         })?;
 
+    resize_to_preview_webp(&img)
+}
+
+/// Pull one still frame from a video blob, then crop/resize to the shared WebP icon.
+///
+/// Asks system `ffmpeg` for a single PNG frame from `path`.
+///
+/// Tries [`VIDEO_SEEK_SECS`] first; if that fails (clip shorter than 1 second),
+/// retries at the start of the file.
+fn encode_video_preview_webp(path: &Path) -> Result<Vec<u8>, AppError> {
+    // Prefer a frame one second in so the thumbnail is
+    // less likely to be a black/fade-in first frame.
+    let png = match run_ffmpeg_frame(path, "1") {
+        Ok(bytes) => bytes,
+        Err(first) => {
+            tracing::warn!(
+                error=%first,
+                path=%path.display(),
+                seek="1",
+                "ffmpeg seek failed; retrying at start of video"
+            );
+            run_ffmpeg_frame(path, "0")?
+        }
+    };
+    let img = image::load_from_memory(&png).map_err(|e| {
+        tracing::error!(error=%e, path=%path.display(), "failed to decode ffmpeg frame");
+        AppError::Internal
+    })?;
+    resize_to_preview_webp(&img)
+}
+
+fn resize_to_preview_webp(img: &DynamicImage) -> Result<Vec<u8>, AppError> {
     let icon = img.resize_to_fill(PREVIEW_SIZE, PREVIEW_SIZE, FilterType::Triangle);
 
     let mut buf = Vec::new();
@@ -139,4 +194,59 @@ fn encode_preview_webp(path: &std::path::Path) -> Result<Vec<u8>, AppError> {
         })?;
 
     Ok(buf)
+}
+
+/// Run ffmpeg to extract one PNG frame to stdout.
+///
+/// Equivalent to:
+/// `ffmpeg -hide_banner -loglevel error -y -ss <seek> -i <path> -frames:v 1 -f image2pipe -vcodec png -`
+fn run_ffmpeg_frame(path: &Path, seek_secs: &str) -> Result<Vec<u8>, AppError> {
+    let mut cmd = Command::new("ffmpeg");
+
+    // Omit the version/config banner from stderr.
+    cmd.arg("-hide_banner");
+    // Only print real errors (keeps stderr useful when the command fails).
+    cmd.arg("-loglevel").arg("error");
+    // Overwrite outputs without prompting (harmless when writing to stdout).
+    cmd.arg("-y");
+    // Seek to this timestamp *before* opening the input (fast keyframe seek).
+    cmd.arg("-ss").arg(seek_secs);
+    // Input file set to the uploaded file's path
+    cmd.arg("-i").arg(path);
+    // Decode/emit exactly one video frame.
+    cmd.arg("-frames:v").arg("1");
+    // Write a still-image bitstream to the pipe (not a media container).
+    cmd.arg("-f").arg("image2pipe");
+    // Encode that still as PNG.
+    cmd.arg("-vcodec").arg("png");
+    // Write the PNG bytes to stdout (captured below).
+    cmd.arg("-");
+
+    let output = cmd.output().map_err(|e| {
+        tracing::error!(error=%e, "failed to spawn ffmpeg; is it installed?");
+        AppError::Internal
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::error!(
+            status=?output.status.code(),
+            stderr=%stderr,
+            path=%path.display(),
+            seek=seek_secs,
+            "ffmpeg failed to extract video frame"
+        );
+        return Err(AppError::Internal);
+    }
+
+    if output.stdout.is_empty() {
+        tracing::error!(
+            path=%path.display(),
+            seek=seek_secs,
+            "ffmpeg produced empty stdout for video frame"
+        );
+        return Err(AppError::Internal);
+    }
+
+    Ok(output.stdout)
 }
