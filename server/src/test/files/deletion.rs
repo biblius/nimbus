@@ -3,13 +3,14 @@
 mod deletion {
     use super::super::{count, upload_in, user};
     use crate::{
-        db::{DeletionRepository, deletion::SYSTEM, files::FileTable},
+        db::{DeletionRepository, FileRepository, deletion::SYSTEM, files::FileTable},
         file::model::{Cleanup, CreateDirectory, FileRef, TrashFiles},
         file::queue::DeletionQueue,
         test::{self, TestState},
         user::model::CreateSharedFolder,
     };
     use chrono::Utc;
+    use image::ImageFormat;
     use suitest::before_all;
     use uuid::Uuid;
 
@@ -189,6 +190,170 @@ mod deletion {
             count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", root),
             1
         );
+    }
+
+    fn png_bytes() -> Vec<u8> {
+        let img = image::RgbImage::from_fn(32, 32, |_, _| image::Rgb([40, 120, 200]));
+        let mut buf = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut buf), ImageFormat::Png)
+            .unwrap();
+        buf
+    }
+
+    async fn await_preview(state: &TestState, file_id: Uuid) -> String {
+        let files = FileRepository::new(state.pool.clone());
+
+        wait_until(std::time::Duration::from_secs(5), || {
+            let files = files.clone();
+            async move {
+                matches!(
+                    files.get_live(file_id).await,
+                    Ok(Some(row)) if row.preview.is_some()
+                )
+            }
+        })
+        .await;
+
+        files
+            .get_live(file_id)
+            .await
+            .unwrap()
+            .expect("file row")
+            .preview
+            .expect("preview hash")
+    }
+
+    #[test]
+    async fn hard_delete_removes_preview_blob(state: TestState) {
+        let _ada = user(state, "ada-del-preview").await;
+        let session = test::login(state, "ada-del-preview", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let file = test::upload(state, &session.user, root, "shot.png", &png_bytes()).await;
+        let preview_hash = await_preview(state, file.id).await;
+        let preview_path = test::preview_path(state.storage_dir(), &preview_hash);
+        assert!(preview_path.is_file());
+
+        let previews_before = test::preview_count(state.storage_dir());
+
+        state
+            .services
+            .files
+            .delete_many(&session.user, root, TrashFiles { ids: vec![file.id] })
+            .await
+            .unwrap();
+
+        DeletionRepository::new(state.pool.clone())
+            .enqueue(
+                Uuid::new_v4(),
+                SYSTEM,
+                FileTable::Trashed,
+                &[FileRef { id: file.id }],
+            )
+            .await
+            .unwrap();
+
+        wait_until(std::time::Duration::from_secs(5), || async {
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
+                file.id
+            ) == 0
+        })
+        .await;
+
+        assert!(!preview_path.exists(), "preview blob should be removed");
+        assert_eq!(
+            test::preview_count(state.storage_dir()),
+            previews_before - 1
+        );
+    }
+
+    #[test]
+    async fn shared_preview_survives_until_last_file_hard_deleted(state: TestState) {
+        let _ada = user(state, "ada-del-preview-share").await;
+        let session = test::login(state, "ada-del-preview-share", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let png = png_bytes();
+        let first = test::upload(state, &session.user, root, "a.png", &png).await;
+        let second = test::upload(state, &session.user, root, "b.png", &png).await;
+
+        let preview_hash = await_preview(state, first.id).await;
+        assert_eq!(await_preview(state, second.id).await, preview_hash);
+        let preview_path = test::preview_path(state.storage_dir(), &preview_hash);
+
+        state
+            .services
+            .files
+            .delete_many(
+                &session.user,
+                root,
+                TrashFiles {
+                    ids: vec![first.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        DeletionRepository::new(state.pool.clone())
+            .enqueue(
+                Uuid::new_v4(),
+                SYSTEM,
+                FileTable::Trashed,
+                &[FileRef { id: first.id }],
+            )
+            .await
+            .unwrap();
+
+        wait_until(std::time::Duration::from_secs(5), || async {
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
+                first.id
+            ) == 0
+        })
+        .await;
+
+        assert!(
+            preview_path.is_file(),
+            "shared preview must remain while second file exists"
+        );
+
+        state
+            .services
+            .files
+            .delete_many(
+                &session.user,
+                root,
+                TrashFiles {
+                    ids: vec![second.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        DeletionRepository::new(state.pool.clone())
+            .enqueue(
+                Uuid::new_v4(),
+                SYSTEM,
+                FileTable::Trashed,
+                &[FileRef { id: second.id }],
+            )
+            .await
+            .unwrap();
+
+        wait_until(std::time::Duration::from_secs(5), || async {
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
+                second.id
+            ) == 0
+        })
+        .await;
+
+        assert!(!preview_path.exists(), "preview removed with last reference");
     }
 
     #[test]

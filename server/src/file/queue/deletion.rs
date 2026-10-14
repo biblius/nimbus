@@ -148,23 +148,11 @@ impl DeletionQueue {
         };
 
         for entry in pending {
-            let mut tx = self.repository.start_tx().await?;
-
             // Check whether it exists
 
             let file = match entry.origin {
-                FileTable::Live => {
-                    self.repository
-                        .files
-                        .get_live_with(&mut *tx, entry.file_id)
-                        .await?
-                }
-                FileTable::Trashed => {
-                    self.repository
-                        .files
-                        .get_trashed_with(&mut *tx, entry.file_id)
-                        .await?
-                }
+                FileTable::Live => self.repository.files.get_live(entry.file_id).await?,
+                FileTable::Trashed => self.repository.files.get_trashed(entry.file_id).await?,
             };
 
             let Some(file) = file else {
@@ -173,26 +161,14 @@ impl DeletionQueue {
                 self.fail_deletion(entry, "File not found in database".into())
                     .await;
 
-                tx.commit().await?;
-
                 continue;
             };
 
             // Delete DB entry
 
             let result = match entry.origin {
-                FileTable::Live => {
-                    self.repository
-                        .files
-                        .delete_live_with(&mut *tx, file.id)
-                        .await
-                }
-                FileTable::Trashed => {
-                    self.repository
-                        .files
-                        .delete_trashed_with(&mut *tx, file.id)
-                        .await
-                }
+                FileTable::Live => self.repository.files.delete_live(file.id).await,
+                FileTable::Trashed => self.repository.files.delete_trashed(file.id).await,
             };
 
             // If DB entry was successfully deleted, clients
@@ -231,10 +207,7 @@ impl DeletionQueue {
             };
 
             if file.kind == FileKind::Directory {
-                tx.commit().await?;
-
                 self.unqueue(entry).await;
-
                 continue;
             }
 
@@ -245,12 +218,13 @@ impl DeletionQueue {
                 self.fail_deletion(entry, "File does not have hash".into())
                     .await;
 
-                tx.commit().await?;
-
                 continue;
             };
 
-            let remaining = match self.repository.files.count_hash_with(&mut *tx, &hash).await {
+            // Delete blob
+
+            // Counts are after the row delete, so this file is already excluded.
+            let remaining = match self.repository.files.count_hash(&hash).await {
                 Ok(count) => count,
                 Err(e) => {
                     tracing::error!(file=%file.id, error=%e, "cannot count remaining hash, will not delete BLOB");
@@ -258,42 +232,68 @@ impl DeletionQueue {
                     self.fail_deletion(entry, format!("Could not count file hash: {e}"))
                         .await;
 
-                    tx.commit().await?;
-
                     continue;
                 }
             };
 
-            tx.commit().await?;
-
-            // At this point only the BLOB remains
-
             if remaining > 0 {
                 tracing::debug!(%remaining, file=%file.id, "file hash still in use");
-
-                self.unqueue(entry).await;
-
-                continue;
+            } else {
+                match self.storage.remove(&hash).await {
+                    Ok(()) => tracing::info!(file=%file.id, "deleted BLOB {hash}"),
+                    Err(e) => {
+                        tracing::error!(file=%file.id, error=%e, "failed to delete file BLOB");
+                        self.fail_deletion(
+                            entry,
+                            format!("Could not remove file from BLOB storage: {e}"),
+                        )
+                        .await;
+                    }
+                }
             }
 
-            let result = self.storage.remove(&hash).await;
+            // Delete preview
 
-            match result {
-                Ok(()) => {
-                    tracing::info!(file=%file.id, "deleted BLOB {hash}");
+            if let Some(preview_hash) = file.preview {
+                let remaining = match self.repository.files.count_preview(&preview_hash).await {
+                    Ok(count) => count,
+                    Err(e) => {
+                        tracing::error!(file=%file.id, error=%e, "cannot count remaining preview, will not delete preview BLOB");
 
-                    self.unqueue(entry).await;
+                        self.fail_deletion(entry, format!("Could not count preview hash: {e}"))
+                            .await;
+
+                        continue;
+                    }
+                };
+
+                if remaining > 0 {
+                    tracing::debug!(%remaining, file=%file.id, "preview hash still in use");
+                } else {
+                    match self.storage.remove_preview(&preview_hash).await {
+                        Ok(()) => {
+                            tracing::info!(
+                                file=%file.id,
+                                preview=%preview_hash,
+                                "deleted preview BLOB"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(file=%file.id, error=%e, "failed to delete preview BLOB");
+
+                            self.fail_deletion(
+                                entry,
+                                format!("Could not remove preview from BLOB storage: {e}"),
+                            )
+                            .await;
+
+                            continue;
+                        }
+                    }
                 }
-                Err(e) => {
-                    tracing::error!(file=%file.id, error=%e, "failed to delete file");
+            }
 
-                    self.fail_deletion(
-                        entry,
-                        format!("Could not remove file from BLOB storage: {e}"),
-                    )
-                    .await;
-                }
-            };
+            self.unqueue(entry).await;
         }
 
         let Some(cleanup) = cleanup else {
@@ -301,6 +301,7 @@ impl DeletionQueue {
         };
 
         // Leave root/user in place while any row for this batch is still pending.
+
         if let Some(request_id) = request_id {
             let pending = self.repository.deletions.list_request(request_id).await?;
             if !pending.is_empty() {

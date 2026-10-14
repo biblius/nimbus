@@ -393,6 +393,11 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
+    pub async fn get_trashed(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
+        self.get_trashed_with(&self.pool, id).await
+    }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn get_trashed_with<'e, E>(
         &self,
@@ -942,6 +947,35 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    #[instrument(skip(self), err(Debug))]
+    pub async fn count_preview(&self, preview: &str) -> Result<i64, AppError> {
+        self.count_preview_with(&self.pool, preview).await
+    }
+
+    /// How many live/trashed rows still point at this preview blob.
+    #[instrument(skip(self, executor), err(Debug))]
+    pub async fn count_preview_with<'e, E>(
+        &self,
+        executor: E,
+        preview: &str,
+    ) -> Result<i64, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query_scalar!(
+            r#"
+            SELECT (
+                (SELECT COUNT(*) FROM files WHERE preview = $1) +
+                (SELECT COUNT(*) FROM trashed_files WHERE preview = $1)
+            ) AS "count!"
+            "#,
+            preview
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)
+    }
+
     /// Root of one trashed row.
     #[instrument(skip(self), err(Debug))]
     pub async fn trashed_root(&self, id: Uuid) -> Result<Option<Uuid>, AppError> {
@@ -1011,6 +1045,11 @@ impl FileRepository {
         Ok(restored)
     }
 
+    #[instrument(skip(self), err(Debug))]
+    pub async fn delete_live(&self, id: Uuid) -> Result<(), AppError> {
+        self.delete_live_with(&self.pool, id).await
+    }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_live_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where
@@ -1021,6 +1060,11 @@ impl FileRepository {
             .await?;
 
         Ok(())
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn delete_trashed(&self, id: Uuid) -> Result<(), AppError> {
+        self.delete_trashed_with(&self.pool, id).await
     }
 
     #[instrument(skip(self, executor), err(Debug))]
