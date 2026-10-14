@@ -61,6 +61,12 @@
   const previewable = $derived(isPreviewable(entry));
   const showThumbnail = $derived(hasListThumbnail(entry));
 
+  function onRowDoubleClick() {
+    if (previewable) {
+      onPreview();
+    }
+  }
+
   let previewUrl = $state<string | null>(null);
 
   $effect(() => {
@@ -143,13 +149,14 @@
   {@attach directory ? droppable.attach : undefined}
   class={cn(
     columns,
-    "min-h-14 cursor-grab py-1.5 hover:bg-accent/60 active:cursor-grabbing",
+    "min-h-11 cursor-grab py-1 hover:bg-accent/60 active:cursor-grabbing",
     selected && "bg-accent/40",
     draggable.isDragging && "opacity-40",
     directory &&
       droppable.isDropTarget &&
-      "bg-primary/10 ring-2 ring-primary ring-inset",
+      "bg-primary/10 ring-1 ring-primary ring-inset",
   )}
+  ondblclick={onRowDoubleClick}
 >
   <input
     type="checkbox"
@@ -158,27 +165,28 @@
     aria-label="Select {name}"
     checked={selected}
     onchange={onToggle}
+    ondblclick={(event) => event.stopPropagation()}
   />
   {#if file.kind === "directory"}
     <button
       type="button"
-      class="flex min-h-11 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm font-medium"
+      class="flex min-h-9 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm font-medium"
       onclick={onOpen}
     >
       <span
-        class="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
+        class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
       >
-        <Folder size={20} strokeWidth={1.75} />
+        <Folder size={18} strokeWidth={1.75} />
       </span>
       <span class="truncate" title={name}>{name}</span>
     </button>
   {:else if previewable}
     <div
-      class="flex min-h-11 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
+      class="flex min-h-9 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
     >
       <button
         type="button"
-        class="group/preview relative size-9 shrink-0 cursor-pointer overflow-hidden rounded-md ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        class="group/preview relative size-8 shrink-0 cursor-pointer overflow-hidden rounded-md ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         data-no-drag
         aria-label="Preview {name}"
         title="Preview"
@@ -188,15 +196,15 @@
           <img
             src={previewUrl}
             alt=""
-            width="36"
-            height="36"
+            width="32"
+            height="32"
             class="size-full object-cover shadow-sm"
           />
         {:else}
           <span
             class="flex size-full items-center justify-center bg-muted text-muted-foreground"
           >
-            <FileTypeIcon fileType={file.fileType} size={18} />
+            <FileTypeIcon fileType={file.fileType} size={16} />
           </span>
         {/if}
         <span
@@ -209,12 +217,12 @@
     </div>
   {:else}
     <div
-      class="flex min-h-11 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
+      class="flex min-h-9 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
     >
       <span
-        class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
+        class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
       >
-        <FileTypeIcon fileType={file.fileType} size={18} />
+        <FileTypeIcon fileType={file.fileType} size={16} />
       </span>
       <span class="truncate font-medium" title={name}>{name}</span>
     </div>
@@ -229,7 +237,12 @@
   >
     {formatDatetime(file.createdAt)}
   </span>
-  <div class="flex items-center justify-end gap-1" data-no-drag>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="flex items-center justify-end gap-1"
+    data-no-drag
+    ondblclick={(event) => event.stopPropagation()}
+  >
     {#if file.kind === "file"}
       <Button
         type="button"

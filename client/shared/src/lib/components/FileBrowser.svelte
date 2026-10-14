@@ -31,7 +31,11 @@
   import { isPreviewable } from "../fileKind";
   import FileListItem from "./FileListItem.svelte";
   import FilePreview from "./FilePreview.svelte";
+  import FileTypeIcon from "./FileTypeIcon.svelte";
   import FolderPicker from "./FolderPicker.svelte";
+  import ParentDropItem, {
+    PARENT_DROPPABLE_ID,
+  } from "./ParentDropItem.svelte";
   import RootPicker from "./RootPicker.svelte";
   import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
@@ -163,6 +167,13 @@
    * i.e. which directory are we located in.
    */
   const location = $derived(trail[trail.length - 1]);
+
+  /** Parent of the current folder; null when moving into the root. */
+  const upParent = $derived(
+    trail.length >= 2 ? trail[trail.length - 2].id : null,
+  );
+
+  const showParentDrop = $derived(location.id !== null);
 
   const deleteDescription = $derived.by(() => {
     if (pendingDelete.length === 1) {
@@ -380,6 +391,18 @@
       name: entry.file.name,
     });
     showDirectory(entry.file.id);
+  }
+
+  function openParentDirectory() {
+    if (trail.length < 2) {
+      return;
+    }
+
+    const index = trail.length - 2;
+    const parent = trail[index].id;
+
+    ancestors = ancestors.slice(0, index);
+    showDirectory(parent);
   }
 
   async function upload(event: Event) {
@@ -686,16 +709,19 @@
     return selected.includes(sourceId) ? selected.slice() : [sourceId];
   }
 
-  function dragLabel(sourceId: string): string {
+  function dragPreview(sourceId: string): {
+    entry: FileView | undefined;
+    name: string;
+    count: number;
+  } {
     const ids = dragIds(sourceId);
-
-    if (ids.length > 1) {
-      return `${ids.length} items`;
-    }
-
     const entry = entries.find((item) => item.file.id === sourceId);
 
-    return entry ? label(entry) : "Item";
+    return {
+      entry,
+      name: entry ? label(entry) : "Item",
+      count: ids.length,
+    };
   }
 
   async function onDragEnd(event: {
@@ -720,10 +746,22 @@
       return;
     }
 
-    const target = entries.find((entry) => entry.file.id === targetId);
+    let newParent: string | null;
 
-    if (!target || target.file.kind !== "directory") {
-      return;
+    if (targetId === PARENT_DROPPABLE_ID) {
+      if (!showParentDrop || trail.length < 2) {
+        return;
+      }
+
+      newParent = upParent;
+    } else {
+      const target = entries.find((entry) => entry.file.id === targetId);
+
+      if (!target || target.file.kind !== "directory") {
+        return;
+      }
+
+      newParent = targetId;
     }
 
     const ids = dragIds(sourceId).filter((id) => id !== targetId);
@@ -736,7 +774,7 @@
     const parent = location.id;
 
     try {
-      await session.client.move(rootId, ids, targetId);
+      await session.client.move(rootId, ids, newParent);
 
       if (root.id !== rootId || location.id !== parent) {
         return;
@@ -1014,7 +1052,7 @@
         >
           Loading…
         </p>
-      {:else if entries.length === 0 && !drafting}
+      {:else if entries.length === 0 && !drafting && !showParentDrop}
         <div
           class="flex h-full flex-col items-center justify-center gap-2 px-6 py-16 text-center"
         >
@@ -1027,6 +1065,10 @@
       {:else}
         <DragDropProvider {sensors} {onDragEnd}>
           <ul class="divide-y">
+            {#if showParentDrop}
+              <ParentDropItem {columns} onOpen={openParentDirectory} />
+            {/if}
+
             <!-- NEW DIRECTORY DRAFT -->
 
             {#if drafting}
@@ -1106,10 +1148,47 @@
           </ul>
           <DragOverlay>
             {#snippet children(source)}
-              <div
-                class="rounded-md border bg-card px-3 py-2 text-sm font-medium shadow-lg"
-              >
-                {dragLabel(String(source.id))}
+              {@const preview = dragPreview(String(source.id))}
+              <div class="relative max-w-72 -rotate-1">
+                {#if preview.count > 1}
+                  <div
+                    class="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border bg-muted/80 ring-1 ring-border"
+                    aria-hidden="true"
+                  ></div>
+                {/if}
+                <div
+                  class="relative flex items-center gap-2.5 rounded-lg border bg-card py-1.5 pr-2.5 pl-1.5 shadow-xl ring-1 ring-border"
+                >
+                  {#if preview.entry?.file.kind === "directory"}
+                    <span
+                      class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
+                    >
+                      <Folder size={18} strokeWidth={1.75} />
+                    </span>
+                  {:else}
+                    <span
+                      class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
+                    >
+                      <FileTypeIcon
+                        fileType={preview.entry?.file.fileType}
+                        size={16}
+                      />
+                    </span>
+                  {/if}
+                  <span
+                    class="min-w-0 flex-1 truncate text-sm font-medium"
+                    title={preview.name}
+                  >
+                    {preview.name}
+                  </span>
+                  {#if preview.count > 1}
+                    <span
+                      class="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground tabular-nums"
+                    >
+                      +{preview.count - 1}
+                    </span>
+                  {/if}
+                </div>
               </div>
             {/snippet}
           </DragOverlay>
