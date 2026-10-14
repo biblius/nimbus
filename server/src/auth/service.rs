@@ -1,9 +1,9 @@
 use super::{
     crypto::{decode_otp_secret, hash_password, verify_otp, verify_password},
-    model::{
-        GeneratedOtp, LoginCredentials, LoginResult, Otp, PasswordChange, PasswordReset,
-        PasswordResetRequest,
-    },
+        model::{
+            DisableOtp, GeneratedOtp, LoginCredentials, LoginResult, Otp, PasswordChange,
+            PasswordReset, PasswordResetRequest,
+        },
     session::Session,
     token::{OneShotToken, TokenStore},
 };
@@ -329,6 +329,22 @@ impl AuthenticationService {
         self.users
             .update_otp_secret(session.user.id, &encoded)
             .await
+    }
+
+    /// Verify the current authenticator code and clear the user's OTP secret.
+    #[instrument(skip(self, session, data), fields(user_id = %session.user.id), err(Debug))]
+    pub async fn disable_otp(&self, session: Session, mut data: DisableOtp) -> Result<(), AppError> {
+        data.validify()?;
+
+        let user = self.users.get_by_id(session.user.id).await?;
+
+        let encoded = user.otp_secret.as_deref().ok_or_else(|| {
+            AppError::Unprocessable("Two-factor authentication is not enabled".into())
+        })?;
+
+        verify_otp(&decode_otp_secret(encoded)?, &data.otp_code)?;
+
+        self.users.clear_otp_secret(session.user.id).await
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]

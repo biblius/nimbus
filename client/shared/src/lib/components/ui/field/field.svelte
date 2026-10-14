@@ -12,6 +12,7 @@
     error,
     value = $bindable(""),
     class: className,
+    dense = false,
     children,
     ...rest
   }: HTMLInputAttributes & {
@@ -29,6 +30,10 @@
      */
     value?: string;
     /**
+     * Compact spacing and control height for dense forms.
+     */
+    dense?: boolean;
+    /**
      * Can be used to inject other form items other than input, e.g. a select.
      * If present, renders whatever is in the snippet.
      */
@@ -38,8 +43,10 @@
   const message = $derived(error?.message || error?.code);
 </script>
 
-<div class="space-y-2">
-  <Label for={id}>{label}</Label>
+<div class={dense ? "space-y-1" : "space-y-2"}>
+  <Label for={id} class={dense ? "text-xs text-muted-foreground" : undefined}
+    >{label}</Label
+  >
   {#if children}
     {@render children()}
   {:else}
@@ -47,6 +54,7 @@
       {id}
       {...rest}
       class={cn(
+        dense && "h-8 shadow-none",
         message && "border-destructive focus-visible:ring-destructive",
         className,
       )}
@@ -55,6 +63,6 @@
     />
   {/if}
   {#if message}
-    <p class="text-sm text-destructive">{message}</p>
+    <p class="text-xs text-destructive">{message}</p>
   {/if}
 </div>

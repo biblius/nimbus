@@ -345,6 +345,32 @@ impl UserRepository {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(user_id = %id), err(Debug))]
+    pub async fn clear_otp_secret(&self, id: Uuid) -> Result<(), AppError> {
+        let now = Utc::now();
+
+        let result = sqlx::query!(
+            r#"
+            UPDATE users
+            SET
+                otp_secret = NULL,
+                updated_at = $1
+            WHERE
+                id = $2
+            "#,
+            now,
+            id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::ResourceMissing("User does not exist".into()));
+        }
+
+        Ok(())
+    }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where

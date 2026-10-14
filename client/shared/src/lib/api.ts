@@ -8,13 +8,17 @@ import type {
   LoginResult,
   Member,
   ListQuery,
+  OtpSetup,
   Page,
   Root,
   RootData,
+  SelfUserData,
   UserData,
   UserView,
   UserViewFull,
 } from "./types";
+
+const OTP_TOKEN_HEADER = "x-otp-token";
 
 /** JSON body of every `AppError` response. */
 export type ErrorBody<T = unknown> = {
@@ -117,6 +121,13 @@ export class NimbusClient {
     return this.request<UserViewFull>("/auth/me");
   }
 
+  updateMe(input: SelfUserData): Promise<UserViewFull> {
+    return this.request<UserViewFull>("/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  }
+
   logout(): Promise<void> {
     return this.request<void>("/auth/logout", { method: "POST" });
   }
@@ -125,6 +136,51 @@ export class NimbusClient {
     return this.request<void>("/auth/password", {
       method: "POST",
       body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  }
+
+  async startOtpSetup(): Promise<OtpSetup> {
+    const response = await fetch(`${this.#root}/auth/otp/setup`, {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw parseError(response.status, body);
+    }
+
+    const token = response.headers.get(OTP_TOKEN_HEADER);
+    if (!token) {
+      throw new ApiError(500, {
+        message: "Missing OTP setup token",
+        code: 0,
+        body: null,
+      });
+    }
+
+    return {
+      qrSvg: await response.text(),
+      token,
+    };
+  }
+
+  finishOtpSetup(token: string, otpCode: string): Promise<void> {
+    return this.request<void>("/auth/otp/setup/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token, otpCode }),
+    });
+  }
+
+  disableOtp(otpCode: string): Promise<void> {
+    return this.request<void>("/auth/otp/disable", {
+      method: "POST",
+      body: JSON.stringify({ otpCode }),
     });
   }
 

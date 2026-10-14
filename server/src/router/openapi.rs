@@ -2,7 +2,7 @@ use utoipa::OpenApi;
 
 use crate::{
     auth::model::{
-        GeneratedOtp, LoginCredentials, LoginResult, Otp, PasswordChange, PasswordReset,
+        DisableOtp, LoginCredentials, LoginResult, Otp, PasswordChange, PasswordReset,
         PasswordResetRequest,
     },
     auth::session::SessionView,
@@ -15,8 +15,8 @@ use crate::{
     },
     router::{auth, files, folders, users},
     user::model::{
-        CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateUser, UserView,
-        UserViewFull,
+        CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateSelf, UpdateUser,
+        UserView, UserViewFull,
     },
 };
 
@@ -33,10 +33,12 @@ use crate::{
         auth::start_password_reset,
         auth::finish_password_reset,
         auth::me,
+        auth::update_me,
         auth::logout,
         auth::change_password,
         auth::start_otp_setup,
         auth::finish_otp_setup,
+        auth::disable_otp,
         users::create_user,
         users::list_users,
         users::update_user,
@@ -76,7 +78,7 @@ use crate::{
         LoginCredentials,
         LoginResult,
         Otp,
-        GeneratedOtp,
+        DisableOtp,
         PasswordResetRequest,
         PasswordReset,
         PasswordChange,
@@ -99,6 +101,7 @@ use crate::{
         RestoreFile,
         SetQuota,
         UpdateUser,
+        UpdateSelf,
         UpdateRoot,
         Member,
     ))

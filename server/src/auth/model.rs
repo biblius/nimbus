@@ -34,7 +34,8 @@ pub struct LoginCredentials {
 }
 
 /// Generated TOTP data used to set up 2FA.
-#[derive(Debug, Serialize, ToSchema)]
+/// The HTTP handler returns the QR as an SVG body and the token in the `X-Otp-Token` header.
+#[derive(Debug)]
 pub struct GeneratedOtp {
     /// SVG QR code that contains the secret.
     pub qr: String,
@@ -42,6 +43,9 @@ pub struct GeneratedOtp {
     /// Token to present when confirming the OTP.
     pub token: Uuid,
 }
+
+/// Header carrying the one-shot token from `POST /auth/otp/setup`.
+pub const OTP_TOKEN_HEADER: &str = "x-otp-token";
 
 /// OTP verification input. Used both for initial setup and later verification.
 #[derive(Debug, Deserialize, Validify, ToSchema)]
@@ -51,6 +55,16 @@ pub struct Otp {
     pub token: Uuid,
 
     /// The OTP 6 digit code.
+    #[modify(trim, lowercase)]
+    #[validate(length(equal = 6, message = "Invalid code"))]
+    pub otp_code: String,
+}
+
+/// Disable 2FA by proving possession of the current authenticator.
+#[derive(Debug, Deserialize, Validify, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DisableOtp {
+    /// The OTP 6 digit code from the currently registered authenticator.
     #[modify(trim, lowercase)]
     #[validate(length(equal = 6, message = "Invalid code"))]
     pub otp_code: String,

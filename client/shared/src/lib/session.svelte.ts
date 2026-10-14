@@ -1,13 +1,13 @@
 import type { NimbusClient } from "./api";
 import { navigate } from "./router";
-import type { UserView } from "./types";
+import type { UserViewFull } from "./types";
 
 /**
  * Current session state.
  */
 export const session = $state<{
   client: NimbusClient;
-  user: UserView | null;
+  user: UserViewFull | null;
   menuOpen: boolean;
   /** Native (Tauri) client — login creates a permanent session. */
   native: boolean;

@@ -30,6 +30,7 @@ export const { navigate, route, isActive } = createRouter({
       },
       layout: () => import("./pages/admin/AdminLayout.svelte"),
     },
+    "/settings": () => import("./pages/SettingsPage.svelte"),
     layout: () => import("./components/SessionApp.svelte"),
   },
 

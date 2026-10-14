@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { ChevronDown, LogOut, Moon, Sun } from "@lucide/svelte";
+  import {
+    ChevronDown,
+    Cloud,
+    LogOut,
+    Moon,
+    Settings,
+    Sun,
+  } from "@lucide/svelte";
+  import { navigate } from "../router";
   import { theme, toggleTheme } from "../theme.svelte";
   import type { UserView } from "../types";
 
@@ -140,9 +148,23 @@
                 onToggleMode();
               }}
             >
+              <Cloud size={16} class="shrink-0 text-muted-foreground" />
               {mode === "user" ? "Admin panel" : "User panel"}
             </button>
           {/if}
+
+          <button
+            type="button"
+            role="menuitem"
+            class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
+            onclick={() => {
+              closeAccount();
+              navigate("/settings");
+            }}
+          >
+            <Settings size={16} class="shrink-0 text-muted-foreground" />
+            Account
+          </button>
 
           <button
             type="button"

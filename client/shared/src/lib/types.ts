@@ -36,6 +36,19 @@ export type UserData = {
   password?: string;
 };
 
+/** Profile fields a signed-in user can change on themselves. */
+export type SelfUserData = {
+  username?: string;
+  email?: string;
+  password?: string;
+};
+
+/** QR SVG plus confirmation token from `POST /auth/otp/setup`. */
+export type OtpSetup = {
+  qrSvg: string;
+  token: string;
+};
+
 export type LoginResult =
   | { status: "session"; session: SessionView }
   | { status: "twoFactorRequired"; token: string };

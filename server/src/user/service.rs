@@ -16,8 +16,8 @@ use crate::{
     },
     model::{List, PaginationSort},
     user::model::{
-        CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateUser, User,
-        UserSearch, UserSort, UserView, UserViewFull,
+        CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateSelf, UpdateUser,
+        User, UserSearch, UserSort, UserView, UserViewFull,
     },
 };
 use std::collections::HashSet;
@@ -177,6 +177,57 @@ impl UserService {
         }
 
         Ok(user)
+    }
+
+    /// Update the signed-in user's own profile. Role is left unchanged.
+    #[instrument(skip(self, input), fields(user_id = %user_id, session_id = %session_id), err(Debug))]
+    pub async fn update_self(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        mut input: UpdateSelf,
+    ) -> Result<UserViewFull, AppError> {
+        input.validify()?;
+
+        let user = self.users.get_by_id(user_id).await?;
+
+        if let Some(ref username) = input.username
+            && *username != user.username
+            && self.users.exists(username).await?
+        {
+            return Err(AppError::ResourceConflict(
+                "Username is already in use".into(),
+            ));
+        }
+
+        if let Some(email) = input.email.as_deref()
+            && let Some(owner) = self.users.get_by_email(email).await?
+            && owner.id != user_id
+        {
+            return Err(AppError::ResourceConflict("Email is already in use".into()));
+        }
+
+        let password = match input.password.as_deref() {
+            Some(password) => Some(hash_password(password)?),
+            None => None,
+        };
+
+        self.users
+            .update(
+                user_id,
+                input.username.as_deref(),
+                input.email.as_deref(),
+                user.role,
+                password.as_deref(),
+            )
+            .await?;
+
+        if password.is_some() {
+            self.sessions.expire_others(user_id, session_id).await?;
+        }
+
+        let updated = self.users.get_by_id(user_id).await?;
+        Ok(updated.into())
     }
 
     #[instrument(skip(self), err(Debug))]

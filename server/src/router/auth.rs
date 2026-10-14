@@ -1,5 +1,6 @@
 use axum::{
     Json,
+    body::Body,
     extract::{Path, State},
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
@@ -17,15 +18,15 @@ use uuid::Uuid;
 use crate::{
     auth::{
         model::{
-            GeneratedOtp, LoginCredentials, LoginResult, Otp, PasswordChange, PasswordReset,
-            PasswordResetRequest,
+            DisableOtp, LoginCredentials, LoginResult, OTP_TOKEN_HEADER, Otp, PasswordChange,
+            PasswordReset, PasswordResetRequest,
         },
         session::Session,
     },
     error::AppError,
     router::middleware::RemoteAddress,
     state::{AppState, HttpConfiguration},
-    user::model::UserViewFull,
+    user::model::{UpdateSelf, UserViewFull},
 };
 
 #[utoipa::path(
@@ -128,6 +129,26 @@ pub(crate) async fn me(session: Session) -> Json<UserViewFull> {
 }
 
 #[utoipa::path(
+    patch,
+    path = "/auth/me",
+    request_body = UpdateSelf,
+    responses((status = 200, description = "Current user updated", body = UserViewFull))
+)]
+pub(crate) async fn update_me(
+    State(state): State<AppState>,
+    session: Session,
+    Json(input): Json<UpdateSelf>,
+) -> Result<Json<UserViewFull>, AppError> {
+    Ok(Json(
+        state
+            .services
+            .users
+            .update_self(session.user.id, session.id, input)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
     post,
     path = "/auth/logout",
     responses((status = 204, description = "Session invalidated"))
@@ -181,13 +202,41 @@ pub(crate) async fn change_password(
 #[utoipa::path(
     post,
     path = "/auth/otp/setup",
-    responses((status = 200, description = "TOTP setup data", body = GeneratedOtp))
+    responses(
+        (
+            status = 200,
+            description = "TOTP QR code as SVG. Confirmation token is in the X-Otp-Token response header.",
+            content_type = "image/svg+xml",
+            body = String
+        )
+    )
 )]
 pub(crate) async fn start_otp_setup(
     State(state): State<AppState>,
     session: Session,
-) -> Result<Json<GeneratedOtp>, AppError> {
-    Ok(Json(state.services.auth.start_otp_setup(session).await?))
+) -> Result<Response, AppError> {
+    let generated = state.services.auth.start_otp_setup(session).await?;
+
+    let mut response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")
+        .body(Body::from(generated.qr))
+        .map_err(|error| {
+            tracing::error!(%error, "unable to build OTP QR response");
+            AppError::Internal
+        })?;
+
+    match HeaderValue::from_str(&generated.token.to_string()) {
+        Ok(value) => {
+            response.headers_mut().insert(OTP_TOKEN_HEADER, value);
+        }
+        Err(error) => {
+            tracing::error!(%error, "unable to create OTP token header");
+            return Err(AppError::Internal);
+        }
+    }
+
+    Ok(response)
 }
 
 #[utoipa::path(
@@ -202,6 +251,26 @@ pub(crate) async fn finish_otp_setup(
     Json(otp): Json<Otp>,
 ) -> Result<StatusCode, AppError> {
     state.services.auth.finish_otp_setup(session, otp).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/otp/disable",
+    request_body = DisableOtp,
+    responses(
+        (status = 204, description = "TOTP disabled"),
+        (status = 401, description = "Invalid OTP"),
+        (status = 422, description = "2FA is not enabled")
+    )
+)]
+pub(crate) async fn disable_otp(
+    State(state): State<AppState>,
+    session: Session,
+    Json(data): Json<DisableOtp>,
+) -> Result<StatusCode, AppError> {
+    state.services.auth.disable_otp(session, data).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

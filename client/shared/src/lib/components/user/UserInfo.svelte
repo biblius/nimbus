@@ -25,8 +25,16 @@
       {user.role}
     </span>
   </dd>
-  <dt class="text-muted-foreground">Two-factor</dt>
-  <dd>{user.otpEnabled ? "Enabled" : "Disabled"}</dd>
+  <dt class="text-muted-foreground">2FA</dt>
+  <dd>
+    <span
+      class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] leading-none font-medium {user.otpEnabled
+        ? 'bg-success/15 text-success'
+        : 'bg-warning/15 text-warning'}"
+    >
+      {user.otpEnabled ? "Enabled" : "Disabled"}
+    </span>
+  </dd>
   <dt class="text-muted-foreground">Created</dt>
   <dd>{formatDatetime(user.createdAt)}</dd>
   <dt class="text-muted-foreground">Updated</dt>

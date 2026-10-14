@@ -168,6 +168,26 @@ pub struct UpdateUser {
     pub role: Role,
 }
 
+/// Fields a signed-in user can change on their own account.
+/// Omit `password` to keep the current one. Role cannot be changed here.
+#[derive(Debug, Deserialize, Validify, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSelf {
+    #[modify(trim, lowercase)]
+    #[validate(length(min = 1, message = "Username cannot be empty"))]
+    #[validate(length(max = 63, message = "Username too long"))]
+    #[validate(custom(function = User::valid_username))]
+    pub username: Option<String>,
+
+    #[validate(length(min = 1, message = "Password cannot be empty"))]
+    #[validate(length(max = 255, message = "Password too long"))]
+    pub password: Option<String>,
+
+    #[modify(trim, lowercase)]
+    #[validate(email(message = "Not a valid email"))]
+    pub email: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetQuota {

@@ -57,6 +57,9 @@ pub fn router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::AllowOrigin::list(origins))
         .allow_headers(tower_http::cors::AllowHeaders::list(headers))
+        .expose_headers([HeaderName::from_static(
+            crate::auth::model::OTP_TOKEN_HEADER,
+        )])
         .allow_credentials(AllowCredentials::yes())
         .allow_methods([
             Method::GET,
@@ -73,11 +76,12 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/reset/{token}", post(auth::finish_password_reset));
 
     let session = Router::new()
-        .route("/auth/me", get(auth::me))
+        .route("/auth/me", get(auth::me).patch(auth::update_me))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/password", post(auth::change_password))
         .route("/auth/otp/setup", post(auth::start_otp_setup))
         .route("/auth/otp/setup/confirm", post(auth::finish_otp_setup))
+        .route("/auth/otp/disable", post(auth::disable_otp))
         .route("/roots", get(files::roots))
         .route("/roots/{root_id}/users", get(folders::list_members))
         .route("/roots/{root_id}/users/all", get(folders::list_all_members))

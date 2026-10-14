@@ -71,11 +71,12 @@
       password: data.password || undefined,
     });
 
-    if (session.user?.id === updated.id) {
-      session.user = updated;
+    if (session.user!.id === updated.id) {
+      session.user = { ...session.user!, ...updated };
     }
 
     editing = false;
+
     reloadList();
   }
 
