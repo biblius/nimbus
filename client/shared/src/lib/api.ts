@@ -293,6 +293,13 @@ export class NimbusClient {
     );
   }
 
+  move(rootId: string, ids: string[], parent: string | null): Promise<void> {
+    return this.request<void>(`/roots/${encodeURIComponent(rootId)}/move`, {
+      method: "POST",
+      body: JSON.stringify({ ids, parent }),
+    });
+  }
+
   trash(rootId: string, ids: string[]): Promise<void> {
     return this.request<void>(`/roots/${encodeURIComponent(rootId)}/files`, {
       method: "DELETE",

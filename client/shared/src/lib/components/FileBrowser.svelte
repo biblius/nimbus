@@ -11,6 +11,12 @@
     Upload,
     X,
   } from "@lucide/svelte";
+  import {
+    KeyboardSensor,
+    PointerActivationConstraints,
+    PointerSensor,
+  } from "@dnd-kit/dom";
+  import { DragDropProvider, DragOverlay } from "@dnd-kit/svelte";
   import { tick, untrack } from "svelte";
   import { navigate } from "../router";
   import { ApiError, ValidationError } from "../api";
@@ -56,11 +62,23 @@
   /// How many files are sent at the same time.
   const PARALLEL_UPLOADS = 10;
 
-  type SortColumn = "kind" | "name" | "size" | "created" | "modified";
+  const sensors = [
+    PointerSensor.configure({
+      activationConstraints: [
+        new PointerActivationConstraints.Distance({ value: 8 }),
+      ],
+      preventActivation: (event) =>
+        event.target instanceof Element &&
+        Boolean(event.target.closest("[data-no-drag]")),
+    }),
+    KeyboardSensor,
+  ];
+
+  type SortColumn = "kind" | "name" | "size" | "created";
   type SortDirection = "asc" | "desc";
 
   const columns =
-    "grid grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_5.5rem] @2xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_5.5rem] @4xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_minmax(0,11.5rem)_5.5rem]";
+    "grid grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_5.5rem] @2xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_5.5rem]";
 
   let entries = $state<FileView[]>([]);
   let selected = $state<string[]>([]);
@@ -284,9 +302,6 @@
           break;
         case "created":
           byColumn = a.createdAt.localeCompare(b.createdAt);
-          break;
-        case "modified":
-          byColumn = a.updatedAt.localeCompare(b.updatedAt);
           break;
       }
 
@@ -658,6 +673,79 @@
     }
   }
 
+  function dragIds(sourceId: string): string[] {
+    return selected.includes(sourceId) ? selected.slice() : [sourceId];
+  }
+
+  function dragLabel(sourceId: string): string {
+    const ids = dragIds(sourceId);
+
+    if (ids.length > 1) {
+      return `${ids.length} items`;
+    }
+
+    const entry = entries.find((item) => item.file.id === sourceId);
+
+    return entry ? label(entry) : "Item";
+  }
+
+  async function onDragEnd(event: {
+    canceled: boolean;
+    operation: {
+      source: { id: unknown } | null;
+      target: { id: unknown } | null;
+    };
+  }) {
+    if (event.canceled) {
+      return;
+    }
+
+    const sourceId = event.operation.source?.id;
+    const targetId = event.operation.target?.id;
+
+    if (typeof sourceId !== "string" || typeof targetId !== "string") {
+      return;
+    }
+
+    if (sourceId === targetId) {
+      return;
+    }
+
+    const target = entries.find((entry) => entry.file.id === targetId);
+
+    if (!target || target.file.kind !== "directory") {
+      return;
+    }
+
+    const ids = dragIds(sourceId).filter((id) => id !== targetId);
+
+    if (ids.length === 0) {
+      return;
+    }
+
+    const rootId = root.id;
+    const parent = location.id;
+
+    try {
+      await session.client.move(rootId, ids, targetId);
+
+      if (root.id !== rootId || location.id !== parent) {
+        return;
+      }
+
+      const gone = new Set(ids);
+
+      entries = entries.filter((entry) => !gone.has(entry.file.id));
+      selected = selected.filter((id) => !gone.has(id));
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not move that item",
+      );
+    }
+  }
+
   async function download(entry: FileView) {
     try {
       await session.client.download(root.id, entry.file.id, entry.file.name);
@@ -673,14 +761,13 @@
 
 <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
   <div
-    class="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2"
+    class="flex shrink-0 items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2"
   >
     <div class="min-w-0">
-      <p class="inline truncate text-sm font-medium">{root.name}</p>
-      <p class="inline truncate text-xs text-muted-foreground">
-        · {root.owner ? "Private" : "Shared"}
+      <p class="truncate text-sm font-medium">{root.name}</p>
+      <p class="truncate text-xs text-muted-foreground">
+        {root.owner ? "Private" : "Shared"}
         · {formatQuota(root.quota)}
-        · Updated {formatDatetime(root.updatedAt)}
       </p>
     </div>
     {#if admin}
@@ -841,8 +928,7 @@
       />
       {@render columnHeader("name", "Name", "", "")}
       {@render columnHeader("size", "Size", "hidden @lg:flex", "justify-end")}
-      {@render columnHeader("created", "Created", "hidden @4xl:flex", "")}
-      {@render columnHeader("modified", "Modified", "hidden @2xl:flex", "")}
+      {@render columnHeader("created", "Created", "hidden @2xl:flex", "")}
       <span class="sr-only">Actions</span>
     </div>
 
@@ -869,83 +955,94 @@
           </p>
         </div>
       {:else}
-        <ul class="divide-y">
-          <!-- NEW DIRECTORY DRAFT -->
+        <DragDropProvider {sensors} {onDragEnd}>
+          <ul class="divide-y">
+            <!-- NEW DIRECTORY DRAFT -->
 
-          {#if drafting}
-            <li class="px-3 py-2">
-              <div class="flex min-w-0 items-center gap-2">
-                <Folder size={18} class="shrink-0 text-primary" />
-                <input
-                  use:focusDraft
-                  bind:value={directoryName}
-                  class={cn(
-                    "h-8 min-w-0 flex-1 rounded-md border border-input bg-field px-2.5 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
-                    directoryError &&
-                      "border-destructive focus-visible:ring-destructive",
-                  )}
-                  aria-label="Folder name"
-                  aria-invalid={directoryError ? true : undefined}
-                  autocomplete="off"
-                  spellcheck="false"
-                  placeholder="Folder name"
-                  disabled={directorySaving}
-                  oninput={() => (directoryError = "")}
-                  onkeydown={onDraftKey}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  class="size-8 px-0"
-                  aria-label="Create folder"
-                  disabled={directorySaving}
-                  onclick={() => commitDirectory()}
+            {#if drafting}
+              <li class="px-3 py-2">
+                <div class="flex min-w-0 items-center gap-2">
+                  <Folder size={18} class="shrink-0 text-primary" />
+                  <input
+                    use:focusDraft
+                    bind:value={directoryName}
+                    class={cn(
+                      "h-8 min-w-0 flex-1 rounded-md border border-input bg-field px-2.5 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                      directoryError &&
+                        "border-destructive focus-visible:ring-destructive",
+                    )}
+                    aria-label="Folder name"
+                    aria-invalid={directoryError ? true : undefined}
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Folder name"
+                    disabled={directorySaving}
+                    oninput={() => (directoryError = "")}
+                    onkeydown={onDraftKey}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    class="size-8 px-0"
+                    aria-label="Create folder"
+                    disabled={directorySaving}
+                    onclick={() => commitDirectory()}
+                  >
+                    <Check size={16} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    class="size-8 px-0"
+                    aria-label="Cancel"
+                    disabled={directorySaving}
+                    onclick={cancelDirectory}
+                  >
+                    <X size={16} />
+                  </Button>
+                </div>
+                <p
+                  class="mt-1 pl-7 text-xs {directoryError
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'}"
                 >
-                  <Check size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  class="size-8 px-0"
-                  aria-label="Cancel"
-                  disabled={directorySaving}
-                  onclick={cancelDirectory}
-                >
-                  <X size={16} />
-                </Button>
-              </div>
-              <p
-                class="mt-1 pl-7 text-xs {directoryError
-                  ? 'text-destructive'
-                  : 'text-muted-foreground'}"
+                  {directoryError ||
+                    (directorySaving
+                      ? "Saving…"
+                      : "Enter to save, Esc to cancel")}
+                </p>
+              </li>
+            {/if}
+
+            <!-- FILES -->
+
+            {#each entries as entry (entry.file.id)}
+              <FileListItem
+                {entry}
+                rootId={root.id}
+                name={label(entry)}
+                {columns}
+                selected={selected.includes(entry.file.id)}
+                onToggle={() => toggle(entry.file.id)}
+                onOpen={() => openDirectory(entry)}
+                onPreview={() => (previewFileId = entry.file.id)}
+                onDownload={() => download(entry)}
+                onDelete={() => askDelete([entry.file.id])}
+              />
+            {/each}
+          </ul>
+          <DragOverlay>
+            {#snippet children(source)}
+              <div
+                class="rounded-md border bg-card px-3 py-2 text-sm font-medium shadow-lg"
               >
-                {directoryError ||
-                  (directorySaving
-                    ? "Saving…"
-                    : "Enter to save, Esc to cancel")}
-              </p>
-            </li>
-          {/if}
-
-          <!-- FILES -->
-
-          {#each entries as entry (entry.file.id)}
-            <FileListItem
-              {entry}
-              rootId={root.id}
-              name={label(entry)}
-              {columns}
-              selected={selected.includes(entry.file.id)}
-              onToggle={() => toggle(entry.file.id)}
-              onOpen={() => openDirectory(entry)}
-              onPreview={() => (previewFileId = entry.file.id)}
-              onDownload={() => download(entry)}
-              onDelete={() => askDelete([entry.file.id])}
-            />
-          {/each}
-        </ul>
+                {dragLabel(String(source.id))}
+              </div>
+            {/snippet}
+          </DragOverlay>
+        </DragDropProvider>
       {/if}
     </div>
   </div>
@@ -959,9 +1056,7 @@
       onSelect={(id) => (previewFileId = id)}
       onUpdated={(entry) => {
         entries = entries.map((item) =>
-          item.file.id === entry.id
-            ? { file: entry, metadata: null }
-            : item,
+          item.file.id === entry.id ? { file: entry, metadata: null } : item,
         );
       }}
     />

@@ -160,10 +160,7 @@ impl Default for HttpConfiguration {
     fn default() -> Self {
         HttpConfiguration {
             cors_origins: Arc::from([String::from("http://localhost:5173")]),
-            cors_headers: Arc::from([
-                String::from("Authorization"),
-                String::from("Content-Type"),
-            ]),
+            cors_headers: Arc::from([String::from("Authorization"), String::from("Content-Type")]),
             cookie_domain: "".into(),
             cookie_name: "nimbus_session".into(),
             cookie_secure: false,

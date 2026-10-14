@@ -116,6 +116,7 @@ pub fn router(state: AppState) -> Router {
             "/roots/{root_id}/trash/{id}/restore",
             post(files::restore_file),
         )
+        .route("/roots/{root_id}/move", post(files::move_files))
         .route("/roots/{root_id}/files", delete(files::delete_files))
         .route("/roots/{root_id}/files/{id}", delete(files::delete_file))
         .route_layer(axum_middleware::from_fn_with_state(

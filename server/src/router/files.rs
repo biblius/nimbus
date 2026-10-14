@@ -2,7 +2,9 @@ use crate::{
     auth::session::Session,
     error::AppError,
     file::{
-        model::{CreateDirectory, FileEntry, FileView, RestoreFile, RootView, TrashFiles},
+        model::{
+            CreateDirectory, FileEntry, FileView, MoveFiles, RestoreFile, RootView, TrashFiles,
+        },
         queue::DeletionResult,
         tree::FileTree,
     },
@@ -553,6 +555,27 @@ pub(crate) async fn preview(
             tracing::error!(%error, "building preview response");
             AppError::Internal
         })
+}
+
+#[utoipa::path(
+    post,
+    path = "/roots/{root_id}/move",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    request_body = MoveFiles,
+    responses((status = 204, description = "Files moved"))
+)]
+pub(crate) async fn move_files(
+    Path(root_id): Path<Uuid>,
+    State(state): State<AppState>,
+    session: Session,
+    Json(input): Json<MoveFiles>,
+) -> Result<StatusCode, AppError> {
+    state
+        .services
+        .files
+        .move_files(&session.user, root_id, input)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(

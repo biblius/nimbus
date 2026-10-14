@@ -15,7 +15,7 @@ use crate::{
     error::AppError,
     file::{
         format::FileType,
-        model::{FileContentPreview, RestoreFile, RootView, TrashFiles},
+        model::{FileContentPreview, MoveFiles, RestoreFile, RootView, TrashFiles},
         tree::FileTree,
     },
     user::model::{Role, User},
@@ -68,14 +68,10 @@ impl FileService {
     /// Bytes stored in a root. Directories are not counted.
     #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
     pub async fn usage(&self, user: &User, root_id: Uuid) -> Result<i64, AppError> {
+        self.accessible(user, root_id).await?;
+
         if self.files.get_root(root_id).await?.is_none() {
             return Err(AppError::ResourceMissing("Folder does not exist".into()));
-        }
-
-        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
-            return Err(AppError::Forbidden(
-                "You do not have access to this folder".into(),
-            ));
         }
 
         self.files.root_quota_usage(root_id).await
@@ -88,11 +84,8 @@ impl FileService {
         root_id: Uuid,
         dir_id: Option<Uuid>,
     ) -> Result<Vec<FileView>, AppError> {
-        if !self.folders.can_access(user.id, root_id).await? {
-            return Err(AppError::Forbidden(
-                "You do not have access to this folder".into(),
-            ));
-        }
+        self.accessible(user, root_id).await?;
+
         self.files.list_files(root_id, dir_id).await
     }
 
@@ -104,11 +97,7 @@ impl FileService {
         root_id: Uuid,
         file_id: Uuid,
     ) -> Result<Vec<FileEntry>, AppError> {
-        if !self.folders.can_access(user.id, root_id).await? {
-            return Err(AppError::Forbidden(
-                "You do not have access to this folder".into(),
-            ));
-        }
+        self.accessible(user, root_id).await?;
 
         let mut chain = Vec::new();
         let mut current = Some(file_id);
@@ -396,6 +385,7 @@ impl FileService {
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn delete(&self, user: &User, id: Uuid) -> Result<(), AppError> {
         let file = self.readable(user, id).await?;
+
         self.files.trash(file.root_id, user.id, &[file.id]).await
     }
 
@@ -409,13 +399,59 @@ impl FileService {
     ) -> Result<(), AppError> {
         input.validate()?;
 
-        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
-            return Err(AppError::Forbidden(
-                "You do not have access to this folder".into(),
-            ));
-        }
+        self.accessible(user, root_id).await?;
 
         self.files.trash(root_id, user.id, &input.ids).await
+    }
+
+    /// Change the parent of live files. Trashed files are rejected.
+    #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
+    pub async fn move_files(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        input: MoveFiles,
+    ) -> Result<(), AppError> {
+        input.validate()?;
+
+        self.accessible(user, root_id).await?;
+
+        let mut ids = Vec::with_capacity(input.ids.len());
+        let mut seen = HashSet::with_capacity(input.ids.len());
+
+        for id in input.ids {
+            if seen.insert(id) {
+                ids.push(id);
+            }
+        }
+
+        let mut current = input.parent;
+
+        // /foo/bar
+        // Forbids /foo from being moved to /bar to prevent cyclic references
+        while let Some(id) = current {
+            if seen.contains(&id) {
+                return Err(AppError::Unprocessable(
+                    "Cannot move a folder into itself".into(),
+                ));
+            }
+
+            let Some(dir) = self.files.get_live(id).await? else {
+                return Err(AppError::ResourceMissing("Folder does not exist".into()));
+            };
+
+            if dir.root_id != root_id {
+                return Err(AppError::ResourceMissing("Folder does not exist".into()));
+            }
+
+            if dir.kind != FileKind::Directory {
+                return Err(AppError::Unprocessable("Not a directory".into()));
+            }
+
+            current = dir.parent;
+        }
+
+        self.files.move_to_parent(root_id, input.parent, &ids).await
     }
 
     /// Permanently delete one trashed item and its descendants.
@@ -427,7 +463,7 @@ impl FileService {
         id: Uuid,
         handle: DeletionQueueHandle,
     ) -> Result<mpsc::Receiver<DeletionResult>, AppError> {
-        self.ensure_root_access(user, root_id).await?;
+        self.accessible(user, root_id).await?;
 
         let file = self
             .files
@@ -455,11 +491,7 @@ impl FileService {
         id: Uuid,
         input: RestoreFile,
     ) -> Result<(), AppError> {
-        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
-            return Err(AppError::Forbidden(
-                "You do not have access to this folder".into(),
-            ));
-        }
+        self.accessible(user, root_id).await?;
 
         let Some(trashed_root) = self.files.trashed_root(id).await? else {
             return Err(AppError::ResourceMissing("File does not exist".into()));
@@ -520,11 +552,7 @@ impl FileService {
     }
 
     pub async fn get_trash_tree(&self, user: &User, root_id: Uuid) -> Result<FileTree, AppError> {
-        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
-            return Err(AppError::Forbidden(
-                "You do not have access to this folder".into(),
-            ));
-        }
+        self.accessible(user, root_id).await?;
 
         let files = self.files.list_trash(root_id).await?;
 
@@ -544,11 +572,7 @@ impl FileService {
         root_id: Uuid,
         parent: Option<Uuid>,
     ) -> Result<FileTree, AppError> {
-        if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
-            return Err(AppError::Forbidden(
-                "You do not have access to this folder".into(),
-            ));
-        }
+        self.accessible(user, root_id).await?;
 
         let files = self.files.list_descendants(root_id, parent).await?;
 
@@ -570,7 +594,7 @@ impl FileService {
             .await?
             .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
-        self.ensure_root_access(user, file.root_id).await?;
+        self.accessible(user, file.root_id).await?;
 
         Ok(file)
     }
@@ -579,7 +603,7 @@ impl FileService {
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     async fn readable_any(&self, user: &User, id: Uuid) -> Result<FileEntry, AppError> {
         if let Some(file) = self.files.get_live(id).await? {
-            self.ensure_root_access(user, file.root_id).await?;
+            self.accessible(user, file.root_id).await?;
             return Ok(file);
         }
 
@@ -589,7 +613,7 @@ impl FileService {
             .await?
             .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
-        self.ensure_root_access(user, file.root_id).await?;
+        self.accessible(user, file.root_id).await?;
 
         Ok(file)
     }
@@ -598,12 +622,12 @@ impl FileService {
     async fn writable(&self, user: &User, root: Uuid, name: &str) -> Result<String, AppError> {
         let name = FileEntry::valid_name(name)?.to_string();
 
-        self.ensure_root_access(user, root).await?;
+        self.accessible(user, root).await?;
 
         Ok(name)
     }
 
-    async fn ensure_root_access(&self, user: &User, root_id: Uuid) -> Result<(), AppError> {
+    async fn accessible(&self, user: &User, root_id: Uuid) -> Result<(), AppError> {
         if user.role != Role::Admin && !self.folders.can_access(user.id, root_id).await? {
             return Err(AppError::Forbidden(
                 "You do not have access to this folder".into(),

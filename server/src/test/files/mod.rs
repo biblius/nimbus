@@ -1,4 +1,5 @@
 mod deletion;
+mod moving;
 mod overwrite;
 mod processing;
 mod roots;

@@ -424,7 +424,10 @@ mod deletion {
         })
         .await;
 
-        assert!(!preview_path.exists(), "preview removed with last reference");
+        assert!(
+            !preview_path.exists(),
+            "preview removed with last reference"
+        );
     }
 
     #[test]

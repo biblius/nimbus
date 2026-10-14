@@ -1048,6 +1048,49 @@ impl FileRepository {
         Ok(restored)
     }
 
+    /// Set `parent` on live rows in one root. Trashed rows are not updated.
+    #[instrument(skip(self, ids), err(Debug))]
+    pub async fn move_to_parent(
+        &self,
+        root_id: Uuid,
+        parent: Option<Uuid>,
+        ids: &[Uuid],
+    ) -> Result<(), AppError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let mut query = QueryBuilder::<Db>::new("UPDATE files SET parent = ");
+        query.push_bind(parent);
+        query.push(", updated_at = ");
+        query.push_bind(Utc::now());
+        query.push(" WHERE root_id = ");
+        query.push_bind(root_id);
+        query.push(" AND id IN (");
+
+        {
+            let mut separated = query.separated(", ");
+            for id in ids {
+                separated.push_bind(id);
+            }
+        }
+
+        query.push(")");
+
+        let affected = query
+            .build()
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::from)?
+            .rows_affected();
+
+        if ids.len() as u64 != affected {
+            tracing::warn!("some files were not moved")
+        }
+
+        Ok(())
+    }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn delete_live(&self, id: Uuid) -> Result<(), AppError> {
         self.delete_live_with(&self.pool, id).await

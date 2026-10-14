@@ -8,8 +8,8 @@ use crate::{
     auth::session::SessionView,
     file::{
         model::{
-            CreateDirectory, FileEntry, FileMetadata, FileView, RestoreFile, Root, RootView,
-            TrashFiles,
+            CreateDirectory, FileEntry, FileMetadata, FileView, MoveFiles, RestoreFile, Root,
+            RootView, TrashFiles,
         },
         tree::FileTree,
     },
@@ -65,6 +65,7 @@ use crate::{
         files::preview,
         files::delete_file,
         files::delete_files,
+        files::move_files,
         files::tree,
         files::trash,
         files::delete_trash,
@@ -92,6 +93,7 @@ use crate::{
         FileTree,
         CreateDirectory,
         TrashFiles,
+        MoveFiles,
         RestoreFile,
         SetQuota,
         UpdateUser,

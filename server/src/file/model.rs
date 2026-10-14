@@ -171,6 +171,15 @@ pub struct TrashFiles {
     pub ids: Vec<Uuid>,
 }
 
+/// Live files whose parent should change. `parent` is null to place them in the root.
+#[derive(Debug, Deserialize, ToSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveFiles {
+    #[validate(length(min = 1, message = "At least 1 file must be provided"))]
+    pub ids: Vec<Uuid>,
+    pub parent: Option<Uuid>,
+}
+
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 pub struct CreateDirectory {
     pub parent: Option<Uuid>,
