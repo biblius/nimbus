@@ -230,11 +230,12 @@ export type FileEntry = {
   fileType: FileType | null;
   hash: string | null;
   sizeBytes: number;
+  preview: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-/** Derived per-file data from `file_metadata`. */
+/** Preview fields mirrored from `files.preview` for listings. */
 export type FileMetadata = {
   preview: string | null;
 };

@@ -5,7 +5,6 @@ use super::{
 };
 use crate::{
     db::{
-        MetadataRepository,
         files::{FileRepository, NewFile},
         tx::Transactor,
         user_folders::UserFolderRepository,
@@ -27,7 +26,6 @@ use validify::{Validate, Validify};
 pub struct FileService {
     files: FileRepository,
     folders: UserFolderRepository,
-    metadata: MetadataRepository,
     storage: Storage,
     processing: ProcessingQueueHandle,
     tx: Transactor,
@@ -37,7 +35,6 @@ impl FileService {
     pub fn new(
         files: FileRepository,
         folders: UserFolderRepository,
-        metadata: MetadataRepository,
         storage: Storage,
         processing: ProcessingQueueHandle,
         tx: Transactor,
@@ -45,7 +42,6 @@ impl FileService {
         Self {
             files,
             folders,
-            metadata,
             storage,
             processing,
             tx,
@@ -376,17 +372,12 @@ impl FileService {
             ));
         }
 
-        let meta = self
-            .metadata
-            .get(file.id)
-            .await?
-            .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
-
-        let hash = meta
+        let hash = file
             .preview
+            .as_deref()
             .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
 
-        let path = self.storage.preview_path(&hash);
+        let path = self.storage.preview_path(hash);
 
         let preview = FileContentPreview::new(path, "image/webp").await?;
 

@@ -1,5 +1,5 @@
 use crate::{
-    db::MetadataRepository,
+    db::files::FileRepository,
     error::AppError,
     file::{format::FileType, model::FileEntry, storage::Storage},
 };
@@ -24,25 +24,25 @@ pub type ProcessingQueueHandle = mpsc::Sender<ProcessingRequest>;
 pub struct ProcessingQueue {
     requests: mpsc::Receiver<ProcessingRequest>,
     storage: Storage,
-    metadata: MetadataRepository,
+    files: FileRepository,
 }
 
 impl ProcessingQueue {
-    pub fn start(storage: Storage, metadata: MetadataRepository) -> ProcessingQueueHandle {
+    pub fn start(storage: Storage, files: FileRepository) -> ProcessingQueueHandle {
         let (tx, rx) = mpsc::channel(128);
-        ProcessingQueue::new(storage, metadata, rx)._start();
+        ProcessingQueue::new(storage, files, rx)._start();
         tx
     }
 
     fn new(
         storage: Storage,
-        metadata: MetadataRepository,
+        files: FileRepository,
         requests: mpsc::Receiver<ProcessingRequest>,
     ) -> Self {
         Self {
             requests,
             storage,
-            metadata,
+            files,
         }
     }
 
@@ -120,7 +120,7 @@ impl ProcessingQueue {
         let preview_hash = hex::encode(Sha256::digest(webp));
 
         self.storage.persist_preview(&preview_hash, webp).await?;
-        self.metadata.set_preview(file_id, &preview_hash).await?;
+        self.files.set_preview(file_id, &preview_hash).await?;
 
         tracing::info!(
             file=%file_id,

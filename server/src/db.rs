@@ -1,6 +1,5 @@
 pub(crate) mod deletion;
 pub(crate) mod files;
-pub(crate) mod metadata;
 pub(crate) mod sessions;
 pub(crate) mod tx;
 pub(crate) mod user_folders;
@@ -11,7 +10,6 @@ use std::time::Duration;
 
 pub use deletion::DeletionRepository;
 pub use files::FileRepository;
-pub use metadata::MetadataRepository;
 pub use sessions::SessionRepository;
 pub use tx::Transactor;
 pub use user_folders::UserFolderRepository;
@@ -25,7 +23,6 @@ pub struct Repository {
     pub folders: UserFolderRepository,
     pub files: FileRepository,
     pub deletions: DeletionRepository,
-    pub metadata: MetadataRepository,
     pool: DbPool,
 }
 
@@ -37,7 +34,6 @@ impl Repository {
             folders: UserFolderRepository::new(pool.clone()),
             files: FileRepository::new(pool.clone()),
             deletions: DeletionRepository::new(pool.clone()),
-            metadata: MetadataRepository::new(pool.clone()),
             pool,
         }
     }

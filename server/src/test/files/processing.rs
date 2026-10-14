@@ -3,7 +3,7 @@
 mod processing {
     use super::super::user;
     use crate::{
-        db::MetadataRepository,
+        db::FileRepository,
         test::{self, TestState},
     };
     use image::{GenericImageView, ImageFormat};
@@ -34,24 +34,24 @@ mod processing {
     }
 
     async fn await_preview(state: &TestState, file_id: Uuid) -> String {
-        let metadata = MetadataRepository::new(state.pool.clone());
+        let files = FileRepository::new(state.pool.clone());
 
         wait_until(std::time::Duration::from_secs(5), || {
-            let metadata = metadata.clone();
+            let files = files.clone();
             async move {
                 matches!(
-                    metadata.get(file_id).await,
+                    files.get_live(file_id).await,
                     Ok(Some(row)) if row.preview.is_some()
                 )
             }
         })
         .await;
 
-        metadata
-            .get(file_id)
+        files
+            .get_live(file_id)
             .await
             .unwrap()
-            .expect("file_metadata row")
+            .expect("file row")
             .preview
             .expect("preview hash")
     }
@@ -184,14 +184,15 @@ mod processing {
         let before = test::preview_count(state.storage_dir());
         let entry = test::upload(state, &session.user, root, "notes.txt", b"hello").await;
 
-        // Processing is async; give the worker a moment, then confirm no metadata.
+        // Processing is async; give the worker a moment, then confirm no preview.
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
-        let metadata = MetadataRepository::new(state.pool.clone())
-            .get(entry.id)
+        let file = FileRepository::new(state.pool.clone())
+            .get_live(entry.id)
             .await
-            .unwrap();
-        assert!(metadata.is_none());
+            .unwrap()
+            .expect("file row");
+        assert!(file.preview.is_none());
         assert_eq!(test::preview_count(state.storage_dir()), before);
     }
 

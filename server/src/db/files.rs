@@ -62,7 +62,7 @@ pub struct NewFile {
     pub size_bytes: i64,
 }
 
-/// Flat join row for directory listings (`files` ⟕ `file_metadata`).
+/// Directory listing row (includes `preview` from `files`).
 #[derive(Debug, FromRow)]
 struct FileViewRow {
     id: Uuid,
@@ -74,15 +74,16 @@ struct FileViewRow {
     file_type: Option<FileType>,
     hash: Option<String>,
     size_bytes: i64,
+    preview: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
-    preview: Option<String>,
 }
 
 impl From<FileViewRow> for FileView {
     fn from(row: FileViewRow) -> Self {
-        let metadata = row.preview.map(|preview| FileMetadata {
-            preview: Some(preview),
+        let preview = row.preview.clone();
+        let metadata = preview.as_ref().map(|hash| FileMetadata {
+            preview: Some(hash.clone()),
         });
 
         FileView::new(
@@ -96,6 +97,7 @@ impl From<FileViewRow> for FileView {
                 file_type: row.file_type,
                 hash: row.hash,
                 size_bytes: row.size_bytes,
+                preview,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             },
@@ -378,6 +380,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at
             FROM files
@@ -412,6 +415,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at
             FROM trashed_files
@@ -449,10 +453,11 @@ impl FileRepository {
                 format,
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
             RETURNING
                 id,
                 root_id,
@@ -463,6 +468,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at
             "#,
@@ -509,6 +515,7 @@ impl FileRepository {
                 format,
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at
             )
@@ -525,6 +532,7 @@ impl FileRepository {
                 .push_bind(file.file_type.clone())
                 .push_bind(&file.hash)
                 .push_bind(file.size_bytes)
+                .push_bind(&file.preview)
                 .push_bind(file.created_at)
                 .push_bind(file.updated_at);
         });
@@ -547,7 +555,7 @@ impl FileRepository {
         self.list_files_with(&self.pool, root, parent).await
     }
 
-    /// Live children of a directory, with `file_metadata` left-joined.
+    /// Live children of a directory.
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn list_files_with<'e, E>(
         &self,
@@ -570,11 +578,10 @@ impl FileRepository {
                 f.format AS file_type,
                 f.hash,
                 f.size_bytes,
+                f.preview,
                 f.created_at,
-                f.updated_at,
-                m.preview
+                f.updated_at
             FROM files f
-            LEFT JOIN file_metadata m ON m.file_id = f.id
             WHERE
                 f.root_id =
             "#,
@@ -766,6 +773,7 @@ impl FileRepository {
                 format AS file_type,
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at
             "#,
@@ -798,6 +806,7 @@ impl FileRepository {
                 format,
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at,
                 trashed_at
@@ -822,6 +831,7 @@ impl FileRepository {
                 .push_bind(file.file_type.clone())
                 .push_bind(&file.hash)
                 .push_bind(file.size_bytes)
+                .push_bind(&file.preview)
                 .push_bind(file.created_at)
                 .push_bind(now)
                 .push_bind(now);
@@ -830,6 +840,31 @@ impl FileRepository {
         insert.build().execute(&mut *tx).await?;
 
         tx.commit().await?;
+
+        Ok(())
+    }
+
+    /// Store the content hash of a generated preview on a live file row.
+    #[instrument(skip(self), fields(file_id = %file_id), err(Debug))]
+    pub async fn set_preview(&self, file_id: Uuid, preview: &str) -> Result<(), AppError> {
+        let now = Utc::now();
+
+        let result = sqlx::query!(
+            r#"
+            UPDATE files
+            SET preview = $2, updated_at = $3
+            WHERE id = $1
+            "#,
+            file_id,
+            preview,
+            now
+        )
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
 
         Ok(())
     }
@@ -868,6 +903,7 @@ impl FileRepository {
                 format AS file_type,
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at
             "#,
@@ -958,6 +994,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
+                preview,
                 created_at,
                 updated_at
             "#,
@@ -974,12 +1011,6 @@ impl FileRepository {
         Ok(restored)
     }
 
-    #[instrument(skip(self), err(Debug))]
-    #[instrument(skip(self), err(Debug))]
-    pub async fn delete_live(&self, id: Uuid) -> Result<(), AppError> {
-        self.delete_live_with(&self.pool, id).await
-    }
-
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_live_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where
@@ -990,11 +1021,6 @@ impl FileRepository {
             .await?;
 
         Ok(())
-    }
-
-    #[instrument(skip(self), err(Debug))]
-    pub async fn delete_trashed(&self, id: Uuid) -> Result<(), AppError> {
-        self.delete_trashed_with(&self.pool, id).await
     }
 
     #[instrument(skip(self, executor), err(Debug))]

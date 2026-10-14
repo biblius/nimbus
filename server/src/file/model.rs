@@ -22,15 +22,16 @@ pub struct FileEntry {
     pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
+    /// Content hash of the generated preview blob, when one exists.
+    pub preview: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-/// Derived per-file data stored in `file_metadata`.
+/// Preview fields exposed on directory listings (sourced from `files.preview`).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FileMetadata {
-    /// Content hash of the generated preview blob, when one exists.
     pub preview: Option<String>,
 }
 

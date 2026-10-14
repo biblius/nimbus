@@ -97,12 +97,11 @@ impl AppState {
             repository.deletions.clone(),
         );
 
-        let processing = ProcessingQueue::start(storage.clone(), repository.metadata.clone());
+        let processing = ProcessingQueue::start(storage.clone(), repository.files.clone());
 
         let file_service = FileService::new(
             repository.files.clone(),
             repository.folders.clone(),
-            repository.metadata.clone(),
             storage.clone(),
             processing,
             transactor,

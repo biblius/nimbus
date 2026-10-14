@@ -42,6 +42,7 @@ CREATE TABLE files (
   format TEXT,
   hash TEXT,
   size_bytes INTEGER NOT NULL,
+  preview TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -53,6 +54,10 @@ CREATE INDEX files_created_by_idx ON files (created_by);
 CREATE INDEX files_parent_idx ON files (parent);
 
 CREATE INDEX files_hash_idx ON files (hash);
+
+CREATE INDEX files_preview_idx ON files (preview)
+WHERE
+  preview IS NOT NULL;
 
 -- Rows leave `files` when trashed. A directly trashed row has `parent` NULL.
 -- Descendants keep their parent.
@@ -67,6 +72,7 @@ CREATE TABLE trashed_files (
   format TEXT,
   hash TEXT,
   size_bytes INTEGER NOT NULL,
+  preview TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   trashed_at TEXT NOT NULL
@@ -79,6 +85,10 @@ CREATE INDEX trashed_files_trashed_by_idx ON trashed_files (trashed_by);
 CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
+
+CREATE INDEX trashed_files_preview_idx ON trashed_files (preview)
+WHERE
+  preview IS NOT NULL;
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 
@@ -122,13 +132,3 @@ WHERE
 CREATE INDEX file_deletion_queue_pending_idx ON file_deletion_queue (created_by)
 WHERE
   error IS NULL;
-
--- Per-file derived data such as preview blob hashes.
-CREATE TABLE file_metadata (
-  file_id BLOB PRIMARY KEY NOT NULL REFERENCES files (id) ON DELETE CASCADE,
-  preview TEXT
-);
-
-CREATE INDEX file_metadata_preview_idx ON file_metadata (preview)
-WHERE
-  preview IS NOT NULL;

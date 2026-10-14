@@ -53,6 +53,8 @@ CREATE TABLE files (
   hash TEXT,
   -- Always null for directories
   size_bytes BIGINT NOT NULL,
+  -- Content hash of the generated preview blob; null until processing finishes (or for non-previewable files)
+  preview TEXT,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
@@ -64,6 +66,10 @@ CREATE INDEX files_created_by_idx ON files (created_by);
 CREATE INDEX files_parent_idx ON files (parent);
 
 CREATE INDEX files_hash_idx ON files (hash);
+
+CREATE INDEX files_preview_idx ON files (preview)
+WHERE
+  preview IS NOT NULL;
 
 -- Used for soft deletion. Files end up here from `files`.
 -- A file that is directly deleted from `files` has its parent set to null
@@ -81,6 +87,7 @@ CREATE TABLE trashed_files (
   format TEXT,
   hash TEXT,
   size_bytes BIGINT NOT NULL,
+  preview TEXT,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   trashed_at TIMESTAMPTZ NOT NULL
@@ -93,6 +100,10 @@ CREATE INDEX trashed_files_trashed_by_idx ON trashed_files (trashed_by);
 CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
+
+CREATE INDEX trashed_files_preview_idx ON trashed_files (preview)
+WHERE
+  preview IS NOT NULL;
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 
@@ -143,13 +154,3 @@ WHERE
 CREATE INDEX file_deletion_queue_pending_idx ON file_deletion_queue (created_by)
 WHERE
   error IS NULL;
-
--- Per-file derived data such as preview blob hashes.
-CREATE TABLE file_metadata (
-  file_id UUID PRIMARY KEY NOT NULL REFERENCES files (id) ON DELETE CASCADE,
-  preview TEXT
-);
-
-CREATE INDEX file_metadata_preview_idx ON file_metadata (preview)
-WHERE
-  preview IS NOT NULL;
