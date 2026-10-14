@@ -17,7 +17,6 @@ pub struct ErrorBody {
 #[derive(Debug)]
 pub enum AuthFailure {
     SessionCookieNotFound,
-    CsrfHeaderNotFound,
     SessionNotFound,
     InvalidCredentials,
 }

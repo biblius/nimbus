@@ -158,8 +158,7 @@ fn encode_preview_webp(path: &Path) -> Result<Vec<u8>, AppError> {
 ///
 /// Asks system `ffmpeg` for a single PNG frame from `path`.
 ///
-/// Tries [`VIDEO_SEEK_SECS`] first; if that fails (clip shorter than 1 second),
-/// retries at the start of the file.
+/// Tries seek `1` first; if that fails (clip shorter than 1 second), retries at the start.
 fn encode_video_preview_webp(path: &Path) -> Result<Vec<u8>, AppError> {
     // Prefer a frame one second in so the thumbnail is
     // less likely to be a black/fade-in first frame.

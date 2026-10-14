@@ -232,8 +232,6 @@ export class NimbusClient {
 
       xhr.withCredentials = true;
 
-      xhr.setRequestHeader("X-NIMBUS-CSRF", "1");
-
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
           onProgress?.(event.loaded, event.total);
@@ -295,15 +293,21 @@ export class NimbusClient {
     });
   }
 
+  /** Full-file blob URL (attachment download). */
+  downloadUrl(rootId: string, id: string): string {
+    return `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/download`;
+  }
+
+  /** Range-capable blob URL for streaming media (`<video>` / `<audio>` src). */
+  contentUrl(rootId: string, id: string): string {
+    return `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/chunk`;
+  }
+
   /** Fetch a file's bytes (same auth as download). */
   async content(rootId: string, id: string): Promise<Blob> {
-    const response = await fetch(
-      `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob`,
-      {
-        credentials: "include",
-        headers: { "X-NIMBUS-CSRF": "1" },
-      },
-    );
+    const response = await fetch(this.downloadUrl(rootId, id), {
+      credentials: "include",
+    });
 
     if (!response.ok) {
       let body: ErrorBody | null = null;
@@ -345,13 +349,12 @@ export class NimbusClient {
     URL.revokeObjectURL(url);
   }
 
-  /** Fetch a file's preview image as a blob (requires session + CSRF). */
+  /** Fetch a file's preview image as a blob. */
   async preview(rootId: string, id: string): Promise<Blob> {
     const response = await fetch(
       `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview`,
       {
         credentials: "include",
-        headers: { "X-NIMBUS-CSRF": "1" },
       },
     );
 
@@ -463,12 +466,8 @@ export class NimbusClient {
     path: string,
     init: RequestInit,
   ): AsyncGenerator<DeletionEvent> {
-    const headers = new Headers(init.headers);
-    headers.set("X-NIMBUS-CSRF", "1");
-
     const response = await fetch(`${this.#root}${path}`, {
       ...init,
-      headers,
       credentials: "include",
     });
 
@@ -534,8 +533,6 @@ export class NimbusClient {
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
-
-    headers.set("X-NIMBUS-CSRF", "1");
 
     if (
       init.body &&

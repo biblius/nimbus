@@ -60,6 +60,7 @@ use crate::{
         files::ancestors,
         files::metadata,
         files::download,
+        files::download_chunk,
         files::overwrite,
         files::preview,
         files::delete_file,

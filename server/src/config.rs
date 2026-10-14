@@ -30,10 +30,6 @@ pub struct StartArgs {
     #[arg(long)]
     cookie_name: Option<String>,
 
-    /// Key of the CSRF protection header.
-    #[arg(long)]
-    csrf_header: Option<String>,
-
     /// Domain of the session cookie. Empty keeps the cookie host-only.
     #[arg(long)]
     cookie_domain: Option<String>,
@@ -158,7 +154,6 @@ impl StartArgs {
                 "Authorization",
                 "Content-Type",
                 "Accept",
-                "X-NIMBUS-CSRF",
                 "X-Requested-With",
             ],
         )
@@ -185,7 +180,6 @@ arg!(address, "ADDRESS", default "0.0.0.0:8080".to_string());
 arg!(cookie_name, "COOKIE_NAME", default "nimbus_session".to_string());
 arg!(cookie_domain, "COOKIE_DOMAIN", default String::new());
 arg!(cookie_secure, "COOKIE_SECURE", default true, bool);
-arg!(csrf_header, "CSRF_HEADER", default "X-NIMBUS-CSRF".to_string());
 
 #[cfg(feature = "postgres")]
 arg!(db_url, "DATABASE_URL", panic "Database url not found; Pass --db-url or set DATABASE_URL");
@@ -256,7 +250,6 @@ impl fmt::Display for StartArgs {
         writeln!(f, "cookie_name: {}", self.cookie_name())?;
         writeln!(f, "cookie_domain: {}", show(&self.cookie_domain()))?;
         writeln!(f, "cookie_secure: {}", self.cookie_secure())?;
-        writeln!(f, "csrf_header: {}", self.csrf_header())?;
         #[cfg(debug_assertions)]
         writeln!(f, "db_url: {}", self.db_url())?;
         #[cfg(feature = "valkey")]

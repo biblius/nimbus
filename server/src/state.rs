@@ -1,6 +1,5 @@
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
-use axum::http::HeaderName;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt};
 
@@ -40,7 +39,6 @@ pub struct HttpConfiguration {
     pub cookie_domain: Arc<str>,
     pub cookie_name: Arc<str>,
     pub cookie_secure: bool,
-    pub csrf_header: Arc<HeaderName>,
 }
 
 impl AppState {
@@ -126,10 +124,6 @@ impl AppState {
             cookie_domain: args.cookie_domain().into(),
             cookie_name: args.cookie_name().into(),
             cookie_secure: args.cookie_secure(),
-            csrf_header: Arc::new(
-                HeaderName::from_str(&args.csrf_header())
-                    .expect("invalid header name provider for CSRF header"),
-            ),
         };
 
         let services = ServiceState {
@@ -169,12 +163,10 @@ impl Default for HttpConfiguration {
             cors_headers: Arc::from([
                 String::from("Authorization"),
                 String::from("Content-Type"),
-                String::from("X-NIMBUS-CSRF"),
             ]),
             cookie_domain: "".into(),
             cookie_name: "nimbus_session".into(),
             cookie_secure: false,
-            csrf_header: Arc::new(HeaderName::from_static("X-NIMBUS-CSRF")),
         }
     }
 }

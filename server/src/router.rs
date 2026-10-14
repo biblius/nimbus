@@ -96,7 +96,14 @@ pub fn router(state: AppState) -> Router {
             get(files::ancestors),
         )
         .route("/roots/{root_id}/files/{id}", get(files::metadata))
-        .route("/roots/{root_id}/files/{id}/blob", get(files::download))
+        .route(
+            "/roots/{root_id}/files/{id}/blob/download",
+            get(files::download),
+        )
+        .route(
+            "/roots/{root_id}/files/{id}/blob/chunk",
+            get(files::download_chunk),
+        )
         .route(
             "/roots/{root_id}/files/{id}/overwrite",
             put(files::overwrite).layer(DefaultBodyLimit::max(upload_max)),

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Download, Folder, Trash } from "@lucide/svelte";
-  import { isImageFile, isPreviewable } from "../fileKind";
+  import { hasListThumbnail, isPreviewable } from "../fileKind";
   import { formatBytes, formatDatetime } from "../format";
   import { session } from "../session.svelte";
   import type { FileView } from "../types";
@@ -38,18 +38,18 @@
   const file = $derived(entry.file);
 
   const previewable = $derived(isPreviewable(entry));
-  const imageFile = $derived(isImageFile(entry));
+  const showThumbnail = $derived(hasListThumbnail(entry));
 
   let previewUrl = $state<string | null>(null);
 
   $effect(() => {
     const fileId = entry.file.id;
     const hasPreview = entry.metadata?.preview != null;
-    const isImage = isImageFile(entry);
+    const thumbnailable = hasListThumbnail(entry);
 
     previewUrl = null;
 
-    if (entry.file.kind !== "file" || (!hasPreview && !isImage)) {
+    if (entry.file.kind !== "file" || (!hasPreview && !thumbnailable)) {
       return;
     }
 
@@ -134,7 +134,7 @@
       class="flex min-h-11 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
       onclick={onPreview}
     >
-      {#if imageFile && previewUrl}
+      {#if showThumbnail && previewUrl}
         <img
           src={previewUrl}
           alt=""

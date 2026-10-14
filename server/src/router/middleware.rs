@@ -30,8 +30,8 @@ pub async fn admin_check(request: Request, next: Next) -> Response {
 
 /// Load the session from the session cookie or an `Authorization: Bearer` token.
 ///
-/// Cookie requests require the CSRF header outside of debug builds. Bearer tokens are how
-/// the desktop and mobile clients authenticate across origins.
+/// Bearer tokens are how the desktop and mobile clients authenticate across origins.
+/// Cookie auth relies on `SameSite`.
 pub async fn session_check(
     axum::extract::State(state): axum::extract::State<AppState>,
     mut request: Request,
@@ -58,13 +58,6 @@ pub async fn session_check(
             }
         }
     } else {
-        if !request
-            .headers()
-            .contains_key(&*state.http_config.csrf_header)
-        {
-            return AppError::Auth(AuthFailure::CsrfHeaderNotFound).into_response();
-        }
-
         match CookieJar::from_headers(request.headers()).get(state.http_config.cookie_name.as_ref())
         {
             Some(session_id) => match session_id.value().parse() {

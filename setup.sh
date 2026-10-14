@@ -21,7 +21,6 @@ if [[ " $* " == *" -c "* ]]; then
 	unset REDIS_DB
 	unset RUST_LOG
 	unset ADDRESS
-	unset CSRF_HEADER
 	unset CORS_ALLOWED_ORIGINS
 	unset CORS_ALLOWED_HEADERS
 	unset COOKIE_NAME

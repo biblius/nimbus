@@ -14,8 +14,12 @@ use axum::{
     http::{StatusCode, header},
     response::Response,
 };
+use axum_extra::{TypedHeader, headers::Range};
 use serde::Deserialize;
+use std::io::SeekFrom;
+use std::ops::Bound;
 use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
@@ -358,12 +362,12 @@ pub(crate) async fn overwrite(
 
 #[utoipa::path(
     get,
-    path = "/roots/{root_id}/files/{id}/blob",
+    path = "/roots/{root_id}/files/{id}/blob/download",
     params(
         ("root_id" = Uuid, Path, description = "Root id"),
         ("id" = Uuid, Path, description = "File id")
     ),
-    responses((status = 200, description = "File bytes"))
+    responses((status = 200, description = "Full file bytes"))
 )]
 pub(crate) async fn download(
     State(state): State<AppState>,
@@ -378,12 +382,108 @@ pub(crate) async fn download(
         .header(header::CONTENT_TYPE, mime)
         .header(
             header::CONTENT_DISPOSITION,
-            content_disposition(&entry.name),
+            content_disposition(&entry.name, false),
         )
         .header(header::CONTENT_LENGTH, entry.size_bytes.to_string())
         .body(Body::from_stream(ReaderStream::new(file)))
         .map_err(|error| {
             tracing::error!(%error, "building download response");
+            AppError::Internal
+        })
+}
+
+#[utoipa::path(
+    get,
+    path = "/roots/{root_id}/files/{id}/blob/chunk",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("id" = Uuid, Path, description = "File id")
+    ),
+    responses(
+        (status = 200, description = "Full file bytes (when no Range header)"),
+        (status = 206, description = "Partial content for Range requests"),
+    )
+)]
+pub(crate) async fn download_chunk(
+    State(state): State<AppState>,
+    session: Session,
+    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
+    range: Option<TypedHeader<Range>>,
+) -> Result<Response, AppError> {
+    let (entry, path, mime) = state.services.files.content(&session.user, file_id).await?;
+
+    let mut file = File::open(&path).await?;
+    let total = file.metadata().await?.len();
+
+    // Inline so `<video>` / `<audio>` can play from this URL instead of downloading.
+    let disposition = content_disposition(&entry.name, true);
+
+    // No Range header: stream the whole file and advertise byte ranges for media players.
+    let Some(TypedHeader(range)) = range else {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::CONTENT_TYPE, mime)
+            .header(header::CONTENT_DISPOSITION, &disposition)
+            .header(header::CONTENT_LENGTH, total.to_string())
+            .body(Body::from_stream(ReaderStream::new(file)))
+            .map_err(|error| {
+                tracing::error!(%error, "building chunk download response");
+                AppError::Internal
+            });
+    };
+
+    // Browsers request a single range for video seek/buffer; serve the first satisfiable one.
+    let Some((start_bound, end_bound)) = range.satisfiable_ranges(total).next() else {
+        return Response::builder()
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{total}"))
+            .body(Body::empty())
+            .map_err(|error| {
+                tracing::error!(%error, "building range-not-satisfiable response");
+                AppError::Internal
+            });
+    };
+
+    let start = match start_bound {
+        Bound::Included(value) => value,
+        Bound::Excluded(value) => value.saturating_add(1),
+        Bound::Unbounded => 0,
+    };
+    let end = match end_bound {
+        Bound::Included(value) => value,
+        Bound::Excluded(value) => value.saturating_sub(1),
+        Bound::Unbounded => total.saturating_sub(1),
+    };
+
+    if start > end || start >= total {
+        return Response::builder()
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{total}"))
+            .body(Body::empty())
+            .map_err(|error| {
+                tracing::error!(%error, "building range-not-satisfiable response");
+                AppError::Internal
+            });
+    }
+
+    let len = end - start + 1;
+
+    file.seek(SeekFrom::Start(start)).await?;
+
+    Response::builder()
+        .status(StatusCode::PARTIAL_CONTENT)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::CONTENT_DISPOSITION, &disposition)
+        .header(header::CONTENT_LENGTH, len.to_string())
+        .header(
+            header::CONTENT_RANGE,
+            format!("bytes {start}-{end}/{total}"),
+        )
+        .body(Body::from_stream(ReaderStream::new(file.take(len))))
+        .map_err(|error| {
+            tracing::error!(%error, "building partial chunk response");
             AppError::Internal
         })
 }
@@ -454,7 +554,7 @@ pub(crate) async fn delete_files(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn content_disposition(name: &str) -> String {
+fn content_disposition(name: &str, inline: bool) -> String {
     let fallback: String = name
         .chars()
         .map(|character| {
@@ -469,5 +569,8 @@ fn content_disposition(name: &str) -> String {
             }
         })
         .collect();
-    format!("attachment; filename=\"{fallback}\"")
+
+    let kind = if inline { "inline" } else { "attachment" };
+
+    format!("{kind}; filename=\"{fallback}\"")
 }

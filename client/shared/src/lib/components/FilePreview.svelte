@@ -22,6 +22,7 @@
     fileFamily,
     isImageFile,
     isTextFile,
+    isVideoFile,
     parsePreviewFilter,
     type FileFamily,
     type PreviewFilter,
@@ -31,6 +32,7 @@
   import { cn } from "../utils";
   import ImagePreviewContent from "./preview/ImagePreviewContent.svelte";
   import TextPreviewContent from "./preview/TextPreviewContent.svelte";
+  import VideoPreviewContent from "./preview/VideoPreviewContent.svelte";
 
   let {
     rootId,
@@ -111,6 +113,7 @@
   const hasPrev = $derived(index > 0);
   const hasNext = $derived(index >= 0 && index < files.length - 1);
   const isImage = $derived(current != null && isImageFile(current));
+  const isVideo = $derived(current != null && isVideoFile(current));
   const isText = $derived(current != null && isTextFile(current));
 
   function setFilter(next: PreviewFilter) {
@@ -424,6 +427,12 @@
   >
     {#if current && isImage}
       <ImagePreviewContent
+        {rootId}
+        fileId={current.file.id}
+        name={current.file.name}
+      />
+    {:else if current && isVideo}
+      <VideoPreviewContent
         {rootId}
         fileId={current.file.id}
         name={current.file.name}
