@@ -1,6 +1,6 @@
-export type Theme = "dark" | "light";
+import { kv } from "./storage";
 
-const STORAGE_KEY = "nimbus-theme";
+export type Theme = "dark" | "light";
 
 const themeColor: Record<Theme, string> = {
   dark: "#171717",
@@ -10,11 +10,7 @@ const themeColor: Record<Theme, string> = {
 export const theme = $state<{ mode: Theme }>({ mode: "dark" });
 
 function storedTheme(): Theme {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "light" ? "light" : "dark";
-  } catch {
-    return "dark";
-  }
+  return kv.theme.get() === "light" ? "light" : "dark";
 }
 
 export function applyTheme(mode: Theme) {
@@ -31,10 +27,6 @@ export function initTheme() {
 
 export function toggleTheme() {
   const next: Theme = theme.mode === "dark" ? "light" : "dark";
-  try {
-    localStorage.setItem(STORAGE_KEY, next);
-  } catch {
-    // Preference stays for this page when storage is unavailable.
-  }
+  kv.theme.set(next);
   applyTheme(next);
 }

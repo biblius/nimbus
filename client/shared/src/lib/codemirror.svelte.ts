@@ -1,10 +1,21 @@
 import { EditorView, basicSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
 import type { ViewUpdate } from "@codemirror/view";
+import { vim } from "@replit/codemirror-vim";
+import { kv } from "./storage";
 
 const editableConfig = new Compartment();
 const lineWrapConfig = new Compartment();
+const vimConfig = new Compartment();
 const updateListener = new Compartment();
+
+const vimExtension = vim();
+
+/** Persisted editor prefs (shared across text previews). */
+export const editorPrefs = $state({
+  vim: kv.editorVim.get(),
+  lineWrap: kv.editorWrap.get(),
+});
 
 /** Theme tuned for the Nimbus file preview stage. */
 const nimbusTheme = EditorView.theme(
@@ -12,7 +23,7 @@ const nimbusTheme = EditorView.theme(
     "&": {
       height: "100%",
       fontSize: "0.875rem",
-      backgroundColor: "transparent",
+      backgroundColor: "rgb(24 24 27)",
       color: "rgb(244 244 245)",
     },
     "&.cm-focused": {
@@ -33,12 +44,19 @@ const nimbusTheme = EditorView.theme(
       borderLeftColor: "rgb(244 244 245)",
     },
     ".cm-gutters": {
-      backgroundColor: "transparent",
+      backgroundColor: "rgb(24 24 27)",
       border: "none",
-      color: "rgb(161 161 170)",
+      borderRight: "1px solid rgb(255 255 255 / 0.08)",
+      color: "rgb(113 113 122)",
+      minWidth: "3rem",
+      zIndex: "2",
+    },
+    ".cm-gutter.cm-lineNumbers .cm-gutterElement": {
+      padding: "0 0.75rem 0 0.5rem",
+      minWidth: "2.5rem",
     },
     ".cm-activeLineGutter": {
-      backgroundColor: "transparent",
+      backgroundColor: "rgb(39 39 42)",
       color: "rgb(212 212 216)",
     },
     ".cm-activeLine": {
@@ -59,6 +77,7 @@ export type InitOptions = {
   doc?: string;
   editable?: boolean;
   lineWrap?: boolean;
+  vim?: boolean;
   onUpdate?: (update: ViewUpdate) => void;
 };
 
@@ -66,7 +85,8 @@ export function init({
   parent,
   doc = "",
   editable = false,
-  lineWrap = true,
+  lineWrap = editorPrefs.lineWrap,
+  vim: vimMode = editorPrefs.vim,
   onUpdate,
 }: InitOptions): EditorView {
   return new EditorView({
@@ -74,6 +94,8 @@ export function init({
     state: EditorState.create({
       doc,
       extensions: [
+        // VIM must precede basicSetup so its keymaps win over the browser/defaults.
+        vimConfig.of(vimMode ? [vimExtension] : []),
         basicSetup,
         nimbusTheme,
         editableConfig.of(EditorView.editable.of(editable)),
@@ -111,10 +133,31 @@ export function setEditable(view: EditorView, editable: boolean) {
 }
 
 export function setLineWrap(view: EditorView, lineWrap: boolean) {
+  editorPrefs.lineWrap = lineWrap;
+  kv.editorWrap.set(lineWrap);
+
   view.dispatch({
     effects: lineWrapConfig.reconfigure(
       lineWrap ? [EditorView.lineWrapping] : [],
     ),
+  });
+}
+
+/** Enable/disable VIM on the view. Pass `persist: false` for temporary view-only changes. */
+export function setVim(
+  view: EditorView,
+  enabled: boolean,
+  options: { persist?: boolean } = {},
+) {
+  const persist = options.persist ?? true;
+
+  if (persist) {
+    editorPrefs.vim = enabled;
+    kv.editorVim.set(enabled);
+  }
+
+  view.dispatch({
+    effects: vimConfig.reconfigure(enabled ? [vimExtension] : []),
   });
 }
 

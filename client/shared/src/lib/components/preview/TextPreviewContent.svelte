@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { Check, Pencil, X } from "@lucide/svelte";
+  import { FastForward, Pencil, WrapText } from "@lucide/svelte";
+  import { editorPrefs } from "../../codemirror.svelte";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import type { FileEntry } from "../../types";
+  import { cn } from "../../utils";
   import CodeMirrorEditor from "../CodeMirrorEditor.svelte";
 
   let {
@@ -24,6 +26,12 @@
   let saving = $state(false);
   let loading = $state(true);
   let error = $state("");
+  let editor = $state<{ toggleWrap: () => void; toggleVim: () => void } | null>(
+    null,
+  );
+
+  const chip =
+    "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium tracking-wide transition-colors";
 
   function startEdit() {
     draft = text;
@@ -106,37 +114,75 @@
 
 <div class="flex h-full w-full flex-col gap-3">
   {#if !loading && !error}
-    <div class="flex shrink-0 justify-end gap-2">
-      {#if editing}
+    <header
+      class="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl bg-zinc-900/90 px-3 py-2 ring-1 ring-white/10 backdrop-blur-md"
+    >
+      <div class="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
-          class="flex size-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-white/18 disabled:opacity-50"
-          aria-label="Save"
-          disabled={saving}
-          onclick={save}
+          class={cn(
+            chip,
+            editorPrefs.lineWrap
+              ? "bg-white/15 text-white"
+              : "text-white/55 hover:bg-white/10 hover:text-white",
+          )}
+          aria-pressed={editorPrefs.lineWrap}
+          aria-label="Toggle line wrapping"
+          onclick={() => editor?.toggleWrap()}
         >
-          <Check size={18} strokeWidth={2} />
+          <WrapText size={14} strokeWidth={2} />
+          Wrap
         </button>
-        <button
-          type="button"
-          class="flex size-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-white/18 disabled:opacity-50"
-          aria-label="Cancel"
-          disabled={saving}
-          onclick={cancelEdit}
-        >
-          <X size={18} strokeWidth={2} />
-        </button>
-      {:else}
-        <button
-          type="button"
-          class="flex size-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-white/18"
-          aria-label="Edit"
-          onclick={startEdit}
-        >
-          <Pencil size={18} strokeWidth={2} />
-        </button>
-      {/if}
-    </div>
+
+        {#if editing}
+          <button
+            type="button"
+            class={cn(
+              chip,
+              editorPrefs.vim
+                ? "bg-white/15 text-white"
+                : "text-white/55 hover:bg-white/10 hover:text-white",
+            )}
+            aria-pressed={editorPrefs.vim}
+            aria-label="Toggle VIM mode"
+            onclick={() => editor?.toggleVim()}
+          >
+            <FastForward size={14} strokeWidth={2} />
+            VIM
+          </button>
+        {/if}
+      </div>
+
+      <div class="flex items-center gap-2">
+        {#if editing}
+          <button
+            type="button"
+            class="h-8 rounded-md px-3 text-xs font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+            disabled={saving}
+            onclick={cancelEdit}
+          >
+            Discard
+          </button>
+          <button
+            type="button"
+            class="h-8 rounded-md bg-[#0082c9] px-3.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#0090de] disabled:opacity-50"
+            disabled={saving}
+            onclick={save}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="inline-flex h-8 items-center gap-1.5 rounded-md bg-white/10 px-3 text-xs font-medium text-white transition-colors hover:bg-white/16"
+            onclick={startEdit}
+          >
+            <Pencil size={14} strokeWidth={2} />
+            Edit
+          </button>
+        {/if}
+      </div>
+    </header>
   {/if}
 
   {#if loading}
@@ -148,6 +194,7 @@
     <p class="m-auto text-sm text-red-300">{error}</p>
   {:else}
     <CodeMirrorEditor
+      bind:this={editor}
       bind:value={draft}
       editable={editing}
       aria-label={editing ? `Edit ${name}` : name}

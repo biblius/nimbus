@@ -61,9 +61,21 @@
     const list = files;
     const blockNav = editing;
 
-    dialog?.focus();
+    // Don't steal focus from CodeMirror while editing (breaks VIM input).
+    if (!blockNav) {
+      dialog?.focus();
+    }
 
     const onKeydown = (event: KeyboardEvent) => {
+      const inEditor =
+        event.target instanceof Element &&
+        event.target.closest(".cm-editor") != null;
+
+      // While the caret is in the editor, leave keys to CodeMirror / VIM.
+      if (blockNav && inEditor) {
+        return;
+      }
+
       if (event.key === "Escape") {
         if (blockNav) {
           event.preventDefault();
