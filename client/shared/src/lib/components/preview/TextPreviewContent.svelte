@@ -3,6 +3,7 @@
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import type { FileEntry } from "../../types";
+  import CodeMirrorEditor from "../CodeMirrorEditor.svelte";
 
   let {
     rootId,
@@ -145,15 +146,11 @@
     ></div>
   {:else if error}
     <p class="m-auto text-sm text-red-300">{error}</p>
-  {:else if editing}
-    <textarea
-      class="min-h-0 w-full flex-1 resize-none rounded-xl bg-zinc-900/80 px-5 py-4 font-mono text-sm leading-relaxed text-zinc-100 shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)] ring-1 ring-white/10 outline-none focus:ring-white/25"
-      bind:value={draft}
-      spellcheck="false"
-      aria-label="Edit {name}"
-    ></textarea>
   {:else}
-    <pre
-      class="min-h-0 w-full flex-1 overflow-auto rounded-xl bg-zinc-900/80 px-5 py-4 font-mono text-sm leading-relaxed whitespace-pre-wrap text-zinc-100 shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)] ring-1 ring-white/10">{text}</pre>
+    <CodeMirrorEditor
+      bind:value={draft}
+      editable={editing}
+      aria-label={editing ? `Edit ${name}` : name}
+    />
   {/if}
 </div>

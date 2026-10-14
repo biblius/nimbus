@@ -95,6 +95,7 @@ pub async fn connect(url: &str) -> Result<DbPool, AppError> {
 /// Retry while infrastructure is still starting.
 pub async fn connect_with_retry(url: &str) -> DbPool {
     let mut last = None;
+
     for attempt in 1..=30 {
         match connect(url).await {
             Ok(pool) => return pool,
@@ -138,6 +139,7 @@ fn ensure_sqlite_parent(url: &str) {
         .split('?')
         .next()
         .unwrap_or("");
+
     if let Some(parent) = std::path::Path::new(path).parent()
         && !parent.as_os_str().is_empty()
     {

@@ -15,6 +15,7 @@
     "@lucide/svelte": "^1.53.0",
     "@zerodevx/svelte-toast": "^0.9.6",
     "clsx": "^2.1.1",
+    "codemirror": "^6.0.2",
     "sv-router": "^0.19.0",
     "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^1.0.0"
