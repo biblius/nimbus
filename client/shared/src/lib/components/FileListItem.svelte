@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { Download, File as FileIcon, Folder, Trash } from "@lucide/svelte";
+  import { Download, Folder, Trash } from "@lucide/svelte";
   import { isImageFile, isPreviewable } from "../fileKind";
   import { formatBytes, formatDatetime } from "../format";
   import { session } from "../session.svelte";
   import type { FileView } from "../types";
   import { cn } from "../utils";
   import Button from "./ui/button/button.svelte";
+  import FileTypeIcon from "./FileTypeIcon.svelte";
 
   const PREVIEW_POLL_MS = 3000;
   const PREVIEW_MAX_ATTEMPTS = 5;
@@ -145,7 +146,7 @@
         <span
           class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
         >
-          <FileIcon size={18} strokeWidth={1.75} />
+          <FileTypeIcon fileType={file.fileType} size={18} />
         </span>
       {/if}
       <span class="truncate font-medium" title={name}>{name}</span>
@@ -157,7 +158,7 @@
       <span
         class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
       >
-        <FileIcon size={18} strokeWidth={1.75} />
+        <FileTypeIcon fileType={file.fileType} size={18} />
       </span>
       <span class="truncate font-medium" title={name}>{name}</span>
     </div>

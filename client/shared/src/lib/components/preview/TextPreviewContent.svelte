@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { FastForward, Pencil, WrapText } from "@lucide/svelte";
+  import { FastForward, Info, Pencil, TextWrap } from "@lucide/svelte";
   import { editorPrefs } from "../../codemirror.svelte";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import type { FileEntry } from "../../types";
   import { cn } from "../../utils";
   import CodeMirrorEditor from "../CodeMirrorEditor.svelte";
+
+  const WQ_HINT_MS = 2500;
 
   let {
     rootId,
@@ -26,9 +28,12 @@
   let saving = $state(false);
   let loading = $state(true);
   let error = $state("");
+  let wqHintFlash = $state(false);
   let editor = $state<{ toggleWrap: () => void; toggleVim: () => void } | null>(
     null,
   );
+
+  let wqHintTimer: ReturnType<typeof setTimeout> | undefined;
 
   const chip =
     "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium tracking-wide transition-colors";
@@ -41,6 +46,26 @@
   function cancelEdit() {
     draft = text;
     editing = false;
+    clearWqHint();
+  }
+
+  function clearWqHint() {
+    wqHintFlash = false;
+    if (wqHintTimer !== undefined) {
+      clearTimeout(wqHintTimer);
+      wqHintTimer = undefined;
+    }
+  }
+
+  function flashWqHint() {
+    wqHintFlash = true;
+    if (wqHintTimer !== undefined) {
+      clearTimeout(wqHintTimer);
+    }
+    wqHintTimer = setTimeout(() => {
+      wqHintFlash = false;
+      wqHintTimer = undefined;
+    }, WQ_HINT_MS);
   }
 
   async function save() {
@@ -84,6 +109,7 @@
     editing = false;
     error = "";
     loading = true;
+    clearWqHint();
 
     let cancelled = false;
 
@@ -108,6 +134,7 @@
 
     return () => {
       cancelled = true;
+      clearWqHint();
     };
   });
 </script>
@@ -130,7 +157,7 @@
           aria-label="Toggle line wrapping"
           onclick={() => editor?.toggleWrap()}
         >
-          <WrapText size={14} strokeWidth={2} />
+          <TextWrap size={14} strokeWidth={2} />
           Wrap
         </button>
 
@@ -155,22 +182,36 @@
 
       <div class="flex items-center gap-2">
         {#if editing}
-          <button
-            type="button"
-            class="h-8 rounded-md px-3 text-xs font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
-            disabled={saving}
-            onclick={cancelEdit}
-          >
-            Discard
-          </button>
-          <button
-            type="button"
-            class="h-8 rounded-md bg-[#0082c9] px-3.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#0090de] disabled:opacity-50"
-            disabled={saving}
-            onclick={save}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
+          {#if editorPrefs.vim}
+            <span
+              class={cn(
+                "inline-flex items-center gap-1.5 font-mono text-xs transition-colors duration-300",
+                wqHintFlash ? "text-white" : "text-white/45",
+              )}
+            >
+              {#if wqHintFlash}
+                <Info size={14} strokeWidth={2} class="shrink-0" />
+              {/if}
+              :wq to save · :q to cancel
+            </span>
+          {:else}
+            <button
+              type="button"
+              class="h-8 rounded-md px-3 text-xs font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+              disabled={saving}
+              onclick={cancelEdit}
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              class="h-8 rounded-md bg-[#0082c9] px-3.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#0090de] disabled:opacity-50"
+              disabled={saving}
+              onclick={save}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          {/if}
         {:else}
           <button
             type="button"
@@ -198,6 +239,9 @@
       bind:value={draft}
       editable={editing}
       aria-label={editing ? `Edit ${name}` : name}
+      onWrite={save}
+      onQuit={cancelEdit}
+      onWriteHint={flashWqHint}
     />
   {/if}
 </div>

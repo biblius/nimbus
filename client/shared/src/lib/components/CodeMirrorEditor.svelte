@@ -8,21 +8,28 @@
     setEditable,
     setLineWrap,
     setVim,
+    setVimExHandlers,
     type InitOptions,
   } from "../codemirror.svelte";
   import { cn } from "../utils";
-  import type { EditorView } from "codemirror";
+  import type { EditorView } from "@codemirror/view";
 
   let {
     value = $bindable(""),
     editable = false,
     class: className = "",
     "aria-label": ariaLabel = "Text editor",
+    onWrite,
+    onQuit,
+    onWriteHint,
   }: {
     value?: string;
     editable?: boolean;
     class?: string;
     "aria-label"?: string;
+    onWrite?: () => void;
+    onQuit?: () => void;
+    onWriteHint?: () => void;
   } = $props();
 
   let host = $state<HTMLDivElement | null>(null);
@@ -64,6 +71,7 @@
     view = init(options);
 
     return () => {
+      setVimExHandlers(null);
       view?.destroy();
       view = null;
     };
@@ -76,7 +84,14 @@
     setEditable(view, editable);
     setVim(view, editable && editorPrefs.vim, { persist: false });
     if (editable) {
+      setVimExHandlers({
+        writeQuit: () => onWrite?.(),
+        quit: () => onQuit?.(),
+        writeHint: () => onWriteHint?.(),
+      });
       view.focus();
+    } else {
+      setVimExHandlers(null);
     }
   });
 

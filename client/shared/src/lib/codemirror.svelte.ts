@@ -1,7 +1,7 @@
 import { EditorView, basicSetup } from "codemirror";
-import { Compartment, EditorState } from "@codemirror/state";
-import type { ViewUpdate } from "@codemirror/view";
-import { vim } from "@replit/codemirror-vim";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { lineNumbers, type ViewUpdate } from "@codemirror/view";
+import { Vim, vim } from "@replit/codemirror-vim";
 import { kv } from "./storage";
 
 const editableConfig = new Compartment();
@@ -10,12 +10,72 @@ const vimConfig = new Compartment();
 const updateListener = new Compartment();
 
 const vimExtension = vim();
+const relativeLines = lineNumbersRelative();
 
 /** Persisted editor prefs (shared across text previews). */
 export const editorPrefs = $state({
   vim: kv.editorVim.get(),
   lineWrap: kv.editorWrap.get(),
 });
+
+type VimExHandlers = {
+  /** `:wq` */
+  writeQuit: () => void;
+  /** `:q` */
+  quit: () => void;
+  /** `:w` alone — nudge toward `:wq` */
+  writeHint: () => void;
+};
+
+let vimExHandlers: VimExHandlers | null = null;
+let vimExRegistered = false;
+
+function ensureVimExCommands() {
+  if (vimExRegistered) {
+    return;
+  }
+  vimExRegistered = true;
+
+  Vim.defineEx("write", "w", () => {
+    vimExHandlers?.writeHint();
+  });
+  Vim.defineEx("quit", "q", () => {
+    vimExHandlers?.quit();
+  });
+  Vim.defineEx("wq", "wq", () => {
+    vimExHandlers?.writeQuit();
+  });
+}
+
+/** Bind Vim ex commands to the active text preview (cleared on unmount). */
+export function setVimExHandlers(handlers: VimExHandlers | null) {
+  ensureVimExCommands();
+  vimExHandlers = handlers;
+}
+
+function vimExt(enabled: boolean): Extension[] {
+  return enabled ? [vimExtension, relativeLines] : [];
+}
+
+/**
+ * Relative gutter for VIM motions (same approach as rquest).
+ * Stacks with `basicSetup` absolute numbers while VIM is on.
+ */
+function lineNumbersRelative(): Extension {
+  return lineNumbers({ formatNumber: relativeLineNumbers });
+}
+
+function relativeLineNumbers(lineNo: number, state: EditorState) {
+  const cursorLine = state.doc.lineAt(
+    state.selection.asSingle().ranges[0].to,
+  ).number;
+
+  if (lineNo === cursorLine) {
+    return lineNo.toString();
+  }
+
+  return Math.abs(cursorLine - lineNo).toString();
+}
 
 /** Theme tuned for the Nimbus file preview stage. */
 const nimbusTheme = EditorView.theme(
@@ -94,15 +154,13 @@ export function init({
     state: EditorState.create({
       doc,
       extensions: [
-        // VIM must precede basicSetup so its keymaps win over the browser/defaults.
-        vimConfig.of(vimMode ? [vimExtension] : []),
+        // VIM (+ relative lines) before basicSetup so keymaps win.
+        vimConfig.of(vimExt(vimMode)),
         basicSetup,
         nimbusTheme,
         editableConfig.of(EditorView.editable.of(editable)),
         lineWrapConfig.of(lineWrap ? [EditorView.lineWrapping] : []),
-        updateListener.of(
-          EditorView.updateListener.of(onUpdate ?? (() => {})),
-        ),
+        updateListener.of(EditorView.updateListener.of(onUpdate ?? (() => {}))),
       ],
     }),
   });
@@ -157,15 +215,6 @@ export function setVim(
   }
 
   view.dispatch({
-    effects: vimConfig.reconfigure(enabled ? [vimExtension] : []),
-  });
-}
-
-export function setUpdateHandler(
-  view: EditorView,
-  fn: (update: ViewUpdate) => void,
-) {
-  view.dispatch({
-    effects: updateListener.reconfigure(EditorView.updateListener.of(fn)),
+    effects: vimConfig.reconfigure(vimExt(enabled)),
   });
 }
