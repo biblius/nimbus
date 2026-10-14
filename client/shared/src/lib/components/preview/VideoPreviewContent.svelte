@@ -37,13 +37,14 @@
     <!-- svelte-ignore a11y_media_has_caption -->
     <video
       src={videoUrl}
+      autoplay
       controls
       playsinline
-      preload="metadata"
+      preload="auto"
       aria-label={name}
       class="max-h-full max-w-full shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)]"
       class:opacity-0={loading}
-      onloadedmetadata={() => {
+      onloadstart={() => {
         loading = false;
       }}
       onerror={() => {

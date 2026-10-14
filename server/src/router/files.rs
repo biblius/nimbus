@@ -413,7 +413,8 @@ pub(crate) async fn download_chunk(
     let (entry, path, mime) = state.services.files.content(&session.user, file_id).await?;
 
     let mut file = File::open(&path).await?;
-    let total = file.metadata().await?.len();
+
+    let file_bytes = file.metadata().await?.len();
 
     // Inline so `<video>` / `<audio>` can play from this URL instead of downloading.
     let disposition = content_disposition(&entry.name, true);
@@ -425,7 +426,7 @@ pub(crate) async fn download_chunk(
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::CONTENT_TYPE, mime)
             .header(header::CONTENT_DISPOSITION, &disposition)
-            .header(header::CONTENT_LENGTH, total.to_string())
+            .header(header::CONTENT_LENGTH, file_bytes.to_string())
             .body(Body::from_stream(ReaderStream::new(file)))
             .map_err(|error| {
                 tracing::error!(%error, "building chunk download response");
@@ -434,10 +435,10 @@ pub(crate) async fn download_chunk(
     };
 
     // Browsers request a single range for video seek/buffer; serve the first satisfiable one.
-    let Some((start_bound, end_bound)) = range.satisfiable_ranges(total).next() else {
+    let Some((start_bound, end_bound)) = range.satisfiable_ranges(file_bytes).next() else {
         return Response::builder()
             .status(StatusCode::RANGE_NOT_SATISFIABLE)
-            .header(header::CONTENT_RANGE, format!("bytes */{total}"))
+            .header(header::CONTENT_RANGE, format!("bytes */{file_bytes}"))
             .body(Body::empty())
             .map_err(|error| {
                 tracing::error!(%error, "building range-not-satisfiable response");
@@ -450,16 +451,17 @@ pub(crate) async fn download_chunk(
         Bound::Excluded(value) => value.saturating_add(1),
         Bound::Unbounded => 0,
     };
+
     let end = match end_bound {
         Bound::Included(value) => value,
         Bound::Excluded(value) => value.saturating_sub(1),
-        Bound::Unbounded => total.saturating_sub(1),
+        Bound::Unbounded => file_bytes.saturating_sub(1),
     };
 
-    if start > end || start >= total {
+    if start > end || start >= file_bytes {
         return Response::builder()
             .status(StatusCode::RANGE_NOT_SATISFIABLE)
-            .header(header::CONTENT_RANGE, format!("bytes */{total}"))
+            .header(header::CONTENT_RANGE, format!("bytes */{file_bytes}"))
             .body(Body::empty())
             .map_err(|error| {
                 tracing::error!(%error, "building range-not-satisfiable response");
@@ -471,6 +473,8 @@ pub(crate) async fn download_chunk(
 
     file.seek(SeekFrom::Start(start)).await?;
 
+    let chunk = file.take(len);
+
     Response::builder()
         .status(StatusCode::PARTIAL_CONTENT)
         .header(header::ACCEPT_RANGES, "bytes")
@@ -479,9 +483,9 @@ pub(crate) async fn download_chunk(
         .header(header::CONTENT_LENGTH, len.to_string())
         .header(
             header::CONTENT_RANGE,
-            format!("bytes {start}-{end}/{total}"),
+            format!("bytes {start}-{end}/{file_bytes}"),
         )
-        .body(Body::from_stream(ReaderStream::new(file.take(len))))
+        .body(Body::from_stream(ReaderStream::new(chunk)))
         .map_err(|error| {
             tracing::error!(%error, "building partial chunk response");
             AppError::Internal
@@ -555,7 +559,7 @@ pub(crate) async fn delete_files(
 }
 
 fn content_disposition(name: &str, inline: bool) -> String {
-    let fallback: String = name
+    let name: String = name
         .chars()
         .map(|character| {
             if character.is_ascii()
@@ -572,5 +576,5 @@ fn content_disposition(name: &str, inline: bool) -> String {
 
     let kind = if inline { "inline" } else { "attachment" };
 
-    format!("{kind}; filename=\"{fallback}\"")
+    format!("{kind}; filename=\"{name}\"")
 }
