@@ -83,6 +83,10 @@ export function isVideoFile(entry: FileView): boolean {
   return entry.file.kind === "file" && fileFamily(entry.file.fileType) === "video";
 }
 
+export function isAudioFile(entry: FileView): boolean {
+  return entry.file.kind === "file" && fileFamily(entry.file.fileType) === "audio";
+}
+
 export function isTextFile(entry: FileView): boolean {
   return entry.file.kind === "file" && fileFamily(entry.file.fileType) === "text";
 }
@@ -105,5 +109,10 @@ export function treeHasThumbnail(
 }
 
 export function isPreviewable(entry: FileView): boolean {
-  return isImageFile(entry) || isVideoFile(entry) || isTextFile(entry);
+  return (
+    isImageFile(entry) ||
+    isVideoFile(entry) ||
+    isAudioFile(entry) ||
+    isTextFile(entry)
+  );
 }

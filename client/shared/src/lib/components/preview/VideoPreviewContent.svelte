@@ -5,10 +5,12 @@
     rootId,
     fileId,
     name,
+    autoplay = true,
   }: {
     rootId: string;
     fileId: string;
     name: string;
+    autoplay?: boolean;
   } = $props();
 
   // Direct chunk URL — browser issues Range requests and streams.
@@ -37,7 +39,7 @@
     <!-- svelte-ignore a11y_media_has_caption -->
     <video
       src={videoUrl}
-      autoplay
+      {autoplay}
       controls
       playsinline
       preload="auto"

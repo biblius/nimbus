@@ -64,4 +64,5 @@ export const kv = {
   editorVim: boolEntry("nimbus-editor-vim", false),
   editorWrap: boolEntry("nimbus-editor-wrap", true),
   previewFilter: stringEntry("nimbus-preview-filter", "all"),
+  previewAutoplay: boolEntry("nimbus-preview-autoplay", true),
 } as const;
