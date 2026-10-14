@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronRight, Folder, RotateCcw } from "@lucide/svelte";
+  import { ChevronRight, Folder, RotateCcw, Trash } from "@lucide/svelte";
   import { treeHasThumbnail } from "../fileKind";
   import { session } from "../session.svelte";
   import type { FileTree, Root } from "../types";
@@ -14,6 +14,7 @@
     expanded,
     onToggle,
     onRestore,
+    onDelete,
   }: {
     root: Root;
     node: FileTree;
@@ -21,6 +22,7 @@
     expanded: boolean;
     onToggle: () => void;
     onRestore: () => void;
+    onDelete: () => void;
   } = $props();
 
   const hasChildren = $derived(node.children.length > 0);
@@ -124,15 +126,27 @@
     </div>
   </div>
 
-  <Button
-    type="button"
-    variant="ghost"
-    size="sm"
-    class="text-muted-foreground"
-    aria-label="Restore {node.name}"
-    onclick={onRestore}
-  >
-    <RotateCcw size={16} />
-    Restore
-  </Button>
+  <div class="flex items-center">
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      class="text-muted-foreground"
+      aria-label="Restore {node.name}"
+      onclick={onRestore}
+    >
+      <RotateCcw size={16} />
+      Restore
+    </Button>
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      class="size-8 px-0 text-muted-foreground hover:text-destructive"
+      aria-label="Permanently delete {node.name}"
+      onclick={onDelete}
+    >
+      <Trash size={16} />
+    </Button>
+  </div>
 </div>

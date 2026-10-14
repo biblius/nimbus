@@ -1,12 +1,15 @@
 <script lang="ts">
   import { ChevronRight } from "@lucide/svelte";
   import { onMount } from "svelte";
+  import { trackDeletion } from "../deletion.svelte";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
   import type { FileTree, Root } from "../types";
   import { cn } from "../utils";
+  import DeletionBanner from "./DeletionBanner.svelte";
   import FolderPicker from "./FolderPicker.svelte";
   import TrashTreeItem from "./TrashTreeItem.svelte";
+  import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
 
   let { roots }: { roots: Root[] } = $props();
 
@@ -17,6 +20,14 @@
 
   let picker = $state<{ root: Root; node: FileTree } | null>(null);
   let selectedTree = $state<FileTree | null>(null);
+  let deleteTarget = $state<{ root: Root; node: FileTree } | null>(null);
+  let deleting = $state(false);
+
+  const deleteDescription = $derived(
+    deleteTarget?.node.kind === "directory"
+      ? "This folder and everything inside it will be permanently deleted. This cannot be undone."
+      : "This file will be permanently deleted. This cannot be undone.",
+  );
 
   onMount(() => {
     const owned = roots.find((root) => root.owner === session.user?.id);
@@ -91,6 +102,26 @@
     closePicker();
     await reload(rootId);
   }
+
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) {
+      return;
+    }
+
+    const { root, node } = deleteTarget;
+
+    deleting = true;
+
+    try {
+      deleteTarget = null;
+      await trackDeletion(session.client.deleteTrash(root.id, node.id));
+      await reload(root.id);
+    } catch {
+      toastError("Could not permanently delete this item");
+    } finally {
+      deleting = false;
+    }
+  }
 </script>
 
 {#snippet rows(root: Root, nodes: FileTree[], depth: number)}
@@ -104,6 +135,7 @@
           expanded={!!expanded[node.id]}
           onToggle={() => toggleNode(node.id)}
           onRestore={() => openPicker(root, node)}
+          onDelete={() => (deleteTarget = { root, node })}
         />
         {#if expanded[node.id] && node.children.length > 0}
           <div class="border-t">
@@ -183,3 +215,19 @@
     onConfirm={confirmPlace}
   />
 {/if}
+
+<ConfirmDialog
+  open={deleteTarget !== null}
+  title={deleteTarget ? `Permanently delete ${deleteTarget.node.name}?` : ""}
+  description={deleteDescription}
+  confirmLabel="Delete permanently"
+  busy={deleting}
+  onCancel={() => {
+    if (!deleting) {
+      deleteTarget = null;
+    }
+  }}
+  onConfirm={confirmDelete}
+/>
+
+<DeletionBanner />

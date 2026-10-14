@@ -67,6 +67,7 @@ use crate::{
         files::delete_files,
         files::tree,
         files::trash,
+        files::delete_trash,
         files::restore_file,
     ),
     components(schemas(

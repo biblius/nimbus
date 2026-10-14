@@ -218,10 +218,10 @@ impl UserService {
         let rx = DeletionQueue::submit(
             handle,
             request_id,
-            Cleanup::User {
+            Some(Cleanup::User {
                 user_id: user.id,
                 root_id: private_root.id,
-            },
+            }),
         )
         .await?;
 
@@ -411,7 +411,8 @@ impl UserService {
             .await?;
 
         let rx =
-            DeletionQueue::submit(handle, request_id, Cleanup::Root { root_id: root.id }).await?;
+            DeletionQueue::submit(handle, request_id, Some(Cleanup::Root { root_id: root.id }))
+                .await?;
 
         Ok(rx)
     }

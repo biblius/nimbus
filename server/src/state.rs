@@ -104,6 +104,7 @@ impl AppState {
             repository.folders.clone(),
             storage.clone(),
             processing,
+            repository.deletions.clone(),
             transactor,
         );
 

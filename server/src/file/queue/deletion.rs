@@ -35,7 +35,7 @@ pub struct DeletionRequest {
     /// Response handle.
     results: mpsc::Sender<DeletionResult>,
 
-    cleanup: Cleanup,
+    cleanup: Option<Cleanup>,
 }
 
 pub type DeletionQueueHandle = mpsc::Sender<DeletionRequest>;
@@ -82,7 +82,7 @@ impl DeletionQueue {
     pub async fn submit(
         handle: DeletionQueueHandle,
         request_id: Uuid,
-        cleanup: Cleanup,
+        cleanup: Option<Cleanup>,
     ) -> Result<mpsc::Receiver<DeletionResult>, AppError> {
         let (results, incoming) = mpsc::channel(64);
 
@@ -118,7 +118,7 @@ impl DeletionQueue {
 
                         self.listeners.insert(request_id, results);
 
-                        if let Err(e) = self.delete_files(Some(request_id), Some(cleanup)).await {
+                        if let Err(e) = self.delete_files(Some(request_id), cleanup).await {
                             tracing::error!(error=%e, "error processing request");
                         };
 

@@ -1,11 +1,14 @@
 use super::{
     model::{CreateDirectory, FileEntry, FileKind, FileView},
-    queue::{ProcessingQueue, ProcessingQueueHandle},
+    queue::{
+        DeletionQueue, DeletionQueueHandle, DeletionResult, ProcessingQueue, ProcessingQueueHandle,
+    },
     storage::{Storage, TempFile, UploadWriter},
 };
 use crate::{
     db::{
-        files::{FileRepository, NewFile},
+        deletion::DeletionRepository,
+        files::{FileRepository, FileTable, NewFile},
         tx::Transactor,
         user_folders::UserFolderRepository,
     },
@@ -18,6 +21,7 @@ use crate::{
     user::model::{Role, User},
 };
 use std::{collections::HashSet, path::PathBuf};
+use tokio::sync::mpsc;
 use tracing::instrument;
 use uuid::Uuid;
 use validify::{Validate, Validify};
@@ -28,6 +32,7 @@ pub struct FileService {
     folders: UserFolderRepository,
     storage: Storage,
     processing: ProcessingQueueHandle,
+    deletions: DeletionRepository,
     tx: Transactor,
 }
 
@@ -37,6 +42,7 @@ impl FileService {
         folders: UserFolderRepository,
         storage: Storage,
         processing: ProcessingQueueHandle,
+        deletions: DeletionRepository,
         tx: Transactor,
     ) -> Self {
         Self {
@@ -44,6 +50,7 @@ impl FileService {
             folders,
             storage,
             processing,
+            deletions,
             tx,
         }
     }
@@ -409,6 +416,34 @@ impl FileService {
         }
 
         self.files.trash(root_id, user.id, &input.ids).await
+    }
+
+    /// Permanently delete one trashed item and its descendants.
+    #[instrument(skip(self, user, handle), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
+    pub async fn delete_trash(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        id: Uuid,
+        handle: DeletionQueueHandle,
+    ) -> Result<mpsc::Receiver<DeletionResult>, AppError> {
+        self.ensure_root_access(user, root_id).await?;
+
+        let file = self
+            .files
+            .get_trashed(id)
+            .await?
+            .filter(|file| file.root_id == root_id)
+            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
+
+        let files = self.files.list_trashed_tree_ids(root_id, file.id).await?;
+        let request_id = Uuid::new_v4();
+
+        self.deletions
+            .enqueue(request_id, &user.id.to_string(), FileTable::Trashed, &files)
+            .await?;
+
+        DeletionQueue::submit(handle, request_id, None).await
     }
 
     /// Move a trashed item and its descendants back into `files` under `input.parent`.

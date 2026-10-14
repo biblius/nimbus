@@ -223,6 +223,7 @@ async fn build_services(
         repository.folders.clone(),
         storage.clone(),
         processing,
+        repository.deletions.clone(),
         Transactor::new(pool),
     );
     files.prepare().await.unwrap();

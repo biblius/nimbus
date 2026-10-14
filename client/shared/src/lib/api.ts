@@ -286,6 +286,13 @@ export class NimbusClient {
     );
   }
 
+  deleteTrash(rootId: string, id: string): AsyncGenerator<DeletionEvent> {
+    return this.events(
+      `/roots/${encodeURIComponent(rootId)}/trash/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  }
+
   trash(rootId: string, ids: string[]): Promise<void> {
     return this.request<void>(`/roots/${encodeURIComponent(rootId)}/files`, {
       method: "DELETE",

@@ -192,6 +192,77 @@ mod deletion {
         );
     }
 
+    #[test]
+    async fn deleting_one_trash_tree_streams_results_and_keeps_other_trash(state: TestState) {
+        let _ada = user(state, "ada-del-trash-tree").await;
+        let session = test::login(state, "ada-del-trash-tree", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let directory = state
+            .services
+            .files
+            .create_directory(
+                &session.user,
+                root,
+                CreateDirectory {
+                    parent: None,
+                    name: "old".into(),
+                },
+            )
+            .await
+            .unwrap();
+        let child = upload_in(
+            state,
+            &session.user,
+            root,
+            Some(directory.id),
+            "child.txt",
+            b"child",
+        )
+        .await;
+        let kept = test::upload(state, &session.user, root, "kept.txt", b"kept").await;
+
+        state
+            .services
+            .files
+            .delete_many(
+                &session.user,
+                root,
+                TrashFiles {
+                    ids: vec![directory.id, kept.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        let rx = state
+            .services
+            .files
+            .delete_trash(&session.user, root, directory.id, state.queue.clone())
+            .await
+            .unwrap();
+        let results = state.await_deletion(rx).await;
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|result| result.success));
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id = ANY($1)",
+                &[directory.id, child.id]
+            ),
+            0
+        );
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
+                kept.id
+            ),
+            1
+        );
+    }
+
     fn png_bytes() -> Vec<u8> {
         let img = image::RgbImage::from_fn(32, 32, |_, _| image::Rgb([40, 120, 200]));
         let mut buf = Vec::new();
@@ -535,10 +606,10 @@ mod deletion {
         let rx = DeletionQueue::submit(
             state.queue.clone(),
             request_id,
-            Cleanup::User {
+            Some(Cleanup::User {
                 user_id: ada.id,
                 root_id: root,
-            },
+            }),
         )
         .await
         .unwrap();

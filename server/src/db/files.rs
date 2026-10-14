@@ -1134,6 +1134,39 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
+    /// A trashed row and every descendant still attached below it.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_trashed_tree_ids(
+        &self,
+        root_id: Uuid,
+        id: Uuid,
+    ) -> Result<Vec<FileRef>, AppError> {
+        sqlx::query_as!(
+            FileRef,
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT id
+                FROM trashed_files
+                WHERE id = $1
+                  AND root_id = $2
+
+                UNION ALL
+
+                SELECT child.id
+                FROM trashed_files child
+                JOIN tree parent ON child.parent = parent.id
+            )
+            SELECT id AS "id!"
+            FROM tree
+            "#,
+            id,
+            root_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
     /// Trashed rows past `cutoff`.
     #[instrument(skip(self), err(Debug))]
     pub async fn list_expired_trash(

@@ -3,8 +3,10 @@ use crate::{
     error::AppError,
     file::{
         model::{CreateDirectory, FileEntry, FileView, RestoreFile, RootView, TrashFiles},
+        queue::DeletionResult,
         tree::FileTree,
     },
+    router::sse,
     state::AppState,
 };
 use axum::{
@@ -12,10 +14,12 @@ use axum::{
     body::Body,
     extract::{Multipart, Path, Query, State},
     http::{StatusCode, header},
-    response::Response,
+    response::{Response, Sse, sse::Event},
 };
 use axum_extra::{TypedHeader, headers::Range};
+use futures::Stream;
 use serde::Deserialize;
+use std::convert::Infallible;
 use std::io::SeekFrom;
 use std::ops::Bound;
 use tokio::fs::File;
@@ -108,6 +112,38 @@ pub(crate) async fn trash(
             .get_trash_tree(&session.user, root_id)
             .await?,
     ))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/roots/{root_id}/trash/{id}",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("id" = Uuid, Path, description = "Trashed file id")
+    ),
+    responses((status = 200, description = "Deletion progress", body = DeletionResult))
+)]
+pub(crate) async fn delete_trash(
+    Path((root_id, id)): Path<(Uuid, Uuid)>,
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>> + Send>, AppError> {
+    let rx = state
+        .services
+        .files
+        .delete_trash(&session.user, root_id, id, state.queue)
+        .await?;
+
+    Ok(sse(rx, |result| {
+        tracing::debug!(?result, "sending SSE event");
+        match Event::default().json_data(result) {
+            Ok(event) => event,
+            Err(error) => {
+                tracing::error!(%error, "error serializing SSE event");
+                Event::default().data(format!("{error}").replace('\n', " "))
+            }
+        }
+    }))
 }
 
 #[utoipa::path(
