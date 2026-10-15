@@ -97,6 +97,10 @@ pub fn router(state: AppState) -> Router {
             post(files::upload).layer(DefaultBodyLimit::max(upload_max)),
         )
         .route(
+            "/roots/{root_id}/upload/dir",
+            post(files::upload_dir).layer(DefaultBodyLimit::max(upload_max)),
+        )
+        .route(
             "/roots/{root_id}/directories",
             post(files::create_directory),
         )

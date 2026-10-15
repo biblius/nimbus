@@ -30,6 +30,7 @@ mod moving {
                 CreateDirectory {
                     parent: None,
                     name: "archive".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -44,6 +45,7 @@ mod moving {
                 CreateDirectory {
                     parent: None,
                     name: "photos".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -118,6 +120,7 @@ mod moving {
                 CreateDirectory {
                     parent: None,
                     name: "box".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -169,6 +172,7 @@ mod moving {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -182,6 +186,7 @@ mod moving {
                 CreateDirectory {
                     parent: Some(folder.id),
                     name: "nested".into(),
+                    ..Default::default()
                 },
             )
             .await

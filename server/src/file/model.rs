@@ -192,12 +192,33 @@ pub struct CopyFile {
 
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 pub struct CreateDirectory {
-    pub parent: Option<Uuid>,
+    /// Used internally, clients do not send this.
+    #[serde(skip)]
+    #[serde(default = "Uuid::new_v4")]
+    pub id: Uuid,
 
     #[modify(trim)]
     #[validate(length(min = 1, message = "Directory name cannot be empty"))]
     #[validate(length(max = 255, message = "Directory name too long"))]
     pub name: String,
+
+    pub parent: Option<Uuid>,
+}
+
+impl CreateDirectory {
+    pub fn new(id: Uuid, name: String, parent: Option<Uuid>) -> Self {
+        Self { id, parent, name }
+    }
+}
+
+impl Default for CreateDirectory {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name: String::new(),
+            parent: None,
+        }
+    }
 }
 
 pub struct FileContentPreview {

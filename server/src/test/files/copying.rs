@@ -104,6 +104,7 @@ mod copying {
                 CreateDirectory {
                     parent: None,
                     name: "photos".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -173,6 +174,7 @@ mod copying {
                 CreateDirectory {
                     parent: None,
                     name: "archive".into(),
+                    ..Default::default()
                 },
             )
             .await

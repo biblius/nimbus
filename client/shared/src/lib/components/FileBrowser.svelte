@@ -3,7 +3,9 @@
     ArrowDown,
     ArrowUp,
     Check,
+    ChevronDown,
     ChevronRight,
+    File as FileIcon,
     Folder,
     FolderPlus,
     Trash,
@@ -26,6 +28,7 @@
     type FileView,
     type Root,
   } from "../types";
+  import { kv } from "../storage";
   import { cn } from "../utils";
   import { isPreviewable } from "../fileKind";
   import FileListItem from "./FileListItem.svelte";
@@ -84,6 +87,11 @@
   type SortColumn = "kind" | "name" | "size" | "created";
   type SortDirection = "asc" | "desc";
 
+  const DEFAULT_SORT: { column: SortColumn; direction: SortDirection } = {
+    column: "kind",
+    direction: "asc",
+  };
+
   const columns =
     "grid grid-cols-[minmax(0,1fr)_7.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_7.5rem] @2xl:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_7.5rem]";
 
@@ -103,9 +111,10 @@
   let copyTree = $state<FileTree | null>(null);
 
   const previewEntries = $derived(entries.filter(isPreviewable));
+  const storedSort = kv.filesSort.get();
   let sort = $state<{ column: SortColumn; direction: SortDirection }>({
-    column: "kind",
-    direction: "asc",
+    column: storedSort.column as SortColumn,
+    direction: storedSort.direction,
   });
 
   const occurences = $derived.by(() => {
@@ -143,9 +152,13 @@
   /// Queued and in-flight uploads. Aborting one cancels that file only.
   const uploadControllers = new Map<number, AbortController>();
 
+  let uploadMenuOpen = $state(false);
+  let uploadMenu = $state<HTMLDivElement | undefined>();
+
   let ancestors = $state<Crumb[]>([]);
 
   let fileInput = $state<HTMLInputElement | undefined>();
+  let folderInput = $state<HTMLInputElement | undefined>();
 
   let scroller = $state<HTMLDivElement | undefined>();
 
@@ -307,9 +320,10 @@
     } else if (sort.direction === "asc") {
       sort = { column, direction: "desc" };
     } else {
-      sort = { column: "kind", direction: "asc" };
+      sort = { ...DEFAULT_SORT };
     }
 
+    kv.filesSort.set(sort);
     order();
   }
 
@@ -409,6 +423,29 @@
     showDirectory(parent);
   }
 
+  function closeUploadMenu() {
+    uploadMenuOpen = false;
+  }
+
+  function uploadFailure(item: PendingUpload, cause: unknown) {
+    uploadControllers.delete(item.id);
+
+    if (cause instanceof DOMException && cause.name === "AbortError") {
+      removeUpload(item.id);
+      return;
+    }
+
+    if (cause instanceof TypeError) {
+      item.error = "The server could not be reached";
+    } else if (cause instanceof ApiError && cause.status === 413) {
+      item.error = "Not enough space";
+    } else if (cause instanceof ApiError && cause.status === 403) {
+      item.error = "You cannot upload here";
+    } else {
+      item.error = "Upload failed";
+    }
+  }
+
   async function upload(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
 
@@ -478,28 +515,75 @@
               insertEntry(created);
             }
           } catch (cause) {
-            uploadControllers.delete(item.id);
-
-            if (cause instanceof DOMException && cause.name === "AbortError") {
-              removeUpload(item.id);
-              continue;
-            }
-
-            if (cause instanceof TypeError) {
-              item.error = "The server could not be reached";
-            } else if (cause instanceof ApiError && cause.status === 413) {
-              item.error = "Not enough space";
-            } else if (cause instanceof ApiError && cause.status === 403) {
-              item.error = "You cannot upload here";
-            } else {
-              item.error = "Upload failed";
-            }
+            uploadFailure(item, cause);
           }
         }
       },
     );
 
     await Promise.all(workers);
+  }
+
+  async function uploadFolder(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+
+    const files: File[] = [];
+
+    if (input.files) {
+      for (const file of input.files) {
+        files.push(file);
+      }
+    }
+
+    input.value = "";
+
+    if (files.length === 0) {
+      return;
+    }
+
+    const rootId = root.id;
+    const parent = location.id;
+    const id = nextUploadId++;
+    const controller = new AbortController();
+
+    uploadControllers.set(id, controller);
+
+    const folderName =
+      files[0]?.webkitRelativePath.split("/")[0] || files[0]?.name || "Folder";
+    const total = files.reduce((sum, file) => sum + file.size, 0);
+
+    pending.push({
+      id,
+      name: folderName,
+      loaded: 0,
+      total,
+      error: "",
+    });
+
+    const item = pending[pending.length - 1];
+
+    try {
+      const created = await session.client.uploadDir(
+        rootId,
+        parent,
+        files,
+        (loaded, totalBytes) => {
+          item.loaded = loaded;
+          item.total = totalBytes;
+        },
+        controller.signal,
+      );
+
+      removeUpload(item.id);
+
+      if (root.id === rootId && location.id === parent) {
+        for (const entry of created) {
+          insertEntry(entry);
+        }
+      }
+    } catch (cause) {
+      uploadFailure(item, cause);
+    }
   }
 
   function removeUpload(id: number) {
@@ -950,7 +1034,23 @@
   }
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window
+  onclick={(event) => {
+    if (!uploadMenuOpen || !uploadMenu) {
+      return;
+    }
+    if (!uploadMenu.contains(event.target as Node)) {
+      closeUploadMenu();
+    }
+  }}
+  onkeydown={(event) => {
+    if (event.key === "Escape" && uploadMenuOpen) {
+      closeUploadMenu();
+      return;
+    }
+    onWindowKeydown(event);
+  }}
+/>
 
 <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
   <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
@@ -999,16 +1099,73 @@
         aria-hidden="true"
         onchange={upload}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        aria-label="Upload"
-        onclick={() => fileInput?.click()}
-      >
-        <Upload size={15} />
-        <span class="hidden sm:inline">Upload</span>
-      </Button>
+      <input
+        bind:this={folderInput}
+        type="file"
+        class="sr-only"
+        multiple
+        webkitdirectory
+        tabindex={-1}
+        aria-hidden="true"
+        onchange={uploadFolder}
+      />
+      <div class="relative" bind:this={uploadMenu}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label="Upload"
+          aria-haspopup="menu"
+          aria-expanded={uploadMenuOpen}
+          onclick={(event) => {
+            event.stopPropagation();
+            uploadMenuOpen = !uploadMenuOpen;
+          }}
+        >
+          <Upload size={15} />
+          <span class="hidden sm:inline">Upload</span>
+          <ChevronDown
+            size={14}
+            class="text-muted-foreground transition-transform {uploadMenuOpen
+              ? 'rotate-180'
+              : ''}"
+          />
+        </Button>
+
+        {#if uploadMenuOpen}
+          <div
+            role="menu"
+            class="absolute top-full right-0 z-50 mt-1.5 w-40 overflow-hidden rounded-xl border bg-card shadow-lg"
+          >
+            <div class="p-1">
+              <button
+                type="button"
+                role="menuitem"
+                class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
+                onclick={() => {
+                  closeUploadMenu();
+                  fileInput?.click();
+                }}
+              >
+                <FileIcon size={15} class="shrink-0 text-muted-foreground" />
+                File
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
+                onclick={() => {
+                  closeUploadMenu();
+                  folderInput?.click();
+                }}
+              >
+                <Folder size={15} class="shrink-0 text-muted-foreground" />
+                Folder
+              </button>
+            </div>
+          </div>
+        {/if}
+      </div>
       <Button
         type="button"
         variant="outline"

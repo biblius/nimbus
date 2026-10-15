@@ -264,8 +264,70 @@ export class NimbusClient {
 
     body.set("file", file);
 
-    // fetch has no upload progress events, so this one call uses XMLHttpRequest.
-    return new Promise<FileEntry>((resolve, reject) => {
+    return this.#uploadForm<FileEntry>(
+      `/roots/${encodeURIComponent(rootId)}`,
+      body,
+      onProgress,
+      signal,
+      (payload) => {
+        if (Array.isArray(payload) && payload[0]) {
+          onProgress?.(file.size, file.size);
+          return payload[0] as FileEntry;
+        }
+        return null;
+      },
+    );
+  }
+
+  /**
+   * Upload a directory tree. Each file's `webkitRelativePath` is sent as the
+   * multipart filename so the server can recreate folders.
+   */
+  uploadDir(
+    rootId: string,
+    parent: string | null,
+    files: File[],
+    onProgress?: UploadProgress,
+    signal?: AbortSignal,
+  ): Promise<FileEntry[]> {
+    const body = new FormData();
+
+    if (parent) {
+      body.set("parent", parent);
+    }
+
+    let total = 0;
+
+    for (const file of files) {
+      total += file.size;
+      body.append("file", file, file.webkitRelativePath || file.name);
+    }
+
+    return this.#uploadForm<FileEntry[]>(
+      `/roots/${encodeURIComponent(rootId)}/upload/dir`,
+      body,
+      onProgress,
+      signal,
+      (payload) => {
+        if (Array.isArray(payload)) {
+          onProgress?.(total, total);
+          return payload as FileEntry[];
+        }
+        return null;
+      },
+    );
+  }
+
+  /** Shared XHR upload used by file and directory uploads for progress + abort. */
+  #uploadForm<T>(
+    path: string,
+    body: FormData,
+    onProgress: UploadProgress | undefined,
+    signal: AbortSignal | undefined,
+    parse: (payload: unknown) => T | null,
+  ): Promise<T> {
+    // fetch has no upload progress events, so these calls use XMLHttpRequest.
+    return new Promise<T>((resolve, reject) => {
       if (signal?.aborted) {
         reject(new DOMException("upload aborted", "AbortError"));
         return;
@@ -274,13 +336,13 @@ export class NimbusClient {
       const xhr = new XMLHttpRequest();
       let settled = false;
 
-      const succeed = (entry: FileEntry) => {
+      const succeed = (value: T) => {
         if (settled) {
           return;
         }
         settled = true;
         signal?.removeEventListener("abort", onAbort);
-        resolve(entry);
+        resolve(value);
       };
 
       const fail = (error: unknown) => {
@@ -299,7 +361,7 @@ export class NimbusClient {
 
       signal?.addEventListener("abort", onAbort);
 
-      xhr.open("POST", `${this.#root}/roots/${encodeURIComponent(rootId)}`);
+      xhr.open("POST", `${this.#root}${path}`);
 
       xhr.withCredentials = true;
 
@@ -320,17 +382,15 @@ export class NimbusClient {
           payload = null;
         }
 
-        if (
-          xhr.status >= 200 &&
-          xhr.status < 300 &&
-          Array.isArray(payload) &&
-          payload[0]
-        ) {
-          onProgress?.(file.size, file.size);
-          succeed(payload[0] as FileEntry);
-        } else {
-          fail(parseError(xhr.status, payload));
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const value = parse(payload);
+          if (value !== null) {
+            succeed(value);
+            return;
+          }
         }
+
+        fail(parseError(xhr.status, payload));
       };
 
       xhr.onerror = () => fail(new TypeError("network error"));

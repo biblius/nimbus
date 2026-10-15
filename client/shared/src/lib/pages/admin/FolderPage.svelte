@@ -140,7 +140,7 @@
   }
 </script>
 
-<div class="space-y-3">
+<div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
   <div class="flex h-12 items-center justify-between gap-3 border-b px-1">
     <h2 class="min-w-0 truncate text-sm font-medium">
       {#if folder}

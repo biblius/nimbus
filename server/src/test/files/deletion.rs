@@ -63,6 +63,7 @@ mod deletion {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -207,6 +208,7 @@ mod deletion {
                 CreateDirectory {
                     parent: None,
                     name: "old".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -576,6 +578,7 @@ mod deletion {
                 CreateDirectory {
                     parent: None,
                     name: "parent".into(),
+                    ..Default::default()
                 },
             )
             .await

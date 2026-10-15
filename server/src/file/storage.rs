@@ -29,7 +29,7 @@ pub struct Storage {
 /// Per-file writer for uploads.
 #[derive(Debug)]
 pub struct UploadWriter {
-    /// The initial file name obtained from the client.
+    /// The file name obtained from the client.
     name: String,
 
     /// A handle to the file opened by this writer.
@@ -92,13 +92,13 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn writer(&self, file_name: String) -> Result<UploadWriter, AppError> {
+    pub async fn writer(&self, name: String) -> Result<UploadWriter, AppError> {
         let temp = self.root.join(TMP_DIR).join(Uuid::new_v4().to_string());
 
         let file = File::create(&temp).await?;
 
         Ok(UploadWriter {
-            name: file_name,
+            name,
             file,
             hasher: Sha256::new(),
             size: 0,

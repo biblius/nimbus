@@ -1,50 +1,82 @@
 <script lang="ts">
-  import { Pencil, Trash, UserRound } from "@lucide/svelte";
+  import { ArrowDown, ArrowUp, Pencil, Trash, UserRound } from "@lucide/svelte";
   import { ApiError } from "../../api";
-  import type { UserData, UserView, UserViewFull } from "../../types";
+  import type { UserData, UserViewFull } from "../../types";
   import Button from "../../components/ui/button/button.svelte";
-  import Chevron from "../../components/ui/chevron/chevron.svelte";
   import PaginatedList from "../../components/ui/paginated-list/paginated-list.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
   import UserForm from "../../components/user/UserForm.svelte";
   import { trackDeletion } from "../../deletion.svelte";
+  import { formatDatetime } from "../../format";
   import { logout, session } from "../../session.svelte";
+  import { kv, type StoredSort } from "../../storage";
   import { toastError } from "../../toast";
-  import UserInfo from "../../components/user/UserInfo.svelte";
+  import { cn } from "../../utils";
+
+  type UserSortColumn = "username" | "email" | "createdAt";
 
   const searchColumns = [
     { value: "username", label: "Username" },
     { value: "email", label: "Email" },
   ];
 
-  const sortColumns = [
-    { value: "username", label: "Username" },
-    { value: "email", label: "Email" },
-    { value: "createdAt", label: "Created" },
-    { value: "updatedAt", label: "Updated" },
-  ];
+  const DEFAULT_SORT: StoredSort = {
+    column: "username",
+    direction: "asc",
+  };
 
-  let selectedId = $state<string | null>(null);
-  let editing = $state(false);
+  /** Matches FileBrowser: name grows; meta columns appear at wider container sizes. */
+  const columns = cn(
+    "grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-x-3 px-3",
+    "@md:grid-cols-[minmax(7rem,1.1fr)_minmax(0,1.25fr)_5.5rem]",
+    "@xl:grid-cols-[minmax(7rem,1.1fr)_minmax(0,1.25fr)_4.75rem_4.5rem_minmax(0,10.5rem)_5.5rem]",
+  );
+
+  let sort = $state<StoredSort>(kv.usersSort.get());
   let creating = $state(false);
+  let editingUser = $state<UserViewFull | null>(null);
   let deleteUser = $state<UserViewFull | null>(null);
   let deleting = $state(false);
   let listRevision = $state(0);
 
   function reset() {
-    selectedId = null;
-    editing = false;
     creating = false;
+    editingUser = null;
   }
 
   function reloadList() {
     listRevision += 1;
   }
 
-  function onLoaded(listed: UserViewFull[]) {
-    if (selectedId && !listed.some((user) => user.id === selectedId)) {
-      reset();
+  function startCreate() {
+    editingUser = null;
+    creating = !creating;
+  }
+
+  function startEdit(user: UserViewFull) {
+    creating = false;
+    editingUser = user;
+  }
+
+  function cycleSort(column: UserSortColumn) {
+    if (sort.column !== column) {
+      sort = { column, direction: "asc" };
+    } else if (sort.direction === "asc") {
+      sort = { column, direction: "desc" };
+    } else {
+      sort = { ...DEFAULT_SORT };
     }
+
+    kv.usersSort.set(sort);
+  }
+
+  function ariaSort(
+    column: UserSortColumn,
+  ): "ascending" | "descending" | "none" {
+    if (sort.column !== column) {
+      return "none";
+    }
+    return sort.direction === "asc" ? "ascending" : "descending";
   }
 
   async function createUser(data: UserData) {
@@ -75,8 +107,7 @@
       session.user = { ...session.user!, ...updated };
     }
 
-    editing = false;
-
+    reset();
     reloadList();
   }
 
@@ -112,12 +143,40 @@
     }
     deleting = false;
   }
-
-  const selected = (user: UserView) => selectedId === user.id;
 </script>
 
-<div class="space-y-5">
-  <div class="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
+{#snippet sortHeader(
+  column: UserSortColumn,
+  label: string,
+  cellClass: string,
+)}
+  <div
+    role="columnheader"
+    aria-sort={ariaSort(column)}
+    class={cn("flex h-full min-w-0 items-center", cellClass)}
+  >
+    <button
+      type="button"
+      class={cn(
+        "inline-flex h-full w-full min-w-0 items-center gap-1 hover:text-foreground",
+        sort.column === column && "text-foreground",
+      )}
+      onclick={() => cycleSort(column)}
+    >
+      <span class="truncate">{label}</span>
+      {#if sort.column === column}
+        {#if sort.direction === "asc"}
+          <ArrowUp size={14} class="shrink-0" aria-hidden="true" />
+        {:else}
+          <ArrowDown size={14} class="shrink-0" aria-hidden="true" />
+        {/if}
+      {/if}
+    </button>
+  </div>
+{/snippet}
+
+<div class="flex min-h-0 flex-1 flex-col gap-3">
+  <div class="flex shrink-0 flex-wrap items-end justify-between gap-3 border-b pb-3">
     <div class="min-w-0 space-y-1">
       <h2 class="text-lg font-semibold tracking-tight">Users</h2>
       <p class="text-sm text-muted-foreground">
@@ -129,18 +188,16 @@
       variant={creating ? "outline" : "default"}
       size="sm"
       aria-expanded={creating}
-      onclick={() => {
-        const next = !creating;
-        reset();
-        creating = next;
-      }}
+      onclick={startCreate}
     >
       {creating ? "Cancel" : "Add user"}
     </Button>
   </div>
 
   {#if creating}
-    <div class="rounded-xl border bg-card p-4 sm:p-5">
+    <div
+      class="max-h-[min(50dvh,22rem)] shrink-0 overflow-y-auto rounded-lg border bg-card p-4 sm:p-5"
+    >
       <div class="mx-auto max-w-lg">
         <UserForm
           title="Add user"
@@ -150,19 +207,46 @@
         />
       </div>
     </div>
+  {:else if editingUser}
+    {@const editId = editingUser.id}
+    {#key editId}
+      <div
+        class="max-h-[min(50dvh,22rem)] shrink-0 overflow-y-auto rounded-lg border bg-card p-4 sm:p-5"
+      >
+        <div class="mx-auto max-w-lg">
+          <UserForm
+            user={editingUser}
+            title="Edit user"
+            description="Leave the password blank to keep the current one."
+            save={(data) => updateUser(data, editId)}
+            cancel={reset}
+          />
+        </div>
+      </div>
+    {/key}
   {/if}
 
   <PaginatedList
     load={(query) => session.client.listUsers(query)}
     {searchColumns}
-    {sortColumns}
-    {onLoaded}
+    {sort}
     revision={listRevision}
   >
+    {#snippet listHeader()}
+      <div class="{columns} h-10 text-xs font-medium text-muted-foreground">
+        {@render sortHeader("username", "Username", "")}
+        {@render sortHeader("email", "Email", "hidden @md:flex")}
+        <span class="hidden @xl:block">Role</span>
+        <span class="hidden @xl:block">2FA</span>
+        {@render sortHeader("createdAt", "Created", "hidden @xl:flex")}
+        <span class="sr-only">Actions</span>
+      </div>
+    {/snippet}
+
     {#snippet children(users)}
       {#if users.length === 0}
         <div
-          class="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center"
+          class="flex h-full flex-col items-center justify-center gap-2 px-6 py-16 text-center"
         >
           <UserRound class="size-9 text-muted-foreground opacity-50" />
           <p class="text-sm font-medium">No users match</p>
@@ -171,94 +255,87 @@
           </p>
         </div>
       {:else}
-        <ul>
-          {#each users as user, index (user.id)}
-            <li class={index > 0 ? "border-t" : ""}>
-              <button
-                type="button"
-                class="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors {selected(
-                  user,
-                )
-                  ? 'bg-accent'
-                  : 'hover:bg-accent/50'}"
-                aria-expanded={selected(user)}
-                onclick={() => {
-                  const next = selected(user) ? null : user.id;
-                  reset();
-                  selectedId = next;
-                }}
-              >
-                <span class="min-w-0 flex-1">
-                  <span class="flex min-w-0 items-center gap-2">
-                    <span class="truncate text-sm font-medium"
-                      >{user.username}</span
-                    >
-                    <span
-                      class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize {user.role ===
-                      'admin'
-                        ? 'bg-primary/15 text-primary'
-                        : 'bg-muted text-muted-foreground'}"
-                    >
-                      {user.role}
-                    </span>
-                  </span>
-                  <span
-                    class="mt-0.5 block truncate text-xs text-muted-foreground"
+        <ul class="divide-y">
+          {#each users as user (user.id)}
+            <li class="{columns} min-h-14 py-2 hover:bg-accent/60">
+              <div class="min-w-0">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="truncate text-sm font-medium"
+                    >{user.username}</span
                   >
-                    {user.email ?? "No email"}
+                  <span
+                    class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize @xl:hidden {user.role ===
+                    'admin'
+                      ? 'bg-primary/15 text-primary'
+                      : 'bg-muted text-muted-foreground'}"
+                  >
+                    {user.role}
                   </span>
-                </span>
-                <Chevron expanded={selected(user)} />
-              </button>
-
-              {#if selected(user)}
-                <div class="border-t bg-muted/25 px-3 py-4 sm:px-4">
-                  {#if editing}
-                    <div class="mx-auto max-w-lg">
-                      <UserForm
-                        {user}
-                        title="Edit user"
-                        description="Leave the password blank to keep the current one."
-                        save={(data) => updateUser(data, user.id)}
-                        cancel={() => (editing = false)}
-                      />
-                    </div>
-                  {:else}
-                    <div
-                      class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
-                    >
-                      <div class="min-w-0 flex-1">
-                        <UserInfo {user} />
-                      </div>
-                      <div class="flex shrink-0 gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          aria-label="Edit user"
-                          title="Edit user"
-                          onclick={() => (editing = true)}
-                        >
-                          <Pencil size={15} />
-                          Edit
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          class="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          aria-label="Delete user"
-                          title="Delete user"
-                          onclick={() => (deleteUser = user)}
-                        >
-                          <Trash size={15} />
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  {/if}
                 </div>
-              {/if}
+                <p
+                  class="mt-0.5 truncate text-xs text-muted-foreground @md:hidden"
+                >
+                  {user.email ?? "No email"}
+                </p>
+              </div>
+
+              <span
+                class="hidden min-w-0 truncate text-sm text-muted-foreground @md:block"
+              >
+                {user.email ?? "—"}
+              </span>
+
+              <span class="hidden @xl:block">
+                <span
+                  class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] leading-none font-medium capitalize {user.role ===
+                  'admin'
+                    ? 'bg-primary/15 text-primary'
+                    : 'bg-muted text-muted-foreground'}"
+                >
+                  {user.role}
+                </span>
+              </span>
+
+              <span class="hidden @xl:block">
+                <span
+                  class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] leading-none font-medium {user.otpEnabled
+                    ? 'bg-success/15 text-success'
+                    : 'bg-warning/15 text-warning'}"
+                >
+                  {user.otpEnabled ? "On" : "Off"}
+                </span>
+              </span>
+
+              <span
+                class="hidden min-w-0 truncate text-sm text-muted-foreground @xl:block"
+              >
+                {formatDatetime(user.createdAt)}
+              </span>
+
+              <div class="flex items-center justify-end gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  class="size-8 px-0"
+                  aria-label="Edit {user.username}"
+                  title="Edit"
+                  onclick={() => startEdit(user)}
+                >
+                  <Pencil size={16} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  class="size-8 px-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  aria-label="Delete {user.username}"
+                  title="Delete"
+                  onclick={() => (deleteUser = user)}
+                >
+                  <Trash size={16} />
+                </Button>
+              </div>
             </li>
           {/each}
         </ul>

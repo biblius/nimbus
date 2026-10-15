@@ -74,7 +74,7 @@
   }
 </script>
 
-<div class="space-y-5">
+<div class="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain">
   <div class="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
     <div class="min-w-0 space-y-1">
       <h2 class="text-lg font-semibold tracking-tight">

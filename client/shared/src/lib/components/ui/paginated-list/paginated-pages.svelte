@@ -11,6 +11,7 @@
     sortColumn,
     sortDirection,
     onLoaded: onPageLoad,
+    listHeader,
     children,
   }: {
     load: (query: ListQuery) => Promise<Page<T>>;
@@ -18,6 +19,8 @@
     sortColumn: string;
     sortDirection: "asc" | "desc";
     onLoaded?: (items: T[]) => void;
+    /** Optional column header above the scrollable rows. */
+    listHeader?: Snippet;
     children: Snippet<[T[]]>;
   } = $props();
 
@@ -84,23 +87,11 @@
   });
 </script>
 
-<div class="overflow-hidden rounded-xl border bg-card shadow-sm">
-  <div class="min-h-130">
-    {#if failed}
-      <p class="px-4 py-12 text-center text-sm text-muted-foreground">
-        Could not load this page.
-      </p>
-    {:else if !items}
-      <p class="px-4 py-12 text-center text-sm text-muted-foreground">
-        Loading…
-      </p>
-    {:else}
-      {@render children(items)}
-    {/if}
-  </div>
-
+<div
+  class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card"
+>
   <div
-    class="flex items-center justify-between gap-3 border-t bg-muted/50 px-3 py-2.5"
+    class="flex shrink-0 items-center justify-between gap-3 border-b bg-muted/40 px-3 py-2"
   >
     <p class="text-xs text-muted-foreground tabular-nums sm:text-sm">
       Page {page} of {pages}
@@ -130,5 +121,29 @@
         <ChevronRight size={16} />
       </Button>
     </div>
+  </div>
+
+  {#if items && items.length > 0 && listHeader}
+    <div class="shrink-0 border-b">
+      {@render listHeader()}
+    </div>
+  {/if}
+
+  <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+    {#if failed}
+      <p
+        class="flex h-full items-center justify-center px-4 py-12 text-center text-sm text-muted-foreground"
+      >
+        Could not load this page.
+      </p>
+    {:else if !items}
+      <p
+        class="flex h-full items-center justify-center px-4 py-12 text-center text-sm text-muted-foreground"
+      >
+        Loading…
+      </p>
+    {:else}
+      {@render children(items)}
+    {/if}
   </div>
 </div>

@@ -132,13 +132,6 @@
     <span class="min-w-0 flex-1">
       <span class="flex min-w-0 items-center gap-2">
         <span class="truncate text-sm font-medium">{folder.name}</span>
-        <span
-          class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium {shared
-            ? 'bg-primary/15 text-primary'
-            : 'bg-muted text-muted-foreground'}"
-        >
-          {shared ? "Shared" : "Private"}
-        </span>
       </span>
       <span class="mt-0.5 block truncate text-xs text-muted-foreground">
         {summary()}

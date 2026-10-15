@@ -174,7 +174,6 @@ impl FileService {
         &self,
         user: &User,
         root: Uuid,
-        parent: Option<Uuid>,
         name: String,
     ) -> Result<UploadWriter, AppError> {
         let name = self.writable(user, root, &name).await?;
@@ -229,6 +228,89 @@ impl FileService {
         }
 
         Ok(entry)
+    }
+
+    /// Persist a directory upload: insert staged dirs and files, then move blobs into storage.
+    #[instrument(
+        skip(self, user, dirs, files),
+        fields(user_id = %user.id, root_id = %root_id),
+        err(Debug)
+    )]
+    pub async fn finish_upload_all(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        _parent: Option<Uuid>,
+        dirs: Vec<CreateDirectory>,
+        mut files: Vec<(TempFile, Option<Uuid>)>,
+    ) -> Result<Vec<FileEntry>, AppError> {
+        for dir in &dirs {
+            FileEntry::valid_name(&dir.name)?;
+        }
+
+        let quota = self.files.root_quota(root_id).await?;
+
+        if quota > 0 {
+            let used = self.files.root_quota_usage(root_id).await?;
+            let total: i64 = files.iter().map(|(file, _)| file.size).sum();
+
+            if used.saturating_add(total) > quota {
+                return Err(AppError::QuotaExceeded);
+            }
+        }
+
+        let now = Utc::now();
+
+        let mut entries: Vec<_> = dirs
+            .iter()
+            .map(|dir| FileEntry {
+                id: dir.id,
+                root_id,
+                created_by: Some(user.id),
+                kind: FileKind::Directory,
+                name: dir.name.clone(),
+                parent: dir.parent,
+                file_type: None,
+                hash: None,
+                size_bytes: 0,
+                preview: None,
+                created_at: now,
+                updated_at: now,
+            })
+            .collect();
+
+        entries.extend(files.iter().map(|(file, parent)| FileEntry {
+            id: Uuid::new_v4(),
+            root_id,
+            created_by: Some(user.id),
+            kind: FileKind::File,
+            name: file.name.clone(),
+            parent: *parent,
+            file_type: Some(file.file_type.clone()),
+            hash: Some(file.hash.clone()),
+            size_bytes: file.size,
+            preview: None,
+            created_at: now,
+            updated_at: now,
+        }));
+
+        let mut tx = self.tx.begin().await?;
+
+        self.files.insert_many(&mut *tx, &entries).await?;
+
+        for (file, _) in files.iter_mut() {
+            self.storage.persist(file).await?;
+        }
+
+        tx.commit().await?;
+
+        for entry in entries.iter().filter(|entry| entry.kind == FileKind::File) {
+            if let Err(error) = ProcessingQueue::submit(&self.processing, entry.clone()).await {
+                tracing::error!(file = %entry.id, %error, "failed to enqueue file for processing");
+            }
+        }
+
+        Ok(entries)
     }
 
     /// Open a writer that will replace an existing file's blob.
@@ -534,7 +616,7 @@ impl FileService {
 
         let mut tx = self.tx.begin().await?;
 
-        self.files.insert_many(&mut *tx, copies).await?;
+        self.files.insert_many(&mut *tx, &copies).await?;
 
         tx.commit().await?;
 
@@ -633,7 +715,7 @@ impl FileService {
             }
         }
 
-        self.files.insert_many(&mut *tx, restored).await?;
+        self.files.insert_many(&mut *tx, &restored).await?;
 
         tx.commit().await?;
 

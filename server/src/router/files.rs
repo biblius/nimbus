@@ -22,6 +22,7 @@ use axum::{
 use axum_extra::{TypedHeader, headers::Range};
 use futures::Stream;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::io::SeekFrom;
 use std::ops::Bound;
@@ -235,7 +236,7 @@ pub(crate) async fn upload(
                 let mut writer = state
                     .services
                     .files
-                    .start_upload(&session.user, root_id, parent, name)
+                    .start_upload(&session.user, root_id, name)
                     .await?;
 
                 while let Some(chunk) = field.chunk().await.map_err(|error| {
@@ -281,6 +282,147 @@ pub(crate) async fn upload(
     }
 
     Ok(Json(stored))
+}
+
+/// Upload a directory tree. Each `file` field's filename is a relative path
+/// (e.g. `Photos/2024/pic.jpg`). Intermediate directories are created as needed.
+#[utoipa::path(
+    post,
+    path = "/roots/{root_id}/upload/dir",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    responses((status = 200, description = "Created directories and stored files", body = Vec<FileEntry>))
+)]
+pub(crate) async fn upload_dir(
+    Path(root_id): Path<Uuid>,
+    State(state): State<AppState>,
+    session: Session,
+    mut multipart: Multipart,
+) -> Result<Json<Vec<FileEntry>>, AppError> {
+    let mut parent = None;
+
+    let mut staged_dirs = Vec::new();
+    let mut staged_files = Vec::new();
+
+    // Directories that need to be created, prefix mapped to the UUID
+    // under which to create them.
+    let mut dirs: HashMap<String, Uuid> = HashMap::new();
+
+    while let Some(mut field) = multipart.next_field().await.map_err(|error| {
+        tracing::error!(%error, "multipart read failed");
+        AppError::Unprocessable("Invalid upload".into())
+    })? {
+        match field.name() {
+            Some("parent") => {
+                let text = field
+                    .text()
+                    .await
+                    .map_err(|_| AppError::Unprocessable("Parent must be text".into()))?;
+
+                parent = Some(
+                    text.parse::<Uuid>()
+                        .map_err(|_| AppError::Unprocessable("Parent must be a uuid".into()))?,
+                );
+            }
+            Some("file") => {
+                let Some(relative) = field.file_name().map(|name| name.to_string()) else {
+                    tracing::warn!("multipart file field has no name: {:?}", field);
+                    continue;
+                };
+
+                let (parts, name) = split_relative_path(&relative)?;
+
+                let mut file_parent = parent;
+
+                let mut prefix = String::new();
+
+                for part in parts {
+                    if !prefix.is_empty() {
+                        prefix.push('/');
+                    }
+
+                    prefix.push_str(part);
+
+                    if let Some(id) = dirs.get(&prefix) {
+                        file_parent = Some(*id);
+                        continue;
+                    }
+
+                    let id = Uuid::new_v4();
+
+                    let name = prefix
+                        .split('/')
+                        .next_back()
+                        .expect("split always returns at least one item");
+
+                    dirs.insert(prefix.clone(), id);
+
+                    staged_dirs.push(CreateDirectory::new(id, name.into(), file_parent));
+
+                    file_parent = Some(id);
+                }
+
+                let mut writer = state
+                    .services
+                    .files
+                    .start_upload(&session.user, root_id, name.to_owned())
+                    .await?;
+
+                while let Some(chunk) = field.chunk().await.map_err(|error| {
+                    tracing::error!(%error, "multipart chunk failed");
+                    AppError::Unprocessable("Invalid upload".into())
+                })? {
+                    if let Err(error) = writer.write(&chunk).await {
+                        tracing::error!(%error, "unable to write to writer");
+                        return Err(error);
+                    }
+                }
+
+                let file = match writer.finish().await {
+                    Ok(file) => file,
+                    Err(error) => {
+                        tracing::error!(%error, "unable to flush upload writer");
+                        return Err(error);
+                    }
+                };
+
+                staged_files.push((file, file_parent));
+            }
+            _ => {
+                tracing::warn!("multipart field has no name: {:?}", field);
+            }
+        }
+    }
+
+    if staged_files.is_empty() {
+        return Err(AppError::Unprocessable("File is required".into()));
+    }
+
+    let entries = state
+        .services
+        .files
+        .finish_upload_all(&session.user, root_id, parent, staged_dirs, staged_files)
+        .await?;
+
+    Ok(Json(entries))
+}
+
+/// Split `dir/sub/file.txt` into directory components and the leaf file name.
+fn split_relative_path(path: &str) -> Result<(Vec<&str>, &str), AppError> {
+    let path = path.trim().trim_matches('/');
+
+    if path.is_empty() || path.contains('\\') {
+        return Err(AppError::Unprocessable("Invalid upload path".into()));
+    }
+
+    let mut parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+
+    if parts.is_empty() || parts.iter().any(|part| *part == "." || *part == "..") {
+        return Err(AppError::Unprocessable("Invalid upload path".into()));
+    }
+
+    let name = parts.pop().expect("parts is non-empty");
+
+    Ok((parts, name))
 }
 
 #[utoipa::path(

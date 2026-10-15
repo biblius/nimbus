@@ -58,6 +58,48 @@ function boolEntry(key: string, fallback: boolean): KvEntry<boolean> {
   };
 }
 
+export type SortDirection = "asc" | "desc";
+
+export type StoredSort = {
+  column: string;
+  direction: SortDirection;
+};
+
+function parseStoredSort(
+  raw: string | null,
+  allowed: readonly string[],
+  fallback: StoredSort,
+): StoredSort {
+  if (raw == null) {
+    return fallback;
+  }
+
+  const [column, direction] = raw.split(":");
+
+  if (!allowed.includes(column)) {
+    return fallback;
+  }
+
+  if (direction !== "asc" && direction !== "desc") {
+    return fallback;
+  }
+
+  return { column, direction };
+}
+
+function sortEntry(
+  key: string,
+  allowed: readonly string[],
+  fallback: StoredSort,
+): KvEntry<StoredSort> {
+  return {
+    key,
+    get: () => parseStoredSort(read(key), allowed, fallback),
+    set: (value) => write(key, `${value.column}:${value.direction}`),
+    clear: () => remove(key),
+  };
+}
+
 /** App-wide persisted keys. */
 export const kv = {
   theme: stringEntry("nimbus-theme", "dark"),
@@ -65,4 +107,14 @@ export const kv = {
   editorWrap: boolEntry("nimbus-editor-wrap", true),
   previewFilter: stringEntry("nimbus-preview-filter", "all"),
   previewAutoplay: boolEntry("nimbus-preview-autoplay", true),
+  filesSort: sortEntry(
+    "nimbus-files-sort",
+    ["kind", "name", "size", "created"],
+    { column: "kind", direction: "asc" },
+  ),
+  usersSort: sortEntry(
+    "nimbus-users-sort",
+    ["username", "email", "createdAt", "updatedAt"],
+    { column: "username", direction: "asc" },
+  ),
 } as const;

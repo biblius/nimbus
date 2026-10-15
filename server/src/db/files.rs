@@ -496,11 +496,7 @@ impl FileRepository {
 
     /// Insert every row in one statement. Parents and children may appear in any order.
     #[instrument(skip(self, executor, files), err(Debug))]
-    pub async fn insert_many<'e, E>(
-        &self,
-        executor: E,
-        files: Vec<FileEntry>,
-    ) -> Result<(), AppError>
+    pub async fn insert_many<'e, E>(&self, executor: E, files: &[FileEntry]) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Db>,
     {
@@ -527,7 +523,7 @@ impl FileRepository {
             "#,
         );
 
-        insert.push_values(&files, |mut row, file| {
+        insert.push_values(files, |mut row, file| {
             row.push_bind(file.id)
                 .push_bind(file.root_id)
                 .push_bind(file.created_by)

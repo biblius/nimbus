@@ -22,10 +22,11 @@
       <AdminSidebar />
     {/snippet}
 
-    <!-- PAGE CONTENT -->
-
-    <div class="p-4 sm:p-6">
-      <div class="mx-auto max-w-5xl">
+    <!-- Fill under the app header; pages scroll internally like the file browser. -->
+    <div
+      class="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col overflow-hidden p-4 sm:p-6"
+    >
+      <div class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
         {@render children()}
       </div>
     </div>

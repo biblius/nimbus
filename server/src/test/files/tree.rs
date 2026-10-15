@@ -29,6 +29,7 @@ mod tree {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -42,6 +43,7 @@ mod tree {
                 CreateDirectory {
                     parent: Some(notes.id),
                     name: "nested".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -55,6 +57,7 @@ mod tree {
                 CreateDirectory {
                     parent: Some(nested.id),
                     name: "deeper".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -126,6 +129,7 @@ mod tree {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -148,6 +152,7 @@ mod tree {
                 CreateDirectory {
                     parent: Some(notes.id),
                     name: "nested".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -170,6 +175,7 @@ mod tree {
                 CreateDirectory {
                     parent: Some(nested.id),
                     name: "deeper".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -218,6 +224,7 @@ mod tree {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -233,6 +240,7 @@ mod tree {
                 CreateDirectory {
                     parent: Some(notes.id),
                     name: "nested".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -247,6 +255,7 @@ mod tree {
                 CreateDirectory {
                     parent: Some(notes.id),
                     name: "empty".into(),
+                    ..Default::default()
                 },
             )
             .await

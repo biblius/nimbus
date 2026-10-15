@@ -38,6 +38,7 @@ mod roots {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await

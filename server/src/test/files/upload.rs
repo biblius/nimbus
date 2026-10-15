@@ -4,11 +4,12 @@ mod upload {
     use super::super::user;
     use crate::{
         error::AppError,
-        file::model::CreateDirectory,
+        file::model::{CreateDirectory, FileKind},
         test::{self, TestState},
         user::model::CreateSharedFolder,
     };
     use suitest::before_all;
+    use uuid::Uuid;
 
     #[before_all]
     async fn setup() -> TestState {
@@ -69,6 +70,7 @@ mod upload {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -82,6 +84,7 @@ mod upload {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -165,5 +168,90 @@ mod upload {
         )
         .await;
         assert!(matches!(forbidden[0], Err(AppError::Forbidden(_))));
+    }
+
+    #[test]
+    async fn finish_upload_all_creates_dirs_and_nested_files(state: TestState) {
+        let _ada = user(state, "ada-dir-upload").await;
+        let session = test::login(state, "ada-dir-upload", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let photos = Uuid::new_v4();
+        let album = Uuid::new_v4();
+
+        let mut nested = state
+            .services
+            .files
+            .start_upload(&session.user, root, "shot.txt".into())
+            .await
+            .unwrap();
+        nested.write(b"nested").await.unwrap();
+        let nested = nested.finish().await.unwrap();
+
+        let mut top = state
+            .services
+            .files
+            .start_upload(&session.user, root, "readme.txt".into())
+            .await
+            .unwrap();
+        top.write(b"top").await.unwrap();
+        let top = top.finish().await.unwrap();
+
+        let created = state
+            .services
+            .files
+            .finish_upload_all(
+                &session.user,
+                root,
+                None,
+                vec![
+                    CreateDirectory::new(photos, "Photos".into(), None),
+                    CreateDirectory::new(album, "Album".into(), Some(photos)),
+                ],
+                vec![(nested, Some(album)), (top, Some(photos))],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(created.len(), 4);
+        assert!(
+            created
+                .iter()
+                .any(|entry| entry.kind == FileKind::Directory && entry.name == "Photos")
+        );
+        assert!(
+            created
+                .iter()
+                .any(|entry| entry.kind == FileKind::Directory
+                    && entry.name == "Album"
+                    && entry.parent == Some(photos))
+        );
+
+        let under_photos = state
+            .services
+            .files
+            .list(&session.user, root, Some(photos))
+            .await
+            .unwrap();
+        assert_eq!(under_photos.len(), 2);
+        assert!(
+            under_photos
+                .iter()
+                .any(|entry| entry.file.name == "Album" && entry.file.kind == FileKind::Directory)
+        );
+        assert!(
+            under_photos
+                .iter()
+                .any(|entry| entry.file.name == "readme.txt" && entry.file.kind == FileKind::File)
+        );
+
+        let under_album = state
+            .services
+            .files
+            .list(&session.user, root, Some(album))
+            .await
+            .unwrap();
+        assert_eq!(under_album.len(), 1);
+        assert_eq!(under_album[0].file.name, "shot.txt");
     }
 }

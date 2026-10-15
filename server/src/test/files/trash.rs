@@ -106,6 +106,7 @@ mod trash {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -128,6 +129,7 @@ mod trash {
                 CreateDirectory {
                     parent: Some(notes.id),
                     name: "nested".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -168,6 +170,7 @@ mod trash {
                 CreateDirectory {
                     parent: Some(notes.id),
                     name: "archive".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -190,6 +193,7 @@ mod trash {
                 CreateDirectory {
                     parent: Some(archive.id),
                     name: "deep".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -213,6 +217,7 @@ mod trash {
                 CreateDirectory {
                     parent: None,
                     name: "kept".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -383,6 +388,7 @@ mod trash {
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -489,6 +495,7 @@ mod trash {
                 CreateDirectory {
                     parent: None,
                     name: "box".into(),
+                    ..Default::default()
                 },
             )
             .await
