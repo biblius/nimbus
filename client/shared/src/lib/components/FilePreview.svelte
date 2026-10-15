@@ -17,7 +17,7 @@
     Type,
     X,
   } from "@lucide/svelte";
-  import { formatBytes } from "../format";
+  import { fitMiddleEllipsis, formatBytes } from "../format";
   import {
     FILE_FAMILY_LABELS,
     fileFamily,
@@ -123,6 +123,25 @@
   const isAudio = $derived(current != null && isAudioFile(current));
   const isText = $derived(current != null && isTextFile(current));
   const isPdf = $derived(current != null && isPdfFile(current));
+  const fileName = $derived(current?.file.name ?? "");
+  let displayName = $state("");
+
+  // Fit the file name in the header by dynamically computing the width.
+  function observeFileName(name: string) {
+    return (node: HTMLElement) => {
+      const sync = () => {
+        const style = getComputedStyle(node);
+        const font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        displayName = fitMiddleEllipsis(name, node.clientWidth, font);
+      };
+
+      const observer = new ResizeObserver(sync);
+      observer.observe(node);
+      sync();
+
+      return () => observer.disconnect();
+    };
+  }
 
   function toggleAutoplay() {
     autoplay = !autoplay;
@@ -299,14 +318,57 @@
   ></button>
 
   <header
-    class="pointer-events-none absolute inset-x-0 top-0 z-20 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-3 bg-linear-to-b from-black/70 to-transparent px-4 pt-4 pb-16 sm:gap-4 sm:px-6 sm:pt-5"
+    class="pointer-events-none absolute inset-x-0 top-0 z-20 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-start gap-3 bg-linear-to-b from-black/70 to-transparent px-4 pt-4 pb-16 sm:gap-4 sm:px-6 sm:pt-5"
   >
-    <div class="pointer-events-auto flex items-center gap-2 justify-self-start">
+    <div
+      class="pointer-events-auto flex min-w-0 items-center gap-2 justify-self-start"
+    >
       <div class="relative" bind:this={filterMenu}>
         <button
           type="button"
           class={cn(
-            "flex h-10 items-center gap-2 rounded-full bg-white/10 pr-2.5 pl-3 text-sm font-medium text-white ring-1 ring-white/15 backdrop-blur-md transition-colors",
+            "flex size-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/15 backdrop-blur-md transition-colors md:hidden",
+            filterOpen
+              ? "bg-white/18 ring-white/30"
+              : "hover:bg-white/18 hover:ring-white/25",
+          )}
+          aria-label={filterOpen
+            ? "Close preview options"
+            : "Open preview options"}
+          aria-haspopup="menu"
+          aria-expanded={filterOpen}
+          onclick={(event) => {
+            event.stopPropagation();
+            filterOpen = !filterOpen;
+          }}
+        >
+          <svg
+            viewBox="0 0 20 20"
+            class="size-5"
+            fill="none"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            {#if filterOpen}
+              <path
+                d="M5 5l10 10M15 5L5 15"
+                stroke-width="1.75"
+                stroke-linecap="round"
+              />
+            {:else}
+              <path
+                d="M3 5h14M3 10h14M3 15h14"
+                stroke-width="1.75"
+                stroke-linecap="round"
+              />
+            {/if}
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          class={cn(
+            "hidden h-10 items-center gap-2 rounded-full bg-white/10 pr-2.5 pl-3 text-sm font-medium text-white ring-1 ring-white/15 backdrop-blur-md transition-colors md:flex",
             filterOpen
               ? "bg-white/18 ring-white/30"
               : "hover:bg-white/18 hover:ring-white/25",
@@ -339,7 +401,7 @@
           <div
             role="listbox"
             aria-label="File type filter"
-            class="absolute top-full left-0 z-30 mt-2 min-w-44 overflow-hidden rounded-2xl bg-zinc-950/95 p-1.5 shadow-2xl ring-1 shadow-black/50 ring-white/12 backdrop-blur-xl"
+            class="absolute top-full left-0 z-30 mt-2 min-w-52 overflow-hidden rounded-2xl bg-zinc-950/95 p-1.5 shadow-2xl ring-1 shadow-black/50 ring-white/12 backdrop-blur-xl"
           >
             <button
               type="button"
@@ -397,6 +459,38 @@
                 {/if}
               </button>
             {/each}
+
+            {#if isVideo || isAudio}
+              <div class="my-1 border-t border-white/10 md:hidden"></div>
+              <button
+                type="button"
+                class={cn(
+                  "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm transition-colors md:hidden",
+                  autoplay
+                    ? "bg-white/14 text-white"
+                    : "text-white/75 hover:bg-white/8 hover:text-white",
+                )}
+                aria-pressed={autoplay}
+                aria-label="Toggle autoplay"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  toggleAutoplay();
+                }}
+              >
+                <CirclePlay
+                  size={15}
+                  strokeWidth={1.75}
+                  class="shrink-0 text-white/55"
+                />
+                <span class="flex-1 tracking-tight">Autoplay</span>
+                {#if autoplay}
+                  <span
+                    class="size-1.5 rounded-full bg-white/80"
+                    aria-hidden="true"
+                  ></span>
+                {/if}
+              </button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -405,7 +499,7 @@
         <button
           type="button"
           class={cn(
-            "flex h-10 items-center gap-2 rounded-full pr-3 pl-3 text-sm font-medium text-white ring-1 backdrop-blur-md transition-colors",
+            "hidden h-10 items-center gap-2 rounded-full pr-3 pl-3 text-sm font-medium text-white ring-1 backdrop-blur-md transition-colors md:flex",
             autoplay
               ? "bg-white/18 ring-white/30"
               : "bg-white/10 ring-white/15 hover:bg-white/18 hover:ring-white/25",
@@ -425,10 +519,14 @@
     </div>
 
     <div
-      class="pointer-events-auto max-w-md min-w-0 justify-self-center px-1 pt-1 text-center sm:max-w-lg"
+      class="pointer-events-auto w-full max-w-md min-w-0 justify-self-center px-1 pt-1 text-center sm:max-w-lg"
     >
-      <p class="truncate text-[15px] font-medium tracking-tight text-white">
-        {current?.file.name ?? ""}
+      <p
+        class="overflow-hidden text-[15px] font-medium tracking-tight text-nowrap text-white"
+        title={fileName}
+        {@attach observeFileName(fileName)}
+      >
+        {displayName || fileName}
       </p>
       <p
         class="mt-0.5 flex items-center justify-center gap-2 text-xs text-white/55 tabular-nums"

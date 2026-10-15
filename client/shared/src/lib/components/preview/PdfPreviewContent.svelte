@@ -128,6 +128,9 @@
     });
   }
 
+  // Attached to the PDF container div.
+  // Observes changed box width.
+  // Sets `mainPane` to the node.
   function observeWidth(node: HTMLDivElement) {
     mainPane = node;
 
@@ -138,6 +141,7 @@
     });
 
     observer.observe(node);
+
     containerWidth = node.clientWidth;
 
     return () => {
@@ -148,6 +152,10 @@
     };
   }
 
+  // Observes the page visibility, i.e. the intersection of the
+  // PDF container div with the canvases the main pages are rendered on.
+  // Compares the intersection ratio of pages intersecting the container
+  // (usually 2) and sets the `currentPage` variable to the one which wins.
   function observePageVisibility(count: number) {
     return (node: HTMLElement) => {
       if (count <= 0) {
@@ -159,10 +167,13 @@
       const observer = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
+            // Set by `data-page`
             const page = Number((entry.target as HTMLElement).dataset.page);
+
             if (!Number.isFinite(page)) {
               continue;
             }
+
             if (entry.isIntersecting && entry.intersectionRatio > 0) {
               visibility.set(page, entry);
             } else {
@@ -180,6 +191,7 @@
 
           for (const [page, entry] of visibility) {
             const top = entry.boundingClientRect.top;
+
             if (
               entry.intersectionRatio > bestRatio ||
               (entry.intersectionRatio === bestRatio && top < bestTop)
@@ -207,6 +219,7 @@
       };
 
       observeAll();
+
       const raf = requestAnimationFrame(observeAll);
 
       return () => {
@@ -260,7 +273,9 @@
 
   function goToPage(pageNum: number) {
     currentPage = pageNum;
+
     const el = mainPane?.querySelector(`[data-page="${pageNum}"]`);
+
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
