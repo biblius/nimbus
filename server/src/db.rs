@@ -9,7 +9,7 @@ use crate::error::AppError;
 use std::time::Duration;
 
 pub use deletion::DeletionRepository;
-pub use files::FileRepository;
+pub use files::{FileRepository, TrashRepository};
 pub use sessions::SessionRepository;
 pub use tx::Transactor;
 pub use user_folders::UserFolderRepository;
@@ -22,6 +22,7 @@ pub struct Repository {
     pub sessions: SessionRepository,
     pub folders: UserFolderRepository,
     pub files: FileRepository,
+    pub trash: TrashRepository,
     pub deletions: DeletionRepository,
     pool: DbPool,
 }
@@ -33,6 +34,7 @@ impl Repository {
             sessions: SessionRepository::new(pool.clone()),
             folders: UserFolderRepository::new(pool.clone()),
             files: FileRepository::new(pool.clone()),
+            trash: TrashRepository::new(pool.clone()),
             deletions: DeletionRepository::new(pool.clone()),
             pool,
         }

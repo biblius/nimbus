@@ -3,7 +3,7 @@ use crate::{
     db::{
         Transactor,
         deletion::DeletionRepository,
-        files::{FileRepository, FileTable},
+        files::{FileTable, FileRepository, TrashRepository},
         sessions::SessionRepository,
         user_folders::UserFolderRepository,
         users::UserRepository,
@@ -30,6 +30,7 @@ use validify::{Validate, Validify};
 pub struct UserService {
     users: UserRepository,
     files: FileRepository,
+    trash: TrashRepository,
     folders: UserFolderRepository,
     sessions: SessionRepository,
     email: EmailSender,
@@ -41,6 +42,7 @@ impl UserService {
     pub fn new(
         users: UserRepository,
         files: FileRepository,
+        trash: TrashRepository,
         folders: UserFolderRepository,
         sessions: SessionRepository,
         email: EmailSender,
@@ -50,6 +52,7 @@ impl UserService {
         Self {
             users,
             files,
+            trash,
             folders,
             sessions,
             email,
@@ -252,7 +255,7 @@ impl UserService {
 
         let live = self.files.list_file_ids(private_root.id).await?;
 
-        let trashed = self.files.list_trashed_ids(private_root.id).await?;
+        let trashed = self.trash.list_trashed_ids(private_root.id).await?;
 
         let request_id = Uuid::new_v4();
 
@@ -444,7 +447,7 @@ impl UserService {
         }
 
         let live = self.files.list_file_ids(id).await?;
-        let trashed = self.files.list_trashed_ids(id).await?;
+        let trashed = self.trash.list_trashed_ids(id).await?;
 
         let request_id = Uuid::new_v4();
 

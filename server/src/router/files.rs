@@ -112,7 +112,7 @@ pub(crate) async fn trash(
     Ok(Json(
         state
             .services
-            .files
+            .trash
             .get_trash_tree(&session.user, root_id)
             .await?,
     ))
@@ -134,7 +134,7 @@ pub(crate) async fn delete_trash(
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>> + Send>, AppError> {
     let rx = state
         .services
-        .files
+        .trash
         .delete_trash(&session.user, root_id, id, state.queue)
         .await?;
 
@@ -168,7 +168,7 @@ pub(crate) async fn restore_file(
 ) -> Result<StatusCode, AppError> {
     state
         .services
-        .files
+        .trash
         .restore(&session.user, root_id, id, input)
         .await?;
 
@@ -190,7 +190,7 @@ pub(crate) async fn restore_all(
 ) -> Result<StatusCode, AppError> {
     state
         .services
-        .files
+        .trash
         .restore_all(&session.user, root_id, input)
         .await?;
 

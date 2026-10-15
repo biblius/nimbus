@@ -11,7 +11,7 @@ use crate::{
     email::EmailSender,
     file::{
         queue::{self, DeletionQueue, DeletionQueueHandle, ProcessingQueue},
-        service::FileService,
+        service::{LiveFileService, TrashFileService},
         storage::Storage,
     },
     user::service::UserService,
@@ -29,7 +29,8 @@ pub struct AppState {
 pub struct ServiceState {
     pub auth: AuthenticationService,
     pub users: UserService,
-    pub files: FileService,
+    pub files: LiveFileService,
+    pub trash: TrashFileService,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +91,7 @@ impl AppState {
         let user_service = UserService::new(
             repository.users.clone(),
             repository.files.clone(),
+            repository.trash.clone(),
             repository.folders.clone(),
             repository.sessions.clone(),
             email,
@@ -99,11 +101,19 @@ impl AppState {
 
         let processing = ProcessingQueue::start(storage.clone(), repository.files.clone());
 
-        let file_service = FileService::new(
+        let file_service = LiveFileService::new(
             repository.files.clone(),
+            repository.trash.clone(),
             repository.folders.clone(),
             storage.clone(),
             processing,
+            transactor.clone(),
+        );
+
+        let trash_service = TrashFileService::new(
+            repository.trash.clone(),
+            repository.files.clone(),
+            repository.folders.clone(),
             repository.deletions.clone(),
             transactor,
         );
@@ -130,10 +140,11 @@ impl AppState {
             auth,
             users: user_service,
             files: file_service,
+            trash: trash_service,
         };
 
         let retention_days = args.file_retention_days();
-        let expiry_files = repository.files.clone();
+        let expiry_trash = repository.trash.clone();
         let expiry_deletions = repository.deletions.clone();
         let queue = DeletionQueue::start(
             repository,
@@ -141,7 +152,7 @@ impl AppState {
             std::time::Duration::from_secs(args.file_deletion_interval_secs()),
         );
         tokio::spawn(queue::expiry::start(
-            expiry_files,
+            expiry_trash,
             expiry_deletions,
             retention_days,
         ));

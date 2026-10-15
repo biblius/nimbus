@@ -249,7 +249,7 @@ mod trash {
 
         let tree = state
             .services
-            .files
+            .trash
             .get_trash_tree(&session.user, root)
             .await
             .unwrap();
@@ -433,7 +433,7 @@ mod trash {
 
         state
             .services
-            .files
+            .trash
             .restore_all(
                 &session.user,
                 root,
@@ -446,7 +446,7 @@ mod trash {
 
         let trash = state
             .services
-            .files
+            .trash
             .get_trash_tree(&session.user, root)
             .await
             .unwrap();
@@ -532,7 +532,7 @@ mod trash {
 
         let missing_folder = state
             .services
-            .files
+            .trash
             .restore(
                 &session.user,
                 root,
@@ -546,7 +546,7 @@ mod trash {
 
         state
             .services
-            .files
+            .trash
             .restore(
                 &session.user,
                 root,
@@ -576,7 +576,7 @@ mod trash {
 
         state
             .services
-            .files
+            .trash
             .restore(&session.user, root, inside.id, RestoreFile { parent: None })
             .await
             .unwrap();
@@ -623,7 +623,7 @@ mod trash {
 
         state
             .services
-            .files
+            .trash
             .restore(&session.user, root, boxed.id, RestoreFile { parent: None })
             .await
             .unwrap();
@@ -697,7 +697,7 @@ mod trash {
 
         let tree = state
             .services
-            .files
+            .trash
             .get_trash_tree(&session.user, root)
             .await
             .unwrap();

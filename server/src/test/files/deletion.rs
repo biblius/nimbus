@@ -239,7 +239,7 @@ mod deletion {
 
         let rx = state
             .services
-            .files
+            .trash
             .delete_trash(&session.user, root, directory.id, state.queue.clone())
             .await
             .unwrap();

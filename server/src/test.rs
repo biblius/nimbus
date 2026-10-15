@@ -22,7 +22,7 @@ use crate::{
     file::{
         model::FileEntry,
         queue::{self, DeletionQueue, DeletionQueueHandle, DeletionResult, ProcessingQueue},
-        service::FileService,
+        service::{LiveFileService, TrashFileService},
         storage::Storage,
     },
     state::ServiceState,
@@ -79,11 +79,11 @@ impl TestState {
         let (services, repository, storage) =
             build_services(pool.clone(), cache.clone(), &storage_dir).await;
 
-        let expiry_files = repository.files.clone();
+        let expiry_trash = repository.trash.clone();
         let expiry_deletions = repository.deletions.clone();
         // Short sweep so SYSTEM-queue integration tests finish quickly.
         let queue = DeletionQueue::start(repository, storage, std::time::Duration::from_secs(1));
-        tokio::spawn(queue::expiry::start(expiry_files, expiry_deletions, 30));
+        tokio::spawn(queue::expiry::start(expiry_trash, expiry_deletions, 30));
 
         Self {
             services,
@@ -209,6 +209,7 @@ async fn build_services(
     let user_service = UserService::new(
         repository.users.clone(),
         repository.files.clone(),
+        repository.trash.clone(),
         repository.folders.clone(),
         repository.sessions.clone(),
         email,
@@ -218,11 +219,18 @@ async fn build_services(
 
     let processing = ProcessingQueue::start(storage.clone(), repository.files.clone());
 
-    let files = FileService::new(
+    let files = LiveFileService::new(
         repository.files.clone(),
+        repository.trash.clone(),
         repository.folders.clone(),
         storage.clone(),
         processing,
+        Transactor::new(pool.clone()),
+    );
+    let trash = TrashFileService::new(
+        repository.trash.clone(),
+        repository.files.clone(),
+        repository.folders.clone(),
         repository.deletions.clone(),
         Transactor::new(pool),
     );
@@ -234,6 +242,7 @@ async fn build_services(
             auth,
             users: user_service,
             files,
+            trash,
         },
         repository,
         storage,

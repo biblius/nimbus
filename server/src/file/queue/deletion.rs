@@ -152,7 +152,7 @@ impl DeletionQueue {
 
             let file = match entry.origin {
                 FileTable::Live => self.repository.files.get_live(entry.file_id).await?,
-                FileTable::Trashed => self.repository.files.get_trashed(entry.file_id).await?,
+                FileTable::Trashed => self.repository.trash.get_trashed(entry.file_id).await?,
             };
 
             let Some(file) = file else {
@@ -168,7 +168,7 @@ impl DeletionQueue {
 
             let result = match entry.origin {
                 FileTable::Live => self.repository.files.delete_live(file.id).await,
-                FileTable::Trashed => self.repository.files.delete_trashed(file.id).await,
+                FileTable::Trashed => self.repository.trash.delete_trashed(file.id).await,
             };
 
             // If DB entry was successfully deleted, clients
