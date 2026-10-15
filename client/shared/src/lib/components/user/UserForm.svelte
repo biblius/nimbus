@@ -76,8 +76,8 @@
   }
 </script>
 
-<form class="space-y-3" onsubmit={onSubmit}>
-  <div class="flex items-end justify-between gap-3 border-b pb-2.5">
+<form class="space-y-4" onsubmit={onSubmit}>
+  <div class="flex items-end justify-between gap-3 border-b pb-3">
     <div class="min-w-0">
       <h3 class="text-sm font-semibold tracking-tight">{title}</h3>
       <p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
@@ -98,7 +98,11 @@
     </div>
   </div>
 
-  <div class="grid gap-2.5 sm:grid-cols-2">
+  <div class="space-y-3">
+    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      Account
+    </p>
+
     <Field
       label="Username"
       id="account-username"
@@ -121,20 +125,24 @@
 
     {#if !selfService}
       <Field label="Role" id="account-role" dense>
-        {#snippet children()}
-          <select
-            id="account-role"
-            class="flex h-8 w-full rounded-md border border-input bg-field px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            bind:value={role}
-          >
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
-        {/snippet}
+        <select
+          id="account-role"
+          class="flex h-8 w-full rounded-md border border-input bg-field px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          bind:value={role}
+        >
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
       </Field>
     {/if}
+  </div>
 
-    <div class="space-y-2.5 sm:col-span-2">
+  <div class="space-y-3 border-t pt-4">
+    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      Password
+    </p>
+
+    <div class="space-y-3">
       <Field
         label="Password"
         id="account-password"
@@ -145,17 +153,17 @@
         autocomplete="new-password"
       />
 
-      {#if selfService && password}
+      {#if selfService}
         <Field
-          label="Repeat password"
+          label="Confirm password"
           id="account-password-confirm"
           type="password"
           dense
           bind:value={passwordConfirm}
           error={confirmError}
           autocomplete="new-password"
-          placeholder="Repeat new password"
-          required
+          placeholder="Confirm new password"
+          required={!!password}
         />
       {/if}
     </div>

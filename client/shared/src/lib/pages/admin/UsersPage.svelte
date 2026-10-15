@@ -195,9 +195,7 @@
   </div>
 
   {#if creating}
-    <div
-      class="max-h-[min(50dvh,22rem)] shrink-0 overflow-y-auto rounded-lg border bg-card p-4 sm:p-5"
-    >
+    <div class="shrink-0 rounded-lg border bg-card p-4 sm:p-5">
       <div class="mx-auto max-w-lg">
         <UserForm
           title="Add user"
@@ -210,13 +208,11 @@
   {:else if editingUser}
     {@const editId = editingUser.id}
     {#key editId}
-      <div
-        class="max-h-[min(50dvh,22rem)] shrink-0 overflow-y-auto rounded-lg border bg-card p-4 sm:p-5"
-      >
+      <div class="shrink-0 rounded-lg border bg-card p-4 sm:p-5">
         <div class="mx-auto max-w-lg">
           <UserForm
             user={editingUser}
-            title="Edit user"
+            title="Editing user {editingUser.username}"
             description="Leave the password blank to keep the current one."
             save={(data) => updateUser(data, editId)}
             cancel={reset}
