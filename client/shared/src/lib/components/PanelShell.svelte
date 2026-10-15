@@ -52,7 +52,12 @@
     {@render sidebar()}
   </aside>
 
-  <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+  <!--
+    overflow-hidden (not overflow-y-auto): pages own their scroll regions.
+    A second scroll container here fights the inner list on WebKitGTK/Linux
+    and makes wheel scrolling feel jumpy.
+  -->
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {@render children()}
   </div>
 </div>

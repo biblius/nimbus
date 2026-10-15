@@ -1044,7 +1044,7 @@
 
 <svelte:window
   onclick={(event) => {
-    if (!uploadMenuOpen || !uploadMenu) {
+    if (session.native || !uploadMenuOpen || !uploadMenu) {
       return;
     }
     if (!uploadMenu.contains(event.target as Node)) {
@@ -1052,7 +1052,7 @@
     }
   }}
   onkeydown={(event) => {
-    if (event.key === "Escape" && uploadMenuOpen) {
+    if (!session.native && event.key === "Escape" && uploadMenuOpen) {
       closeUploadMenu();
       return;
     }
@@ -1117,63 +1117,81 @@
         aria-hidden="true"
         onchange={uploadFolder}
       />
-      <div class="relative" bind:this={uploadMenu}>
+      <!-- 
+           Native OS file pickers (at least linux) include both files
+           and directories when requesting with webkitdirectory
+           so there is no need for selection
+      -->
+      {#if session.native}
         <Button
           type="button"
           variant="outline"
           size="sm"
           aria-label="Upload"
-          aria-haspopup="menu"
-          aria-expanded={uploadMenuOpen}
-          onclick={(event) => {
-            event.stopPropagation();
-            uploadMenuOpen = !uploadMenuOpen;
-          }}
+          onclick={() => folderInput?.click()}
         >
           <Upload size={15} />
           <span class="hidden sm:inline">Upload</span>
-          <ChevronDown
-            size={14}
-            class="text-muted-foreground transition-transform {uploadMenuOpen
-              ? 'rotate-180'
-              : ''}"
-          />
         </Button>
-
-        {#if uploadMenuOpen}
-          <div
-            role="menu"
-            class="absolute top-full right-0 z-50 mt-1.5 w-40 overflow-hidden rounded-xl border bg-card shadow-lg"
+      {:else}
+        <div class="relative" bind:this={uploadMenu}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Upload"
+            aria-haspopup="menu"
+            aria-expanded={uploadMenuOpen}
+            onclick={(event) => {
+              event.stopPropagation();
+              uploadMenuOpen = !uploadMenuOpen;
+            }}
           >
-            <div class="p-1">
-              <button
-                type="button"
-                role="menuitem"
-                class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
-                onclick={() => {
-                  closeUploadMenu();
-                  fileInput?.click();
-                }}
-              >
-                <FileIcon size={15} class="shrink-0 text-muted-foreground" />
-                File
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
-                onclick={() => {
-                  closeUploadMenu();
-                  folderInput?.click();
-                }}
-              >
-                <Folder size={15} class="shrink-0 text-muted-foreground" />
-                Folder
-              </button>
+            <Upload size={15} />
+            <span class="hidden sm:inline">Upload</span>
+            <ChevronDown
+              size={14}
+              class="text-muted-foreground transition-transform {uploadMenuOpen
+                ? 'rotate-180'
+                : ''}"
+            />
+          </Button>
+
+          {#if uploadMenuOpen}
+            <div
+              role="menu"
+              class="absolute top-full right-0 z-50 mt-1.5 w-40 overflow-hidden rounded-xl border bg-card shadow-lg"
+            >
+              <div class="p-1">
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
+                  onclick={() => {
+                    closeUploadMenu();
+                    fileInput?.click();
+                  }}
+                >
+                  <FileIcon size={15} class="shrink-0 text-muted-foreground" />
+                  File
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
+                  onclick={() => {
+                    closeUploadMenu();
+                    folderInput?.click();
+                  }}
+                >
+                  <Folder size={15} class="shrink-0 text-muted-foreground" />
+                  Folder
+                </button>
+              </div>
             </div>
-          </div>
-        {/if}
-      </div>
+          {/if}
+        </div>
+      {/if}
       <Button
         type="button"
         variant="outline"

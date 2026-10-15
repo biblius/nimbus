@@ -19,7 +19,7 @@
 </script>
 
 {#if session.user}
-  <div class="flex min-h-dvh flex-col">
+  <div class="flex h-dvh min-h-0 flex-col overflow-hidden">
     <AppHeader
       user={session.user}
       mode={admin ? "admin" : "user"}
@@ -31,7 +31,9 @@
       }}
       onLogout={logout}
     />
-    {@render children()}
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {@render children()}
+    </div>
   </div>
 {:else}
   <p class="p-8 text-sm text-muted-foreground">Loading…</p>

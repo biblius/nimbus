@@ -178,7 +178,9 @@
     <UserSidebar {roots} />
   {/snippet}
 
-  <div class="p-4 sm:p-6">
+  <div
+    class="h-[calc(100dvh-3.5rem)] min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6"
+  >
     <div class="mx-auto max-w-3xl space-y-5">
       <div class="space-y-0.5 border-b pb-3">
         <h2 class="text-lg font-semibold tracking-tight">Account</h2>

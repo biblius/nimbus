@@ -12,6 +12,8 @@
   GlobalWorkerOptions.workerSrc = workerUrl;
 
   const THUMB_WIDTH = 96;
+  const DEFAULT_PAGE_ASPECT = "1 / 1.414";
+  const LAZY_ROOT_MARGIN = "100% 0px";
 
   let {
     rootId,
@@ -28,6 +30,7 @@
   let pageCount = $state(0);
   let currentPage = $state(1);
   let containerWidth = $state(0);
+  let pageAspect = $state(DEFAULT_PAGE_ASPECT);
   let pdfDoc = $state.raw<PDFDocumentProxy | null>(null);
 
   let mainPane: HTMLElement | null = null;
@@ -43,6 +46,7 @@
     error = "";
     pageCount = 0;
     currentPage = 1;
+    pageAspect = DEFAULT_PAGE_ASPECT;
     pdfDoc = null;
 
     let cancelled = false;
@@ -66,7 +70,23 @@
         doc = await loadingTask.promise;
 
         if (cancelled) {
-          void doc.destroy();
+          void loadingTask.destroy();
+          return;
+        }
+
+        try {
+          const first = await doc.getPage(1);
+
+          if (!cancelled) {
+            const vp = first.getViewport({ scale: 1 });
+            pageAspect = `${vp.width} / ${vp.height}`;
+          }
+        } catch {
+          // Keep A4-ish fallback when page 1 metrics are unavailable.
+        }
+
+        if (cancelled) {
+          void loadingTask.destroy();
           return;
         }
 
@@ -86,10 +106,16 @@
     return () => {
       cancelled = true;
       void loadingTask?.destroy();
-      void doc?.destroy();
       pdfDoc = null;
     };
   });
+
+  function clearCanvas(canvas: HTMLCanvasElement) {
+    canvas.width = 0;
+    canvas.height = 0;
+    canvas.style.width = "";
+    canvas.style.height = "";
+  }
 
   async function renderPage(
     canvas: HTMLCanvasElement,
@@ -230,43 +256,101 @@
     };
   }
 
+  /**
+   * Lazily rasterize when the reserved page box nears the scroll viewport;
+   * cancel and release the bitmap when it leaves (with generous rootMargin).
+   */
   function pageAttach(
     pageNum: number,
     doc: PDFDocumentProxy | null,
     width: number,
   ) {
-    return (canvas: HTMLCanvasElement) => {
+    return (wrapper: HTMLElement) => {
       if (!doc || width <= 0) {
         return;
       }
 
-      let cancelled = false;
+      const canvas = wrapper.querySelector("canvas");
+
+      if (!(canvas instanceof HTMLCanvasElement)) {
+        return;
+      }
+
+      const scrollRoot = wrapper.closest("[data-pdf-scroll]");
+      let destroyed = false;
       let renderTask: RenderTask | null = null;
+      let paintId = 0;
+      let visible = false;
 
-      void (async () => {
-        try {
-          renderTask = await renderPage(
-            canvas,
-            doc,
-            pageNum,
-            width,
-            () => cancelled,
-          );
+      const cancelPaint = () => {
+        paintId += 1;
+        renderTask?.cancel();
+        renderTask = null;
+      };
 
-          if (!renderTask || cancelled) {
-            renderTask?.cancel();
+      const paint = () => {
+        const id = ++paintId;
+
+        void (async () => {
+          try {
+            const task = await renderPage(
+              canvas,
+              doc,
+              pageNum,
+              width,
+              () => destroyed || id !== paintId,
+            );
+
+            if (!task || destroyed || id !== paintId) {
+              task?.cancel();
+              return;
+            }
+
+            renderTask = task;
+            await task.promise;
+          } catch {
+            // Ignore cancel / destroy during navigation or unmount.
+          } finally {
+            if (id === paintId) {
+              renderTask = null;
+            }
+          }
+        })();
+      };
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[entries.length - 1];
+
+          if (!entry) {
             return;
           }
 
-          await renderTask.promise;
-        } catch {
-          // Ignore cancel / destroy during navigation or unmount.
-        }
-      })();
+          if (entry.isIntersecting) {
+            if (!visible) {
+              visible = true;
+              paint();
+            }
+          } else if (visible) {
+            visible = false;
+            cancelPaint();
+            clearCanvas(canvas);
+          }
+        },
+        {
+          root: scrollRoot instanceof Element ? scrollRoot : null,
+          rootMargin: LAZY_ROOT_MARGIN,
+          threshold: 0,
+        },
+      );
+
+      observer.observe(wrapper);
 
       return () => {
-        cancelled = true;
-        renderTask?.cancel();
+        destroyed = true;
+        observer.disconnect();
+        cancelPaint();
+        clearCanvas(canvas);
       };
     };
   }
@@ -302,6 +386,7 @@
   {:else if pdfDoc && pageCount > 0}
     <div class="flex min-h-0 flex-1 gap-3">
       <aside
+        data-pdf-scroll
         class="hidden w-28 shrink-0 flex-col gap-2 overflow-y-auto rounded-xl bg-zinc-900/90 p-2 ring-1 ring-white/10 backdrop-blur-md sm:flex"
         aria-label="Page overview"
       >
@@ -319,10 +404,13 @@
             {@attach keepThumbVisible(pageNum)}
             onclick={() => goToPage(pageNum)}
           >
-            <canvas
-              class="w-full rounded-sm bg-white shadow-sm"
+            <div
+              class="w-full overflow-hidden rounded-sm bg-white shadow-sm"
+              style:aspect-ratio={pageAspect}
               {@attach pageAttach(pageNum, pdfDoc, THUMB_WIDTH)}
-            ></canvas>
+            >
+              <canvas class="block h-full w-full"></canvas>
+            </div>
             <span class="text-[11px] text-white/55 tabular-nums">{pageNum}</span
             >
           </button>
@@ -330,6 +418,7 @@
       </aside>
 
       <div
+        data-pdf-scroll
         class="min-w-0 flex-1 overflow-auto"
         aria-label={name}
         {@attach observeWidth}
@@ -337,10 +426,14 @@
       >
         <div class="mx-auto flex w-full flex-col items-center gap-4 py-1">
           {#each pageNumbers as pageNum (pageNum)}
-            <div data-page={pageNum} class="w-full">
+            <div
+              data-page={pageNum}
+              class="w-full"
+              style:aspect-ratio={pageAspect}
+              {@attach pageAttach(pageNum, pdfDoc, containerWidth)}
+            >
               <canvas
                 class="mx-auto block bg-white shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)]"
-                {@attach pageAttach(pageNum, pdfDoc, containerWidth)}
               ></canvas>
             </div>
           {/each}
