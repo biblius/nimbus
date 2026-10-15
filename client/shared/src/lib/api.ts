@@ -79,6 +79,18 @@ export class ValidationError extends Error {
 /** `AppError::Validation`. `Unprocessable` uses the same code with no field list. */
 const VALIDATION_CODE = 4;
 
+/**
+ * Paths where 401 means bad credentials / OTP / current password — not a dead session.
+ * These must not trigger a redirect to login.
+ */
+const AUTH_CHALLENGE_PATHS = new Set([
+  "/auth/login",
+  "/auth/login/2fa",
+  "/auth/password",
+  "/auth/otp/setup/confirm",
+  "/auth/otp/disable",
+]);
+
 function parseError(status: number, payload: ErrorBody | null): Error {
   if (payload?.code === VALIDATION_CODE && payload.body) {
     return new ValidationError(payload as ErrorBody<ValidationItem[]>);
@@ -88,11 +100,26 @@ function parseError(status: number, payload: ErrorBody | null): Error {
 
 export type UploadProgress = (loaded: number, total: number) => void;
 
+export type NimbusClientOptions = {
+  /** Called when a response indicates the session is no longer valid. */
+  onUnauthorized?: () => void;
+};
+
 export class NimbusClient {
   readonly #root: string;
+  readonly #onUnauthorized?: () => void;
 
-  constructor(baseUrl: string) {
+  constructor(baseUrl: string, options: NimbusClientOptions = {}) {
     this.#root = baseUrl.replace(/\/$/, "");
+    this.#onUnauthorized = options.onUnauthorized;
+  }
+
+  /** Parse an error response and notify the host when the session has expired. */
+  #httpError(status: number, payload: ErrorBody | null, path: string): Error {
+    if (status === 401 && !AUTH_CHALLENGE_PATHS.has(path)) {
+      this.#onUnauthorized?.();
+    }
+    return parseError(status, payload);
   }
 
   login(
@@ -167,7 +194,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw parseError(response.status, body);
+      throw this.#httpError(response.status, body, "/auth/otp/setup");
     }
 
     const token = response.headers.get(OTP_TOKEN_HEADER);
@@ -390,7 +417,7 @@ export class NimbusClient {
           }
         }
 
-        fail(parseError(xhr.status, payload));
+        fail(this.#httpError(xhr.status, payload, path));
       };
 
       xhr.onerror = () => fail(new TypeError("network error"));
@@ -469,7 +496,8 @@ export class NimbusClient {
 
   /** Fetch a file's bytes (same auth as download). */
   async content(rootId: string, id: string): Promise<Blob> {
-    const response = await fetch(this.downloadUrl(rootId, id), {
+    const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/download`;
+    const response = await fetch(`${this.#root}${path}`, {
       credentials: "include",
     });
 
@@ -480,7 +508,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw parseError(response.status, body);
+      throw this.#httpError(response.status, body, path);
     }
 
     return response.blob();
@@ -515,12 +543,10 @@ export class NimbusClient {
 
   /** Fetch a file's preview image as a blob. */
   async preview(rootId: string, id: string): Promise<Blob> {
-    const response = await fetch(
-      `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview`,
-      {
-        credentials: "include",
-      },
-    );
+    const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview`;
+    const response = await fetch(`${this.#root}${path}`, {
+      credentials: "include",
+    });
 
     if (!response.ok) {
       let body: ErrorBody | null = null;
@@ -529,7 +555,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw parseError(response.status, body);
+      throw this.#httpError(response.status, body, path);
     }
 
     return response.blob();
@@ -642,7 +668,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw parseError(response.status, body);
+      throw this.#httpError(response.status, body, path);
     }
 
     let failed = false;
@@ -719,7 +745,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw parseError(response.status, body);
+      throw this.#httpError(response.status, body, path);
     }
 
     if (response.status === 204) {

@@ -1,4 +1,4 @@
-import type { NimbusClient } from "./api";
+import { NimbusClient } from "./api";
 import { navigate } from "./router";
 import type { UserViewFull } from "./types";
 
@@ -39,9 +39,17 @@ export const session = $state<{
   configureEndpoint: null,
 });
 
-export async function logout() {
-  await session.client.logout();
+/** Clear local session state and send the user to the login page. */
+export function clearSession() {
   session.user = null;
   session.menuOpen = false;
   navigate("/login", { replace: true });
+}
+
+export async function logout() {
+  try {
+    await session.client.logout();
+  } finally {
+    clearSession();
+  }
 }
