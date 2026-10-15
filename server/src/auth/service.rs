@@ -1,10 +1,10 @@
 use super::{
     crypto::{decode_otp_secret, hash_password, verify_otp, verify_password},
-        model::{
-            DisableOtp, GeneratedOtp, LoginCredentials, LoginResult, Otp, PasswordChange,
-            PasswordReset, PasswordResetRequest,
-        },
-    session::Session,
+    model::{
+        DisableOtp, GeneratedOtp, LoginCredentials, LoginResult, Otp, PasswordChange,
+        PasswordReset, PasswordResetRequest,
+    },
+    session::{ActiveSessionView, Session},
     token::{OneShotToken, TokenStore},
 };
 use crate::{
@@ -173,6 +173,58 @@ impl AuthenticationService {
     #[instrument(skip_all, err(Debug))]
     pub async fn logout(&self, session_id: Uuid) -> Result<(), AppError> {
         self.sessions.expire(session_id).await
+    }
+
+    /// Live sessions for the signed-in user.
+    #[instrument(skip(self, session), fields(user_id = %session.user.id), err(Debug))]
+    pub async fn list_sessions(
+        &self,
+        session: &Session,
+    ) -> Result<Vec<ActiveSessionView>, AppError> {
+        let rows = self.sessions.list_live_for_user(session.user.id).await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| ActiveSessionView::from_record(row, session.id))
+            .collect())
+    }
+
+    /// Expire one of the caller's sessions. Returns not found if missing or not owned.
+    #[instrument(
+        skip(self, session),
+        fields(user_id = %session.user.id, target = %session_id),
+        err(Debug)
+    )]
+    pub async fn expire_session(
+        &self,
+        session: &Session,
+        session_id: Uuid,
+    ) -> Result<(), AppError> {
+        let row = self
+            .sessions
+            .get(session_id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("Session does not exist".into()))?;
+
+        if row.user_id != session.user.id {
+            return Err(AppError::ResourceMissing("Session does not exist".into()));
+        }
+
+        if row
+            .expires_at
+            .is_some_and(|expires_at| expires_at < Utc::now())
+        {
+            return Err(AppError::ResourceMissing("Session does not exist".into()));
+        }
+
+        self.sessions.expire(session_id).await
+    }
+
+    /// Expire every live session for the user except the current one.
+    #[instrument(skip(self, session), fields(user_id = %session.user.id), err(Debug))]
+    pub async fn expire_other_sessions(&self, session: &Session) -> Result<(), AppError> {
+        self.sessions
+            .expire_others(session.user.id, session.id)
+            .await
     }
 
     /// Update the user's password.

@@ -1,4 +1,5 @@
 import type {
+  ActiveSessionView,
   CreateUserInput,
   DeletionEvent,
   DeletionResult,
@@ -130,6 +131,20 @@ export class NimbusClient {
 
   logout(): Promise<void> {
     return this.request<void>("/auth/logout", { method: "POST" });
+  }
+
+  listSessions(): Promise<ActiveSessionView[]> {
+    return this.request<ActiveSessionView[]>("/auth/sessions");
+  }
+
+  expireSession(id: string): Promise<void> {
+    return this.request<void>(`/auth/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
+  expireOtherSessions(): Promise<void> {
+    return this.request<void>("/auth/sessions", { method: "DELETE" });
   }
 
   changePassword(currentPassword: string, newPassword: string): Promise<void> {

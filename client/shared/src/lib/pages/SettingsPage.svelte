@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import { Pencil, ShieldAlert, ShieldCheck } from "@lucide/svelte";
   import { ApiError, ValidationError } from "../api";
+  import ActiveSessions from "../components/ActiveSessions.svelte";
   import PanelShell from "../components/PanelShell.svelte";
   import Button from "../components/ui/button/button.svelte";
   import Field from "../components/ui/field/field.svelte";
@@ -178,11 +179,11 @@
   {/snippet}
 
   <div class="p-4 sm:p-6">
-    <div class="mx-auto max-w-2xl space-y-5">
+    <div class="mx-auto max-w-3xl space-y-5">
       <div class="space-y-0.5 border-b pb-3">
         <h2 class="text-lg font-semibold tracking-tight">Account</h2>
         <p class="text-sm text-muted-foreground">
-          Profile, password, and two-factor authentication.
+          Profile, security, and signed-in sessions.
         </p>
       </div>
 
@@ -378,6 +379,8 @@
             </div>
           {/if}
         </section>
+
+        <ActiveSessions />
       {/if}
     </div>
   </div>

@@ -5,7 +5,7 @@ use crate::{
         DisableOtp, LoginCredentials, LoginResult, Otp, PasswordChange, PasswordReset,
         PasswordResetRequest,
     },
-    auth::session::SessionView,
+    auth::session::{ActiveSessionView, SessionView},
     file::{
         model::{
             CopyFile, CreateDirectory, FileEntry, FileMetadata, FileView, MoveFiles, RestoreFile,
@@ -35,6 +35,9 @@ use crate::{
         auth::me,
         auth::update_me,
         auth::logout,
+        auth::list_sessions,
+        auth::expire_other_sessions,
+        auth::expire_session,
         auth::change_password,
         auth::start_otp_setup,
         auth::finish_otp_setup,
@@ -83,6 +86,7 @@ use crate::{
         PasswordReset,
         PasswordChange,
         SessionView,
+        ActiveSessionView,
         UserViewFull,
         Role,
         CreateUser,

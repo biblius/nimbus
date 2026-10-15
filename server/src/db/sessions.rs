@@ -97,6 +97,39 @@ impl SessionRepository {
         .map_err(AppError::from)
     }
 
+    /// Live (non-expired) sessions for a user, newest first.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_live_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<SessionRecord>, AppError> {
+        let now = Utc::now();
+
+        sqlx::query_as!(
+            SessionRecord,
+            r#"
+            SELECT
+                id,
+                user_id,
+                remote_address,
+                user_agent,
+                created_at,
+                updated_at,
+                expires_at
+            FROM sessions
+            WHERE
+                user_id = $1
+            AND (expires_at IS NULL OR expires_at > $2)
+            ORDER BY created_at DESC
+            "#,
+            user_id,
+            now,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
     #[instrument(skip_all, err(Debug))]
     pub async fn expire(&self, id: Uuid) -> Result<(), AppError> {
         let now = Utc::now();

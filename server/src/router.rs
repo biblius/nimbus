@@ -78,6 +78,11 @@ pub fn router(state: AppState) -> Router {
     let session = Router::new()
         .route("/auth/me", get(auth::me).patch(auth::update_me))
         .route("/auth/logout", post(auth::logout))
+        .route(
+            "/auth/sessions",
+            get(auth::list_sessions).delete(auth::expire_other_sessions),
+        )
+        .route("/auth/sessions/{id}", delete(auth::expire_session))
         .route("/auth/password", post(auth::change_password))
         .route("/auth/otp/setup", post(auth::start_otp_setup))
         .route("/auth/otp/setup/confirm", post(auth::finish_otp_setup))

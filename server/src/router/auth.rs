@@ -21,7 +21,7 @@ use crate::{
             DisableOtp, LoginCredentials, LoginResult, OTP_TOKEN_HEADER, Otp, PasswordChange,
             PasswordReset, PasswordResetRequest,
         },
-        session::Session,
+        session::{ActiveSessionView, Session},
     },
     error::AppError,
     router::middleware::RemoteAddress,
@@ -159,19 +159,80 @@ pub(crate) async fn logout(
 ) -> Result<Response, AppError> {
     state.services.auth.logout(session.id).await?;
 
-    let mut cookie = Cookie::build((state.http_config.cookie_name.to_string(), String::new()))
+    Ok(clear_session_cookie(
+        StatusCode::NO_CONTENT.into_response(),
+        &state.http_config,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/auth/sessions",
+    responses(
+        (status = 200, description = "Live sessions for the current user", body = Vec<ActiveSessionView>)
+    )
+)]
+pub(crate) async fn list_sessions(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Json<Vec<ActiveSessionView>>, AppError> {
+    Ok(Json(state.services.auth.list_sessions(&session).await?))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/auth/sessions",
+    responses((status = 204, description = "All other live sessions expired"))
+)]
+pub(crate) async fn expire_other_sessions(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<StatusCode, AppError> {
+    state.services.auth.expire_other_sessions(&session).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    delete,
+    path = "/auth/sessions/{id}",
+    params(("id" = Uuid, Path, description = "Session id to expire")),
+    responses(
+        (status = 204, description = "Session expired"),
+        (status = 404, description = "Session missing or not owned")
+    )
+)]
+pub(crate) async fn expire_session(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let current = id == session.id;
+
+    state.services.auth.expire_session(&session, id).await?;
+
+    if current {
+        return Ok(clear_session_cookie(
+            StatusCode::NO_CONTENT.into_response(),
+            &state.http_config,
+        ));
+    }
+
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+fn clear_session_cookie(mut response: Response, config: &HttpConfiguration) -> Response {
+    let mut cookie = Cookie::build((config.cookie_name.to_string(), String::new()))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
-        .secure(state.http_config.cookie_secure)
+        .secure(config.cookie_secure)
         .max_age(time::Duration::ZERO)
         .build();
 
-    if !state.http_config.cookie_domain.is_empty() {
-        cookie.set_domain(state.http_config.cookie_domain.to_string());
+    if !config.cookie_domain.is_empty() {
+        cookie.set_domain(config.cookie_domain.to_string());
     }
-
-    let mut response = StatusCode::NO_CONTENT.into_response();
 
     match HeaderValue::from_str(&cookie.to_string()) {
         Ok(value) => {
@@ -180,7 +241,7 @@ pub(crate) async fn logout(
         Err(error) => tracing::error!(%error, "unable to create session cookie header"),
     }
 
-    Ok(response)
+    response
 }
 
 #[utoipa::path(

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Download, Folder, Share2, Trash } from "@lucide/svelte";
   import { createDraggable, createDroppable } from "@dnd-kit/svelte";
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { hasListThumbnail, isPreviewable } from "../fileKind";
   import { formatBytes, formatDatetime } from "../format";
   import { session } from "../session.svelte";
@@ -13,6 +13,9 @@
   const PREVIEW_POLL_MS = 3000;
   const PREVIEW_MAX_ATTEMPTS = 5;
   const ICON = 24;
+  const LONG_PRESS_MS = 480;
+  /** Match parent PointerSensor drag distance so long-press cancels before drag starts. */
+  const MOVE_THRESHOLD_PX = 8;
 
   let {
     entry,
@@ -21,7 +24,9 @@
     columns,
     selected,
     multiSelected = false,
+    selectMode = false,
     onSelect,
+    onLongSelect,
     onOpen,
     onPreview,
     onDownload,
@@ -35,7 +40,11 @@
     selected: boolean;
     /** True when this row is selected as part of a multi-item selection. */
     multiSelected?: boolean;
+    /** When true, plain taps toggle and icon clicks do not open/preview. */
+    selectMode?: boolean;
     onSelect: (event: MouseEvent) => void;
+    /** Long-press to enter multi-select (mobile) and ensure this item is selected. */
+    onLongSelect?: () => void;
     onOpen: () => void;
     onPreview: () => void;
     onDownload: () => void;
@@ -65,11 +74,84 @@
   const previewable = $derived(isPreviewable(entry));
   const showThumbnail = $derived(hasListThumbnail(entry));
 
+  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
+  let longPressOrigin: { x: number; y: number } | null = null;
+  let suppressClick = false;
+  let longPressFired = false;
+
+  function clearLongPressTimer() {
+    if (longPressTimer !== undefined) {
+      clearTimeout(longPressTimer);
+      longPressTimer = undefined;
+    }
+    longPressOrigin = null;
+  }
+
+  onDestroy(clearLongPressTimer);
+
+  function isActionTarget(target: EventTarget | null) {
+    return (
+      target instanceof Element && Boolean(target.closest("[data-no-open]"))
+    );
+  }
+
+  function onRowPointerDown(event: PointerEvent) {
+    if (event.button !== 0 || isActionTarget(event.target)) {
+      return;
+    }
+
+    clearLongPressTimer();
+    longPressFired = false;
+    longPressOrigin = { x: event.clientX, y: event.clientY };
+
+    longPressTimer = setTimeout(() => {
+      longPressTimer = undefined;
+      longPressOrigin = null;
+      longPressFired = true;
+      suppressClick = true;
+      onLongSelect?.();
+    }, LONG_PRESS_MS);
+  }
+
+  function onRowPointerMove(event: PointerEvent) {
+    if (!longPressOrigin) {
+      return;
+    }
+
+    const dx = event.clientX - longPressOrigin.x;
+    const dy = event.clientY - longPressOrigin.y;
+
+    if (dx * dx + dy * dy > MOVE_THRESHOLD_PX * MOVE_THRESHOLD_PX) {
+      clearLongPressTimer();
+    }
+  }
+
+  function onRowPointerEnd() {
+    clearLongPressTimer();
+  }
+
+  function consumeSuppressedClick(event: MouseEvent) {
+    if (!suppressClick) {
+      return false;
+    }
+
+    suppressClick = false;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    return true;
+  }
+
   function isModifiedClick(event: MouseEvent) {
     return event.ctrlKey || event.metaKey || event.shiftKey;
   }
 
   function onRowClick(event: MouseEvent) {
+    if (consumeSuppressedClick(event)) {
+      return;
+    }
+
     if (
       event.target instanceof Element &&
       event.target.closest("button, a, input, [data-no-select]")
@@ -80,11 +162,15 @@
     onSelect(event);
   }
 
-  /** Icon: open / preview (or select only with modifiers). */
+  /** Icon: open / preview (or select only with modifiers / select mode). */
   function onIconClick(event: MouseEvent) {
     event.stopPropagation();
 
-    if (isModifiedClick(event)) {
+    if (consumeSuppressedClick(event)) {
+      return;
+    }
+
+    if (isModifiedClick(event) || selectMode || multiSelected) {
       event.preventDefault();
       onSelect(event);
       return;
@@ -105,6 +191,11 @@
   /** Name: select + drag handle (does not open). */
   function onNameClick(event: MouseEvent) {
     event.stopPropagation();
+
+    if (consumeSuppressedClick(event)) {
+      return;
+    }
+
     onSelect(event);
   }
 
@@ -123,6 +214,13 @@
 
     if (previewable) {
       onPreview();
+    }
+  }
+
+  function onRowContextMenu(event: MouseEvent) {
+    if (longPressFired) {
+      event.preventDefault();
+      longPressFired = false;
     }
   }
 
@@ -210,7 +308,7 @@
   {@attach directory ? droppable.attach : undefined}
   class={cn(
     columns,
-    "min-h-14 py-2 select-none outline-none hover:bg-accent/60 focus:outline-none focus-visible:outline-none",
+    "min-h-14 py-2 outline-none select-none [-webkit-touch-callout:none] hover:bg-accent/60 focus:outline-none focus-visible:outline-none",
     selected && "bg-accent/40",
     selected && multiSelected && "ring-1 ring-primary/70 ring-inset",
     draggable.isDragging && "opacity-40",
@@ -220,6 +318,11 @@
   )}
   onclick={onRowClick}
   ondblclick={onRowDoubleClick}
+  onpointerdown={onRowPointerDown}
+  onpointermove={onRowPointerMove}
+  onpointerup={onRowPointerEnd}
+  onpointercancel={onRowPointerEnd}
+  oncontextmenu={onRowContextMenu}
 >
   <div class="flex min-h-12 w-full min-w-0 items-center gap-3 overflow-hidden">
     {#if file.kind === "directory"}
@@ -269,7 +372,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       {@attach draggable.attachHandle}
-      class="flex min-h-12 min-w-0 flex-1 cursor-grab items-center outline-none active:cursor-grabbing focus:outline-none focus-visible:outline-none"
+      class="flex min-h-12 min-w-0 flex-1 cursor-grab items-center outline-none focus:outline-none focus-visible:outline-none active:cursor-grabbing"
       data-no-select
       title={name}
       onclick={onNameClick}

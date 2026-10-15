@@ -11,6 +11,17 @@ export type SessionView = {
   user: UserViewFull;
 };
 
+/** Live session row from `GET /auth/sessions` (no nested user). */
+export type ActiveSessionView = {
+  id: string;
+  remoteAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string | null;
+  current: boolean;
+};
+
 export type UserViewFull = UserView & {
   otpEnabled: boolean;
   updatedAt: string;

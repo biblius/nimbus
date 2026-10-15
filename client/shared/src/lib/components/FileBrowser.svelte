@@ -91,6 +91,8 @@
   let selected = $state<string[]>([]);
   /** Anchor for Shift+click range selection (last plain / Ctrl click). */
   let selectionAnchor = $state<string | null>(null);
+  /** When true, plain click/tap toggles additively (desktop sticky multi-select + mobile). */
+  let selectMode = $state(false);
   let deleteOpen = $state(false);
   let deleting = $state(false);
   let pendingDelete = $state<string[]>([]);
@@ -267,6 +269,7 @@
     entries = [];
     selected = [];
     selectionAnchor = null;
+    selectMode = false;
     previewFileId = null;
 
     loadAncestors(rootId, parent, currentLoad);
@@ -657,10 +660,16 @@
     selected.splice(index, 1);
   }
 
+  function clearSelection() {
+    selected = [];
+    selectionAnchor = null;
+    selectMode = false;
+  }
+
   /**
-   * OS-style selection:
-   * - Click: select only this item
-   * - Ctrl/Cmd+Click: toggle in multiselect
+   * OS-style selection + select mode:
+   * - Click: select only this item (unless selectMode, then toggle)
+   * - Ctrl/Cmd+Click: toggle and enter select mode while anything remains selected
    * - Shift+Click: select contiguous range from anchor (only if something is already selected)
    */
   function selectEntry(id: string, event: MouseEvent) {
@@ -680,18 +689,43 @@
         const start = Math.min(from, to);
         const end = Math.max(from, to);
         selected = ids.slice(start, end + 1);
+        selectMode = true;
         return;
       }
     }
 
-    if (additive) {
+    if (additive || selectMode) {
       toggle(id);
       selectionAnchor = id;
+      selectMode = selected.length > 0;
       return;
     }
 
     selected = [id];
     selectionAnchor = id;
+  }
+
+  /** Long-press / mobile: enter select mode and ensure this item is selected. */
+  function longSelectEntry(id: string) {
+    selectMode = true;
+    if (!selected.includes(id)) {
+      selected.push(id);
+    }
+    selectionAnchor = id;
+  }
+
+  function onWindowKeydown(event: KeyboardEvent) {
+    if (event.key !== "Escape") {
+      return;
+    }
+    if (deleteOpen || previewFileId !== null || drafting) {
+      return;
+    }
+    if (!selectMode && selected.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    clearSelection();
   }
 
   function askDelete(ids: string[]) {
@@ -917,6 +951,8 @@
   }
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
 <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
   <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
     <nav
@@ -985,6 +1021,16 @@
         <span class="hidden sm:inline">New folder</span>
       </Button>
       {#if selected.length >= 2}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label="Clear selection"
+          onclick={clearSelection}
+        >
+          <X size={15} />
+          <span class="hidden sm:inline">Clear</span>
+        </Button>
         <Button
           type="button"
           variant="outline"
@@ -1168,7 +1214,9 @@
                 {columns}
                 selected={selected.includes(entry.file.id)}
                 multiSelected={selected.length >= 2}
+                {selectMode}
                 onSelect={(event) => selectEntry(entry.file.id, event)}
+                onLongSelect={() => longSelectEntry(entry.file.id)}
                 onOpen={() => openDirectory(entry)}
                 onPreview={() => (previewFileId = entry.file.id)}
                 onDownload={() => download(entry)}
