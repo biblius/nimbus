@@ -1,5 +1,6 @@
 #[cfg(desktop)]
-use tauri::Manager;
+mod desktop;
+
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,12 +20,21 @@ pub fn run() {
 
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = app
-                .get_webview_window("main")
-                .expect("no main window")
-                .set_focus();
-        }));
+        builder = builder
+            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+                desktop::show_main_window(app);
+            }))
+            .setup(|app| {
+                desktop::setup_tray(app)?;
+                Ok(())
+            })
+            .on_window_event(|window, event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    // Keep running in the tray instead of quitting.
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+            });
     }
 
     builder

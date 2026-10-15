@@ -22,10 +22,7 @@ pub fn verify_otp(secret: &[u8], code: &str) -> Result<(), AppError> {
 }
 
 pub fn verify_password(password: &str, hash: &str) -> bool {
-    use argon2::{
-        Argon2,
-        password_hash::{PasswordHash, PasswordVerifier},
-    };
+    use argon2::{Argon2, PasswordHash, PasswordVerifier};
 
     let Ok(parsed) = PasswordHash::new(hash) else {
         tracing::error!("stored password hash is not a valid argon2 hash");
@@ -38,15 +35,10 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
 }
 
 pub fn hash_password(password: &str) -> Result<String, AppError> {
-    use argon2::{
-        Argon2,
-        password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
-    };
-
-    let salt = SaltString::generate(&mut OsRng);
+    use argon2::{Argon2, PasswordHasher};
 
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map(|hash| hash.to_string())
         .map_err(|error| {
             tracing::error!(%error, "hashing password");
