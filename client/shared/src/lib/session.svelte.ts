@@ -11,6 +11,10 @@ export const session = $state<{
   menuOpen: boolean;
   /** Native (Tauri) client — login creates a permanent session. */
   native: boolean;
+  /** Native only: persisted server URL, or `null` if not configured yet. */
+  endpoint: string | null;
+  /** Native only: persist a new server URL and rebuild the API client. */
+  configureEndpoint: ((url: string) => Promise<void>) | null;
 }>({
   /**
    * The Nimbus server API.
@@ -29,6 +33,10 @@ export const session = $state<{
   menuOpen: false,
 
   native: false,
+
+  endpoint: null,
+
+  configureEndpoint: null,
 });
 
 export async function logout() {

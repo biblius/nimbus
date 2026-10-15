@@ -8,50 +8,33 @@
   import { onMount } from "svelte";
   import { loadEndpoint, saveEndpoint } from "./settings";
 
-  let endpoint = $state("http://localhost:42069");
-  let draft = $state("http://localhost:42069");
-  let client = $state<NimbusClient | null>(null);
+  let ready = $state(false);
 
   onMount(async () => {
-    endpoint = await loadEndpoint();
-    draft = endpoint;
+    const endpoint = await loadEndpoint();
+
     session.native = true;
-    session.client = new NimbusClient(endpoint);
-    client = session.client;
+    session.endpoint = endpoint;
+    session.client = new NimbusClient(endpoint ?? "");
+
+    session.configureEndpoint = async (url: string) => {
+      const trimmed = url.trim().replace(/\/$/, "");
+      if (!trimmed) {
+        throw new Error("empty endpoint");
+      }
+      await saveEndpoint(trimmed);
+      session.endpoint = trimmed;
+      session.client = new NimbusClient(trimmed);
+    };
+
+    ready = true;
   });
-
-  async function apply(event: SubmitEvent) {
-    event.preventDefault();
-    endpoint = draft.trim();
-    await saveEndpoint(endpoint);
-    session.client = new NimbusClient(endpoint);
-    client = session.client;
-  }
 </script>
-
-<div class="border-b bg-card px-6 py-3">
-  <form class="mx-auto flex max-w-5xl items-center gap-2" onsubmit={apply}>
-    <label class="text-sm text-muted-foreground" for="endpoint">Server</label>
-    <input
-      id="endpoint"
-      class="h-9 flex-1 rounded-md border border-input bg-field px-3 text-sm"
-      bind:value={draft}
-    />
-    <button
-      class="h-9 rounded-md bg-primary px-3 text-sm text-primary-foreground"
-      type="submit"
-    >
-      Save
-    </button>
-  </form>
-</div>
 
 <SvelteToast options={toastOptions} />
 
-{#if client}
-  {#key endpoint}
-    <Router />
-  {/key}
+{#if ready}
+  <Router />
 {:else}
   <p class="p-6 text-sm text-muted-foreground">Loading client settings…</p>
 {/if}

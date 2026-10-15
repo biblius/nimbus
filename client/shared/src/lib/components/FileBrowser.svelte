@@ -1196,7 +1196,7 @@
           <span class="hidden sm:inline">Clear</span>
         </Button>
       {/if}
-      {#if selected.length >= 2}
+      {#if selectMode && selected.length > 0}
         <Button
           type="button"
           variant="outline"
