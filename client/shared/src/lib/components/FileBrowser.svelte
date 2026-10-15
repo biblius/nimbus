@@ -1167,6 +1167,7 @@
                 name={label(entry)}
                 {columns}
                 selected={selected.includes(entry.file.id)}
+                multiSelected={selected.length >= 2}
                 onSelect={(event) => selectEntry(entry.file.id, event)}
                 onOpen={() => openDirectory(entry)}
                 onPreview={() => (previewFileId = entry.file.id)}

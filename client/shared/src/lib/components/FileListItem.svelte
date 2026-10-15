@@ -20,6 +20,7 @@
     name,
     columns,
     selected,
+    multiSelected = false,
     onSelect,
     onOpen,
     onPreview,
@@ -32,6 +33,8 @@
     name: string;
     columns: string;
     selected: boolean;
+    /** True when this row is selected as part of a multi-item selection. */
+    multiSelected?: boolean;
     onSelect: (event: MouseEvent) => void;
     onOpen: () => void;
     onPreview: () => void;
@@ -209,6 +212,7 @@
     columns,
     "min-h-14 py-2 select-none outline-none hover:bg-accent/60 focus:outline-none focus-visible:outline-none",
     selected && "bg-accent/40",
+    selected && multiSelected && "ring-1 ring-primary/70 ring-inset",
     draggable.isDragging && "opacity-40",
     directory &&
       droppable.isDropTarget &&

@@ -134,7 +134,7 @@
       </Field>
     {/if}
 
-    <div class="sm:col-span-2 space-y-2.5">
+    <div class="space-y-2.5 sm:col-span-2">
       <Field
         label="Password"
         id="account-password"
@@ -143,7 +143,6 @@
         bind:value={password}
         error={validation?.field("password")}
         autocomplete="new-password"
-        placeholder="Leave blank to keep"
       />
 
       {#if selfService && password}
