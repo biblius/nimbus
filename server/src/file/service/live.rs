@@ -1,5 +1,5 @@
 use super::super::{
-    model::{CreateDirectory, FileEntry, FileKind, FileView},
+    model::{CreateDirectory, CreateTextFile, FileEntry, FileKind, FileView},
     queue::{ProcessingQueue, ProcessingQueueHandle},
     storage::{Storage, TempFile, UploadWriter},
 };
@@ -11,7 +11,7 @@ use crate::{
     },
     error::AppError,
     file::{
-        format::FileType,
+        format::{FileType, TextFormat},
         model::{CopyFile, FileContentPreview, MoveFiles, RootView, TrashFiles},
         tree::FileTree,
     },
@@ -157,6 +157,26 @@ impl LiveFileService {
 
         Ok(entry)
     }
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
+    pub async fn create_text_file(
+        &self,
+        user: &User,
+        root: Uuid,
+        mut input: CreateTextFile,
+    ) -> Result<FileEntry, AppError> {
+        input.validify()?;
+
+        let mut writer = self.start_upload(user, root, input.name).await?;
+        let mut file = writer.finish().await?;
+
+        // Keep the entry editable via overwrite even if the name has no text extension.
+        if !matches!(file.file_type, FileType::Text(_)) {
+            file.file_type = FileType::Text(TextFormat::Txt);
+        }
+
+        self.finish_upload(user, root, input.parent, file).await
+    }
+
     /// Validate the parameters of a file upload and return the writer if valid.
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn start_upload(
@@ -363,17 +383,19 @@ impl LiveFileService {
             }
         }
 
+        // Text files with no extension can cause problems
+        //
+        // Prefer from extension and fallback to existing.
+        let file_type = existing
+            .file_type
+            .as_ref()
+            .unwrap_or(&FileType::Text(TextFormat::Txt));
+
         let mut tx = self.tx.begin().await?;
 
         let entry = self
             .live
-            .update_content(
-                &mut *tx,
-                existing.id,
-                &file.hash,
-                file.size,
-                &file.file_type,
-            )
+            .update_content(&mut *tx, existing.id, &file.hash, file.size, file_type)
             .await?;
 
         self.storage.persist(&mut file).await?;

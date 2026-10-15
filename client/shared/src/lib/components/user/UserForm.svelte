@@ -4,6 +4,7 @@
   import type { Role, UserData, UserView } from "../../types";
   import Button from "../ui/button/button.svelte";
   import Field from "../ui/field/field.svelte";
+  import Select from "../ui/select/select.svelte";
 
   let {
     title,
@@ -125,14 +126,10 @@
 
     {#if !selfService}
       <Field label="Role" id="account-role" dense>
-        <select
-          id="account-role"
-          class="flex h-8 w-full rounded-md border border-input bg-field px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          bind:value={role}
-        >
+        <Select id="account-role" class="h-8" bind:value={role}>
           <option value="user">User</option>
           <option value="admin">Admin</option>
-        </select>
+        </Select>
       </Field>
     {/if}
   </div>

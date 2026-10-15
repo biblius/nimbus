@@ -205,6 +205,16 @@ pub struct CreateDirectory {
     pub parent: Option<Uuid>,
 }
 
+#[derive(Debug, Deserialize, Validify, ToSchema)]
+pub struct CreateTextFile {
+    #[modify(trim)]
+    #[validate(length(min = 1, message = "File name cannot be empty"))]
+    #[validate(length(max = 255, message = "File name too long"))]
+    pub name: String,
+
+    pub parent: Option<Uuid>,
+}
+
 impl CreateDirectory {
     pub fn new(id: Uuid, name: String, parent: Option<Uuid>) -> Self {
         Self { id, parent, name }

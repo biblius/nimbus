@@ -3,8 +3,8 @@ use crate::{
     error::AppError,
     file::{
         model::{
-            CopyFile, CreateDirectory, FileEntry, FileView, MoveFiles, RestoreFile, RootView,
-            TrashFiles,
+            CopyFile, CreateDirectory, CreateTextFile, FileEntry, FileView, MoveFiles, RestoreFile,
+            RootView, TrashFiles,
         },
         queue::DeletionResult,
         tree::FileTree,
@@ -213,6 +213,28 @@ pub(crate) async fn create_directory(
         .services
         .files
         .create_directory(&session.user, root_id, input)
+        .await?;
+
+    Ok((StatusCode::CREATED, Json(entry)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/roots/{root_id}/files",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    request_body = CreateTextFile,
+    responses((status = 201, description = "Empty text file created", body = FileEntry))
+)]
+pub(crate) async fn create_text_file(
+    Path(root_id): Path<Uuid>,
+    State(state): State<AppState>,
+    session: Session,
+    Json(input): Json<CreateTextFile>,
+) -> Result<(StatusCode, Json<FileEntry>), AppError> {
+    let entry = state
+        .services
+        .files
+        .create_text_file(&session.user, root_id, input)
         .await?;
 
     Ok((StatusCode::CREATED, Json(entry)))

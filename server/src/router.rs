@@ -104,6 +104,7 @@ pub fn router(state: AppState) -> Router {
             "/roots/{root_id}/directories",
             post(files::create_directory),
         )
+        .route("/roots/{root_id}/files", post(files::create_text_file))
         .route(
             "/roots/{root_id}/files/{file_id}/ancestors",
             get(files::ancestors),

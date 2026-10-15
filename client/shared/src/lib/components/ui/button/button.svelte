@@ -13,6 +13,8 @@
       size: {
         default: "h-9 px-4 py-2",
         sm: "h-8 rounded-md px-3 text-xs",
+        icon: "size-9",
+        "icon-sm": "size-8",
       },
     },
     defaultVariants: {
@@ -33,14 +35,20 @@
     class: className,
     variant = "default",
     size = "default",
+    ref = $bindable(),
     children,
     ...rest
   }: HTMLButtonAttributes & {
     variant?: ButtonVariant;
     size?: ButtonSize;
+    ref?: HTMLButtonElement;
   } = $props();
 </script>
 
-<button class={cn(buttonVariants({ variant, size }), className)} {...rest}>
+<button
+  bind:this={ref}
+  class={cn(buttonVariants({ variant, size }), className)}
+  {...rest}
+>
   {@render children?.()}
 </button>

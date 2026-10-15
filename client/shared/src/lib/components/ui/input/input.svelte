@@ -5,14 +5,16 @@
   let {
     class: className,
     value = $bindable(),
+    ref = $bindable(),
     ...rest
-  }: HTMLInputAttributes = $props();
+  }: HTMLInputAttributes & { ref?: HTMLInputElement } = $props();
 </script>
 
 <input
+  bind:this={ref}
   bind:value
   class={cn(
-    "flex h-9 w-full rounded-md border border-input bg-field px-3 py-1 text-sm shadow-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+    "flex h-9 w-full rounded-md border border-input bg-field px-3 py-1 text-sm shadow-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:focus-visible:ring-destructive",
     className,
   )}
   {...rest}

@@ -3,6 +3,7 @@
   import type { ListSearch } from "../../../types";
   import { cn } from "../../../utils";
   import Input from "../input/input.svelte";
+  import Select from "../select/select.svelte";
 
   export type QueryColumn = {
     value: string;
@@ -50,24 +51,22 @@
 
 <div class={cn("flex min-w-0 items-center", className)}>
   <Input
-    class="mr-0 min-w-0 w-auto flex-1 rounded-r-none"
+    class="w-auto min-w-0 flex-1 rounded-r-none focus-visible:z-10"
     type="search"
     placeholder="Search"
     bind:value={query.q}
     oninput={queue}
     aria-label="Search"
   />
-  <label class="flex shrink-0 items-center text-sm">
-    <select
-      class="ml-0 h-9 appearance-none rounded-md rounded-l-none border border-input bg-field px-2 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      title="Search by"
-      aria-label="Search by"
-      bind:value={query.column}
-      onchange={columnChanged}
-    >
-      {#each columns as option (option.value)}
-        <option value={option.value}>{option.label}</option>
-      {/each}
-    </select>
-  </label>
+  <Select
+    class="-ml-px w-auto shrink-0 rounded-l-none"
+    title="Search by"
+    aria-label="Search by"
+    bind:value={query.column}
+    onchange={columnChanged}
+  >
+    {#each columns as option (option.value)}
+      <option value={option.value}>{option.label}</option>
+    {/each}
+  </Select>
 </div>

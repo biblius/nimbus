@@ -77,9 +77,11 @@
     style:padding-left="{depth * 1.25}rem"
   >
     {#if hasChildren}
-      <button
+      <Button
         type="button"
-        class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        variant="ghost"
+        size="icon-sm"
+        class="shrink-0 text-muted-foreground hover:text-foreground"
         aria-expanded={expanded ? "true" : "false"}
         aria-label={expanded ? `Collapse ${node.name}` : `Expand ${node.name}`}
         onclick={onToggle}
@@ -88,7 +90,7 @@
           size={16}
           class={cn("transition-transform", expanded && "rotate-90")}
         />
-      </button>
+      </Button>
     {:else}
       <span class="size-8 shrink-0"></span>
     {/if}
@@ -141,8 +143,8 @@
     <Button
       type="button"
       variant="ghost"
-      size="sm"
-      class="size-8 px-0 text-muted-foreground hover:text-destructive"
+      size="icon-sm"
+      class="text-muted-foreground hover:text-destructive"
       aria-label="Permanently delete {node.name}"
       onclick={onDelete}
     >

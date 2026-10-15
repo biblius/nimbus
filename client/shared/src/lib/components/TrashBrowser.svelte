@@ -193,9 +193,11 @@
           <header
             class="flex min-h-12 items-center gap-2 border-b bg-muted/40 px-2.5"
           >
-            <button
+            <Button
               type="button"
-              class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              variant="ghost"
+              size="icon-sm"
+              class="shrink-0 text-muted-foreground hover:text-foreground"
               aria-expanded={openRoots[root.id] ? "true" : "false"}
               aria-label={openRoots[root.id]
                 ? `Collapse ${root.name}`
@@ -209,7 +211,7 @@
                   openRoots[root.id] && "rotate-90",
                 )}
               />
-            </button>
+            </Button>
 
             <div class="flex min-w-0 flex-1 items-center gap-2">
               <span class="truncate text-sm font-medium tracking-tight">

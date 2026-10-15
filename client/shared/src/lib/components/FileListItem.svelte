@@ -8,6 +8,8 @@
   import type { FileView } from "../types";
   import { cn } from "../utils";
   import Button from "./ui/button/button.svelte";
+  import MenuItem from "./ui/menu/menu-item.svelte";
+  import Menu from "./ui/menu/menu.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
 
   const PREVIEW_POLL_MS = 3000;
@@ -53,13 +55,6 @@
   } = $props();
 
   const file = $derived(entry.file);
-
-  let shareOpen = $state(false);
-  let shareMenu: HTMLDivElement | undefined = $state();
-
-  function closeShare() {
-    shareOpen = false;
-  }
 
   const fileId = untrack(() => entry.file.id);
   const directory = untrack(() => entry.file.kind === "directory");
@@ -288,22 +283,6 @@
   });
 </script>
 
-<svelte:window
-  onclick={(event) => {
-    if (!shareOpen || !shareMenu) {
-      return;
-    }
-    if (!shareMenu.contains(event.target as Node)) {
-      closeShare();
-    }
-  }}
-  onkeydown={(event) => {
-    if (event.key === "Escape") {
-      closeShare();
-    }
-  }}
-/>
-
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <li
@@ -414,56 +393,34 @@
       <Button
         type="button"
         variant="ghost"
-        size="sm"
-        class="size-8 px-0 text-muted-foreground"
+        size="icon-sm"
+        class="text-muted-foreground"
         aria-label="Download {name}"
         onclick={onDownload}
       >
         <Download size={16} />
       </Button>
     {/if}
-    <div class="relative" bind:this={shareMenu}>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        class="size-8 px-0 text-muted-foreground"
-        aria-label="Share {name}"
-        aria-haspopup="menu"
-        aria-expanded={shareOpen}
-        onclick={(event) => {
-          event.stopPropagation();
-          shareOpen = !shareOpen;
-        }}
-      >
-        <Share2 size={16} />
-      </Button>
-      {#if shareOpen}
-        <div
-          role="menu"
-          class="absolute top-full right-0 z-50 mt-1 w-40 overflow-hidden rounded-xl border bg-card shadow-lg"
+    <Menu class="mt-1">
+      {#snippet trigger(props)}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          class="text-muted-foreground"
+          aria-label="Share {name}"
+          {...props}
         >
-          <div class="p-1">
-            <button
-              type="button"
-              role="menuitem"
-              class="flex min-h-11 w-full items-center rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
-              onclick={() => {
-                closeShare();
-                onCopy();
-              }}
-            >
-              Copy to…
-            </button>
-          </div>
-        </div>
-      {/if}
-    </div>
+          <Share2 size={16} />
+        </Button>
+      {/snippet}
+      <MenuItem onclick={onCopy}>Copy to…</MenuItem>
+    </Menu>
     <Button
       type="button"
       variant="ghost"
-      size="sm"
-      class="size-8 px-0 text-muted-foreground hover:text-destructive"
+      size="icon-sm"
+      class="text-muted-foreground hover:text-destructive"
       aria-label="Delete {name}"
       onclick={onDelete}
     >

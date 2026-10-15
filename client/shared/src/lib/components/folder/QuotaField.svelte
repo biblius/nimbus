@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { ValidationField } from "../../api";
+  import Input from "../ui/input/input.svelte";
   import Label from "../ui/label/label.svelte";
+  import Select from "../ui/select/select.svelte";
 
   const UNITS = [
     { id: "MB", size: 1024 ** 2 },
@@ -50,6 +52,24 @@
   const initial = untrack(() => split(bytes));
   let amount = $state(initial.amount);
   let unit = $state<Unit>(initial.unit);
+  let touched = $state(false);
+  let input = $state<HTMLInputElement>();
+
+  $effect(() => {
+    const form = input?.form;
+
+    if (!form) {
+      return;
+    }
+
+    const onSubmit = () => {
+      touched = true;
+      commit();
+    };
+
+    form.addEventListener("submit", onSubmit);
+    return () => form.removeEventListener("submit", onSubmit);
+  });
 
   const serverMessage = $derived(
     serverError?.message || serverError?.code || "",
@@ -67,7 +87,7 @@
     const text = amount.trim();
 
     if (!/^\d+(\.\d+)?$/.test(text)) {
-      error = "Enter a size";
+      error = touched ? "Enter a size" : "";
       valid = false;
       return;
     }
@@ -89,17 +109,11 @@
 
 <div class="space-y-2">
   <Label for={id}>Quota</Label>
-  <div
-    class={[
-      "flex h-9 overflow-hidden rounded-md border bg-field shadow-sm focus-within:ring-2",
-      invalid
-        ? "border-destructive focus-within:ring-destructive"
-        : "border-input focus-within:ring-ring",
-    ]}
-  >
-    <input
+  <div class="flex">
+    <Input
+      bind:ref={input}
       {id}
-      class="min-w-0 flex-1 bg-transparent px-3 text-sm tabular-nums outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:text-muted-foreground"
+      class="min-w-0 flex-1 rounded-r-none tabular-nums focus-visible:z-10"
       type="text"
       inputmode="decimal"
       autocomplete="off"
@@ -109,20 +123,33 @@
       value={unit === "unlimited" ? "" : amount}
       oninput={(event) => {
         amount = event.currentTarget.value;
+        touched = true;
+        commit();
+      }}
+      onblur={() => {
+        touched = true;
         commit();
       }}
     />
-    <select
-      class="w-28 shrink-0 border-l border-input bg-muted/40 px-2 text-sm outline-none"
+    <Select
+      class="-ml-px w-32 shrink-0 rounded-l-none"
       aria-label="Quota unit"
+      aria-invalid={invalid ? true : undefined}
       bind:value={unit}
-      onchange={commit}
+      onchange={async () => {
+        commit();
+
+        if (unit !== "unlimited" && !amount.trim()) {
+          await tick();
+          input?.focus();
+        }
+      }}
     >
       <option value="MB">MB</option>
       <option value="GB">GB</option>
       <option value="TB">TB</option>
       <option value="unlimited">Unlimited</option>
-    </select>
+    </Select>
   </div>
   {#if error}
     <p class="text-sm text-destructive">{error}</p>

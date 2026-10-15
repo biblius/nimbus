@@ -1,13 +1,11 @@
 <script lang="ts">
   import {
-    ArrowDown,
-    ArrowUp,
     Check,
     ChevronDown,
     ChevronRight,
     File as FileIcon,
     Folder,
-    FolderPlus,
+    Plus,
     Trash,
     Upload,
     X,
@@ -26,7 +24,6 @@
     type Root,
   } from "../types";
   import { kv } from "../storage";
-  import { cn } from "../utils";
   import { isPreviewable } from "../fileKind";
   import FileListItem from "./FileListItem.svelte";
   import FilePreview from "./FilePreview.svelte";
@@ -36,6 +33,10 @@
   import RootPicker from "./RootPicker.svelte";
   import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
+  import Input from "./ui/input/input.svelte";
+  import MenuItem from "./ui/menu/menu-item.svelte";
+  import Menu from "./ui/menu/menu.svelte";
+  import SortHeader from "./ui/sort-header/sort-header.svelte";
 
   let {
     folder: root,
@@ -134,7 +135,8 @@
   let loading = $state(true);
   let latestLoad = 0;
 
-  let drafting = $state(false);
+  let draftKind = $state<"directory" | "text" | null>(null);
+  const drafting = $derived(draftKind !== null);
 
   let directoryName = $state("");
   let directoryError = $state("");
@@ -148,7 +150,7 @@
   const uploadControllers = new Map<number, AbortController>();
 
   let uploadMenuOpen = $state(false);
-  let uploadMenu = $state<HTMLDivElement | undefined>();
+  let newMenuOpen = $state(false);
 
   let ancestors = $state<Crumb[]>([]);
 
@@ -267,7 +269,7 @@
   }
 
   function resetDraft() {
-    drafting = false;
+    draftKind = null;
     directorySaving = false;
     directoryName = "";
     directoryError = "";
@@ -379,13 +381,6 @@
     });
   }
 
-  function ariaSort(column: SortColumn): "ascending" | "descending" | "none" {
-    if (sort.column !== column) {
-      return "none";
-    }
-    return sort.direction === "asc" ? "ascending" : "descending";
-  }
-
   function asView(file: FileEntry): FileView {
     return { file, metadata: null };
   }
@@ -428,10 +423,6 @@
 
     ancestors = ancestors.slice(0, index);
     showDirectory(parent);
-  }
-
-  function closeUploadMenu() {
-    uploadMenuOpen = false;
   }
 
   function uploadFailure(item: PendingUpload, cause: unknown) {
@@ -623,27 +614,25 @@
       node.select();
     });
 
-    return {
-      destroy() {
-        if (nameInput === node) {
-          nameInput = undefined;
-        }
-      },
+    return () => {
+      if (nameInput === node) {
+        nameInput = undefined;
+      }
     };
   }
 
-  async function beginDirectory() {
+  async function beginDraft(kind: "directory" | "text") {
     if (drafting) {
       nameInput?.focus();
       nameInput?.select();
       return;
     }
 
-    directoryName = "New folder";
+    directoryName = kind === "text" ? "untitled.txt" : "New folder";
     directoryError = "";
     directorySaving = false;
 
-    drafting = true;
+    draftKind = kind;
 
     await tick();
 
@@ -682,24 +671,29 @@
     if (cause instanceof TypeError) {
       return "The server could not be reached";
     }
+    const noun = draftKind === "text" ? "file" : "folder";
     if (cause instanceof ApiError && cause.status === 403) {
-      return "You cannot create a folder here";
+      return `You cannot create a ${noun} here`;
     }
     if (cause instanceof ApiError && cause.status === 422) {
-      return "That folder name is not allowed";
+      return `That ${noun} name is not allowed`;
     }
-    return "Could not create the folder";
+    return `Could not create the ${noun}`;
   }
 
   async function commitDirectory() {
-    if (!drafting || directorySaving) {
+    if (!draftKind || directorySaving) {
       return;
     }
 
+    const kind = draftKind;
     const name = directoryName.trim();
 
     if (!name) {
-      directoryError = "Directory name cannot be empty";
+      directoryError =
+        kind === "text"
+          ? "File name cannot be empty"
+          : "Directory name cannot be empty";
       nameInput?.focus();
       return;
     }
@@ -711,11 +705,10 @@
     directoryError = "";
 
     try {
-      const created = await session.client.createDirectory(
-        rootId,
-        parent,
-        name,
-      );
+      const created =
+        kind === "text"
+          ? await session.client.createTextFile(rootId, parent, name)
+          : await session.client.createDirectory(rootId, parent, name);
 
       // Prevent inserting the entry if the view has changed
       if (root.id !== rootId || location.id !== parent) {
@@ -724,7 +717,7 @@
 
       insertEntry(created);
 
-      drafting = false;
+      draftKind = null;
       directoryName = "";
       directoryError = "";
     } catch (cause) {
@@ -809,7 +802,14 @@
     if (event.key !== "Escape") {
       return;
     }
-    if (deleteOpen || previewFileId !== null || drafting) {
+    if (
+      event.defaultPrevented ||
+      uploadMenuOpen ||
+      newMenuOpen ||
+      deleteOpen ||
+      previewFileId !== null ||
+      drafting
+    ) {
       return;
     }
     if (!selectMode && selected.length === 0) {
@@ -1042,23 +1042,7 @@
   }
 </script>
 
-<svelte:window
-  onclick={(event) => {
-    if (session.native || !uploadMenuOpen || !uploadMenu) {
-      return;
-    }
-    if (!uploadMenu.contains(event.target as Node)) {
-      closeUploadMenu();
-    }
-  }}
-  onkeydown={(event) => {
-    if (!session.native && event.key === "Escape" && uploadMenuOpen) {
-      closeUploadMenu();
-      return;
-    }
-    onWindowKeydown(event);
-  }}
-/>
+<svelte:window onkeydown={onWindowKeydown} />
 
 <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
   <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
@@ -1134,74 +1118,65 @@
           <span class="hidden sm:inline">Upload</span>
         </Button>
       {:else}
-        <div class="relative" bind:this={uploadMenu}>
+        <Menu bind:open={uploadMenuOpen}>
+          {#snippet trigger(props, open)}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Upload"
+              {...props}
+            >
+              <Upload size={15} />
+              <span class="hidden sm:inline">Upload</span>
+              <ChevronDown
+                size={14}
+                class={[
+                  "text-muted-foreground transition-transform",
+                  open && "rotate-180",
+                ]}
+              />
+            </Button>
+          {/snippet}
+          <MenuItem onclick={() => fileInput?.click()}>
+            <FileIcon size={15} />
+            File
+          </MenuItem>
+          <MenuItem onclick={() => folderInput?.click()}>
+            <Folder size={15} />
+            Folder
+          </MenuItem>
+        </Menu>
+      {/if}
+      <Menu bind:open={newMenuOpen}>
+        {#snippet trigger(props, open)}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            aria-label="Upload"
-            aria-haspopup="menu"
-            aria-expanded={uploadMenuOpen}
-            onclick={(event) => {
-              event.stopPropagation();
-              uploadMenuOpen = !uploadMenuOpen;
-            }}
+            aria-label="New"
+            {...props}
           >
-            <Upload size={15} />
-            <span class="hidden sm:inline">Upload</span>
+            <Plus size={15} />
+            <span class="hidden sm:inline">New</span>
             <ChevronDown
               size={14}
-              class="text-muted-foreground transition-transform {uploadMenuOpen
-                ? 'rotate-180'
-                : ''}"
+              class={[
+                "text-muted-foreground transition-transform",
+                open && "rotate-180",
+              ]}
             />
           </Button>
-
-          {#if uploadMenuOpen}
-            <div
-              role="menu"
-              class="absolute top-full right-0 z-50 mt-1.5 w-40 overflow-hidden rounded-xl border bg-card shadow-lg"
-            >
-              <div class="p-1">
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
-                  onclick={() => {
-                    closeUploadMenu();
-                    fileInput?.click();
-                  }}
-                >
-                  <FileIcon size={15} class="shrink-0 text-muted-foreground" />
-                  File
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-accent md:min-h-9"
-                  onclick={() => {
-                    closeUploadMenu();
-                    folderInput?.click();
-                  }}
-                >
-                  <Folder size={15} class="shrink-0 text-muted-foreground" />
-                  Folder
-                </button>
-              </div>
-            </div>
-          {/if}
-        </div>
-      {/if}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        aria-label="New folder"
-        onclick={beginDirectory}
-      >
-        <FolderPlus size={15} />
-        <span class="hidden sm:inline">New folder</span>
-      </Button>
+        {/snippet}
+        <MenuItem onclick={() => void beginDraft("text")}>
+          <FileIcon size={15} />
+          Text file
+        </MenuItem>
+        <MenuItem onclick={() => void beginDraft("directory")}>
+          <Folder size={15} />
+          Directory
+        </MenuItem>
+      </Menu>
       {#if selectMode}
         <Button
           type="button"
@@ -1294,9 +1269,9 @@
     <div
       class="{columns} h-10 shrink-0 border-b text-xs font-medium text-muted-foreground"
     >
-      {@render columnHeader("name", "Name", "", "")}
+      {@render columnHeader("name", "Name")}
       {@render columnHeader("size", "Size", "hidden @lg:flex", "justify-end")}
-      {@render columnHeader("created", "Created", "hidden @2xl:flex", "")}
+      {@render columnHeader("created", "Created", "hidden @2xl:flex")}
       <span aria-hidden="true"></span>
     </div>
 
@@ -1334,20 +1309,27 @@
             {#if drafting}
               <li class="px-3 py-2">
                 <div class="flex min-w-0 items-center gap-2">
-                  <Folder size={18} class="shrink-0 text-primary" />
-                  <input
-                    use:focusDraft
+                  {#if draftKind === "text"}
+                    <FileIcon
+                      size={18}
+                      class="shrink-0 text-muted-foreground"
+                    />
+                  {:else}
+                    <Folder size={18} class="shrink-0 text-primary" />
+                  {/if}
+                  <Input
+                    {@attach focusDraft}
                     bind:value={directoryName}
-                    class={cn(
-                      "h-8 min-w-0 flex-1 rounded-md border border-input bg-field px-2.5 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
-                      directoryError &&
-                        "border-destructive focus-visible:ring-destructive",
-                    )}
-                    aria-label="Folder name"
+                    class="h-8 min-w-0 flex-1 px-2.5"
+                    aria-label={draftKind === "text"
+                      ? "File name"
+                      : "Folder name"}
                     aria-invalid={directoryError ? true : undefined}
                     autocomplete="off"
                     spellcheck="false"
-                    placeholder="Folder name"
+                    placeholder={draftKind === "text"
+                      ? "File name"
+                      : "Folder name"}
                     disabled={directorySaving}
                     oninput={() => (directoryError = "")}
                     onkeydown={onDraftKey}
@@ -1355,9 +1337,10 @@
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    class="size-8 px-0"
-                    aria-label="Create folder"
+                    size="icon-sm"
+                    aria-label={draftKind === "text"
+                      ? "Create file"
+                      : "Create folder"}
                     disabled={directorySaving}
                     onclick={() => commitDirectory()}
                   >
@@ -1366,8 +1349,7 @@
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    class="size-8 px-0"
+                    size="icon-sm"
                     aria-label="Cancel"
                     disabled={directorySaving}
                     onclick={cancelDirectory}
@@ -1518,31 +1500,14 @@
 {#snippet columnHeader(
   column: SortColumn,
   label: string,
-  cellClass: string,
-  buttonClass: string,
+  cellClass?: string,
+  buttonClass?: string,
 )}
-  <div
-    role="columnheader"
-    aria-sort={ariaSort(column)}
-    class={cn("flex h-full min-w-0 items-center", cellClass)}
-  >
-    <button
-      type="button"
-      class={cn(
-        "inline-flex h-full w-full min-w-0 items-center gap-1 hover:text-foreground",
-        sort.column === column && "text-foreground",
-        buttonClass,
-      )}
-      onclick={() => cycleSort(column)}
-    >
-      <span class="truncate">{label}</span>
-      {#if sort.column === column}
-        {#if sort.direction === "asc"}
-          <ArrowUp size={14} class="shrink-0" aria-hidden="true" />
-        {:else}
-          <ArrowDown size={14} class="shrink-0" aria-hidden="true" />
-        {/if}
-      {/if}
-    </button>
-  </div>
+  <SortHeader
+    {label}
+    direction={sort.column === column ? sort.direction : undefined}
+    onclick={() => cycleSort(column)}
+    class={cellClass}
+    {buttonClass}
+  />
 {/snippet}

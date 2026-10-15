@@ -261,6 +261,20 @@ export class NimbusClient {
     );
   }
 
+  createTextFile(
+    rootId: string,
+    parent: string | null,
+    name: string,
+  ): Promise<FileEntry> {
+    return this.request<FileEntry>(
+      `/roots/${encodeURIComponent(rootId)}/files`,
+      {
+        method: "POST",
+        body: JSON.stringify({ parent, name }),
+      },
+    );
+  }
+
   createDirectory(
     rootId: string,
     parent: string | null,

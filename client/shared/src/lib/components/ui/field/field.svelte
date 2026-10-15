@@ -53,11 +53,7 @@
     <Input
       {id}
       {...rest}
-      class={cn(
-        dense && "h-8 shadow-none",
-        message && "border-destructive focus-visible:ring-destructive",
-        className,
-      )}
+      class={cn(dense && "h-8 shadow-none", className)}
       bind:value
       aria-invalid={message ? true : undefined}
     />

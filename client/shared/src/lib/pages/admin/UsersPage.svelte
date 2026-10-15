@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { ArrowDown, ArrowUp, Pencil, Trash, UserRound } from "@lucide/svelte";
+  import { Pencil, Trash, UserRound } from "@lucide/svelte";
   import { ApiError } from "../../api";
   import type { UserData, UserViewFull } from "../../types";
   import Button from "../../components/ui/button/button.svelte";
   import PaginatedList from "../../components/ui/paginated-list/paginated-list.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
+  import SortHeader from "../../components/ui/sort-header/sort-header.svelte";
   import UserForm from "../../components/user/UserForm.svelte";
   import { trackDeletion } from "../../deletion.svelte";
   import { formatDatetime } from "../../format";
@@ -68,15 +69,6 @@
     }
 
     kv.usersSort.set(sort);
-  }
-
-  function ariaSort(
-    column: UserSortColumn,
-  ): "ascending" | "descending" | "none" {
-    if (sort.column !== column) {
-      return "none";
-    }
-    return sort.direction === "asc" ? "ascending" : "descending";
   }
 
   async function createUser(data: UserData) {
@@ -148,31 +140,14 @@
 {#snippet sortHeader(
   column: UserSortColumn,
   label: string,
-  cellClass: string,
+  cellClass?: string,
 )}
-  <div
-    role="columnheader"
-    aria-sort={ariaSort(column)}
-    class={cn("flex h-full min-w-0 items-center", cellClass)}
-  >
-    <button
-      type="button"
-      class={cn(
-        "inline-flex h-full w-full min-w-0 items-center gap-1 hover:text-foreground",
-        sort.column === column && "text-foreground",
-      )}
-      onclick={() => cycleSort(column)}
-    >
-      <span class="truncate">{label}</span>
-      {#if sort.column === column}
-        {#if sort.direction === "asc"}
-          <ArrowUp size={14} class="shrink-0" aria-hidden="true" />
-        {:else}
-          <ArrowDown size={14} class="shrink-0" aria-hidden="true" />
-        {/if}
-      {/if}
-    </button>
-  </div>
+  <SortHeader
+    {label}
+    direction={sort.column === column ? sort.direction : undefined}
+    onclick={() => cycleSort(column)}
+    class={cellClass}
+  />
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col gap-3">
@@ -230,7 +205,7 @@
   >
     {#snippet listHeader()}
       <div class="{columns} h-10 text-xs font-medium text-muted-foreground">
-        {@render sortHeader("username", "Username", "")}
+        {@render sortHeader("username", "Username")}
         {@render sortHeader("email", "Email", "hidden @md:flex")}
         <span class="hidden @xl:block">Role</span>
         <span class="hidden @xl:block">2FA</span>
@@ -312,8 +287,7 @@
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
-                  class="size-8 px-0"
+                  size="icon-sm"
                   aria-label="Edit {user.username}"
                   title="Edit"
                   onclick={() => startEdit(user)}
@@ -323,8 +297,8 @@
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
-                  class="size-8 px-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  size="icon-sm"
+                  class="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   aria-label="Delete {user.username}"
                   title="Delete"
                   onclick={() => (deleteUser = user)}

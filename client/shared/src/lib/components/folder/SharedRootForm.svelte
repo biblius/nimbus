@@ -5,6 +5,7 @@
   import { toastError } from "../../toast";
   import type { Root, RootData, UserViewFull } from "../../types";
   import Button from "../ui/button/button.svelte";
+  import Checkbox from "../ui/checkbox/checkbox.svelte";
   import Field from "../ui/field/field.svelte";
   import InfiniteList from "../ui/infinite-list/infinite-list.svelte";
   import QuotaField from "./QuotaField.svelte";
@@ -164,9 +165,7 @@
                     <label
                       class="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm hover:bg-accent"
                     >
-                      <input
-                        type="checkbox"
-                        class="size-4 shrink-0"
+                      <Checkbox
                         checked={selected.includes(user.id)}
                         onchange={() => toggle(user.id)}
                       />

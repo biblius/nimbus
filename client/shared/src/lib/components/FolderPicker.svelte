@@ -3,6 +3,7 @@
   import type { FileTree } from "../types";
   import { cn } from "../utils";
   import Button from "./ui/button/button.svelte";
+  import Dialog from "./ui/dialog/dialog.svelte";
 
   let {
     enabled,
@@ -27,7 +28,6 @@
   let location = $state<string | null>(null);
   let expanded = $state<Record<string, boolean>>({});
   let busy = $state(false);
-  let dialog = $state<HTMLDivElement | null>(null);
   let opened = false;
 
   $effect(() => {
@@ -44,32 +44,6 @@
     location = null;
     expanded = {};
   });
-
-  $effect(() => {
-    if (!enabled) {
-      return;
-    }
-
-    dialog?.focus();
-
-    const onKeydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) {
-        onCancel();
-      }
-    };
-
-    window.addEventListener("keydown", onKeydown);
-
-    return () => window.removeEventListener("keydown", onKeydown);
-  });
-
-  function cancel() {
-    if (busy) {
-      return;
-    }
-
-    onCancel();
-  }
 
   async function confirm() {
     if (busy) {
@@ -141,53 +115,33 @@
   </ul>
 {/snippet}
 
-{#if enabled}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <button
-      type="button"
-      class="absolute inset-0 bg-black/60"
-      aria-label="Close"
-      onclick={cancel}
-      disabled={busy}
-    ></button>
-    <div
-      bind:this={dialog}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="folder-picker-title"
-      tabindex="-1"
-      class="relative w-full max-w-md rounded-xl border bg-card p-6 shadow-lg outline-none"
-    >
-      <h2 id="folder-picker-title" class="text-base font-medium">{title}</h2>
-      <p class="mt-2 text-sm text-muted-foreground">{description}</p>
-      <div class="mt-4 max-h-64 overflow-y-auto rounded-md border p-3">
-        <div class="flex h-7 items-center pr-1">
-          <span class="size-4 shrink-0"></span>
-          <button
-            type="button"
-            class={cn(
-              "flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded px-1.5 text-left text-[13px]",
-              location === null
-                ? "bg-accent font-medium text-accent-foreground"
-                : "hover:bg-accent/60",
-            )}
-            aria-pressed={location === null}
-            onclick={() => (location = null)}
-          >
-            <Folder size={14} class="shrink-0 text-primary" />
-            <span class="truncate">{rootName}</span>
-          </button>
-        </div>
-        {@render rows(tree.children ?? [], 1)}
-      </div>
-      <div class="mt-5 flex justify-end gap-2">
-        <Button type="button" variant="outline" onclick={cancel} disabled={busy}
-          >Cancel</Button
-        >
-        <Button type="button" onclick={confirm} disabled={busy}
-          >{confirmLabel}</Button
-        >
-      </div>
+<Dialog open={enabled} {title} {description} {busy} {onCancel}>
+  <div class="mt-4 max-h-64 overflow-y-auto rounded-md border p-3">
+    <div class="flex h-7 items-center pr-1">
+      <span class="size-4 shrink-0"></span>
+      <button
+        type="button"
+        class={cn(
+          "flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded px-1.5 text-left text-[13px]",
+          location === null
+            ? "bg-accent font-medium text-accent-foreground"
+            : "hover:bg-accent/60",
+        )}
+        aria-pressed={location === null}
+        onclick={() => (location = null)}
+      >
+        <Folder size={14} class="shrink-0 text-primary" />
+        <span class="truncate">{rootName}</span>
+      </button>
     </div>
+    {@render rows(tree.children ?? [], 1)}
   </div>
-{/if}
+  {#snippet footer()}
+    <Button type="button" variant="outline" onclick={onCancel} disabled={busy}>
+      Cancel
+    </Button>
+    <Button type="button" onclick={confirm} disabled={busy}>
+      {confirmLabel}
+    </Button>
+  {/snippet}
+</Dialog>

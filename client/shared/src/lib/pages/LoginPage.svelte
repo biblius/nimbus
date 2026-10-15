@@ -4,6 +4,7 @@
   import { toastError } from "../toast";
   import Button from "../components/ui/button/button.svelte";
   import Card from "../components/ui/card/card.svelte";
+  import Checkbox from "../components/ui/checkbox/checkbox.svelte";
   import Chevron from "../components/ui/chevron/chevron.svelte";
   import Field from "../components/ui/field/field.svelte";
   import { navigate } from "../router";
@@ -206,8 +207,8 @@
           />
 
           {#if !session.native}
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" bind:checked={remember} />
+            <label class="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox bind:checked={remember} />
               Remember this session
             </label>
           {/if}
