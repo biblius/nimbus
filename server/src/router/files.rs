@@ -177,6 +177,28 @@ pub(crate) async fn restore_file(
 
 #[utoipa::path(
     post,
+    path = "/roots/{root_id}/trash/restore",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    request_body = RestoreFile,
+    responses((status = 204, description = "All trashed files restored"))
+)]
+pub(crate) async fn restore_all(
+    Path(root_id): Path<Uuid>,
+    State(state): State<AppState>,
+    session: Session,
+    Json(input): Json<RestoreFile>,
+) -> Result<StatusCode, AppError> {
+    state
+        .services
+        .files
+        .restore_all(&session.user, root_id, input)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
     path = "/roots/{root_id}/directories",
     request_body = CreateDirectory,
     responses((status = 201, description = "Directory created", body = FileEntry))

@@ -672,16 +672,7 @@ impl FileService {
             ));
         }
 
-        if let Some(parent) = input.parent {
-            let entry =
-                self.files.get_live(parent).await?.ok_or_else(|| {
-                    AppError::Unprocessable("Target directory does not exist".into())
-                })?;
-
-            if entry.root_id != root_id || entry.kind != FileKind::Directory {
-                return Err(AppError::Unprocessable("Target is not a directory".into()));
-            }
-        }
+        self.validate_restore_parent(root_id, input.parent).await?;
 
         let quota = self.files.root_quota(root_id).await?;
 
@@ -718,6 +709,95 @@ impl FileService {
         self.files.insert_many(&mut *tx, &restored).await?;
 
         tx.commit().await?;
+
+        Ok(())
+    }
+
+    /// Restore every trashed item in a root under `input.parent`.
+    #[instrument(skip(self, user, target), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
+    pub async fn restore_all(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        target: RestoreFile,
+    ) -> Result<(), AppError> {
+        self.accessible(user, root_id).await?;
+        self.validate_restore_parent(root_id, target.parent).await?;
+
+        let trash = self.files.list_trash(root_id).await?;
+
+        let root_ids: Vec<Uuid> = trash
+            .iter()
+            .filter(|entry| entry.query_root)
+            .map(|entry| entry.id)
+            .collect();
+
+        if root_ids.is_empty() {
+            return Ok(());
+        }
+
+        let quota = self.files.root_quota(root_id).await?;
+
+        let used = if quota > 0 {
+            self.files.root_quota_usage(root_id).await?
+        } else {
+            0
+        };
+
+        let mut tx = self.tx.begin().await?;
+        let mut restored = Vec::new();
+
+        for id in root_ids {
+            let mut tree = self
+                .files
+                .delete_trashed_tree(&mut *tx, root_id, id)
+                .await?;
+
+            for file in tree.iter_mut() {
+                if file.id == id {
+                    file.parent = target.parent;
+                    break;
+                }
+            }
+
+            restored.append(&mut tree);
+        }
+
+        let bytes: i64 = restored
+            .iter()
+            .filter(|row| row.kind == FileKind::File)
+            .map(|row| row.size_bytes)
+            .sum();
+
+        if quota > 0 && used.saturating_add(bytes) > quota {
+            return Err(AppError::QuotaExceeded);
+        }
+
+        self.files.insert_many(&mut *tx, &restored).await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    async fn validate_restore_parent(
+        &self,
+        root_id: Uuid,
+        parent: Option<Uuid>,
+    ) -> Result<(), AppError> {
+        let Some(parent) = parent else {
+            return Ok(());
+        };
+
+        let entry = self
+            .files
+            .get_live(parent)
+            .await?
+            .ok_or_else(|| AppError::Unprocessable("Target directory does not exist".into()))?;
+
+        if entry.root_id != root_id || entry.kind != FileKind::Directory {
+            return Err(AppError::Unprocessable("Target is not a directory".into()));
+        }
 
         Ok(())
     }

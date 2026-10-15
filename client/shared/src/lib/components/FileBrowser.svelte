@@ -12,10 +12,7 @@
     Upload,
     X,
   } from "@lucide/svelte";
-  import {
-    PointerActivationConstraints,
-    PointerSensor,
-  } from "@dnd-kit/dom";
+  import { PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
   import { DragDropProvider, DragOverlay } from "@dnd-kit/svelte";
   import { tick, untrack } from "svelte";
   import { navigate } from "../router";
@@ -35,9 +32,7 @@
   import FilePreview from "./FilePreview.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
   import FolderPicker from "./FolderPicker.svelte";
-  import ParentDropItem, {
-    PARENT_DROPPABLE_ID,
-  } from "./ParentDropItem.svelte";
+  import ParentDropItem, { PARENT_DROPPABLE_ID } from "./ParentDropItem.svelte";
   import RootPicker from "./RootPicker.svelte";
   import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
@@ -220,7 +215,13 @@
     currentLoad: number,
   ) {
     // If the last ancestor is the current parent (dir), we're there
-    if (ancestors.at(-1)?.id ?? null === parent) {
+    // (but only if the trail has unique ids)
+    const tipMatches = (ancestors.at(-1)?.id ?? null) === parent;
+
+    const uniqueIds =
+      new Set(ancestors.map((a) => a.id)).size === ancestors.length;
+
+    if (tipMatches && uniqueIds) {
       return;
     }
 
@@ -404,11 +405,17 @@
   }
 
   function openDirectory(entry: FileView) {
-    ancestors = ancestors.concat({
-      id: entry.file.id,
-      name: entry.file.name,
-    });
-    showDirectory(entry.file.id);
+    const id = entry.file.id;
+    if (parentId === id) {
+      return;
+    }
+    if (ancestors.at(-1)?.id !== id) {
+      ancestors = ancestors.concat({
+        id,
+        name: entry.file.name,
+      });
+    }
+    showDirectory(id);
   }
 
   function openParentDirectory() {
@@ -763,7 +770,8 @@
 
     if (range && selected.length > 0) {
       const anchorId =
-        selectionAnchor != null && entries.some((entry) => entry.file.id === selectionAnchor)
+        selectionAnchor != null &&
+        entries.some((entry) => entry.file.id === selectionAnchor)
           ? selectionAnchor
           : selected[0];
       const ids = entries.map((entry) => entry.file.id);

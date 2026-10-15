@@ -374,6 +374,110 @@ mod trash {
     }
 
     #[test]
+    async fn restore_all_puts_every_trash_root_at_the_chosen_parent(state: TestState) {
+        let _ada = user(state, "ada-restore-all").await;
+        let session = test::login(state, "ada-restore-all", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let inbox = state
+            .services
+            .files
+            .create_directory(
+                &session.user,
+                root,
+                CreateDirectory {
+                    parent: None,
+                    name: "inbox".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let notes = state
+            .services
+            .files
+            .create_directory(
+                &session.user,
+                root,
+                CreateDirectory {
+                    parent: None,
+                    name: "notes".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let leaf = upload_in(
+            state,
+            &session.user,
+            root,
+            Some(notes.id),
+            "leaf.txt",
+            b"leaf",
+        )
+        .await;
+        let loose = test::upload(state, &session.user, root, "loose.txt", b"loose").await;
+
+        state
+            .services
+            .files
+            .delete_many(
+                &session.user,
+                root,
+                TrashFiles {
+                    ids: vec![notes.id, loose.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        state
+            .services
+            .files
+            .restore_all(
+                &session.user,
+                root,
+                RestoreFile {
+                    parent: Some(inbox.id),
+                },
+            )
+            .await
+            .unwrap();
+
+        let trash = state
+            .services
+            .files
+            .get_trash_tree(&session.user, root)
+            .await
+            .unwrap();
+        assert!(trash.children.is_empty());
+
+        let restored_notes = state
+            .services
+            .files
+            .metadata(&session.user, notes.id)
+            .await
+            .unwrap();
+        assert_eq!(restored_notes.parent, Some(inbox.id));
+
+        let restored_loose = state
+            .services
+            .files
+            .metadata(&session.user, loose.id)
+            .await
+            .unwrap();
+        assert_eq!(restored_loose.parent, Some(inbox.id));
+
+        let restored_leaf = state
+            .services
+            .files
+            .metadata(&session.user, leaf.id)
+            .await
+            .unwrap();
+        assert_eq!(restored_leaf.parent, Some(notes.id));
+    }
+
+    #[test]
     async fn restore_puts_the_file_at_the_chosen_parent(state: TestState) {
         let _ada = user(state, "ada-restore").await;
         let session = test::login(state, "ada-restore", "temporary").await;

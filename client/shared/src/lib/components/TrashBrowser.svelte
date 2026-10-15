@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronRight } from "@lucide/svelte";
+  import { ChevronRight, RotateCcw } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { trackDeletion } from "../deletion.svelte";
   import { session } from "../session.svelte";
@@ -9,6 +9,7 @@
   import DeletionBanner from "./DeletionBanner.svelte";
   import FolderPicker from "./FolderPicker.svelte";
   import TrashTreeItem from "./TrashTreeItem.svelte";
+  import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
 
   let { roots }: { roots: Root[] } = $props();
@@ -18,7 +19,11 @@
   let loading = $state<Record<string, boolean>>({});
   let expanded = $state<Record<string, boolean>>({});
 
-  let picker = $state<{ root: Root; node: FileTree } | null>(null);
+  let picker = $state<
+    | { kind: "item"; root: Root; node: FileTree }
+    | { kind: "all"; root: Root }
+    | null
+  >(null);
   let selectedTree = $state<FileTree | null>(null);
   let deleteTarget = $state<{ root: Root; node: FileTree } | null>(null);
   let deleting = $state(false);
@@ -27,6 +32,14 @@
     deleteTarget?.node.kind === "directory"
       ? "This folder and everything inside it will be permanently deleted. This cannot be undone."
       : "This file will be permanently deleted. This cannot be undone.",
+  );
+
+  const pickerTitle = $derived(
+    picker?.kind === "all"
+      ? "Restore all"
+      : picker?.kind === "item"
+        ? `Restore ${picker.node.name}`
+        : "",
   );
 
   onMount(() => {
@@ -67,16 +80,26 @@
     expanded[id] = !expanded[id];
   }
 
-  async function openPicker(root: Root, node: FileTree) {
-    picker = { root, node };
+  async function loadPicker(
+    next: { kind: "item"; root: Root; node: FileTree } | { kind: "all"; root: Root },
+  ) {
+    picker = next;
     selectedTree = null;
 
     try {
-      selectedTree = await session.client.tree(root.id);
+      selectedTree = await session.client.tree(next.root.id);
     } catch {
       picker = null;
       toastError("Could not load folders");
     }
+  }
+
+  async function openPicker(root: Root, node: FileTree) {
+    await loadPicker({ kind: "item", root, node });
+  }
+
+  async function openRestoreAll(root: Root) {
+    await loadPicker({ kind: "all", root });
   }
 
   function closePicker() {
@@ -90,12 +113,19 @@
     }
 
     const rootId = picker.root.id;
-    const nodeId = picker.node.id;
 
     try {
-      await session.client.restore(rootId, nodeId, parent);
+      if (picker.kind === "all") {
+        await session.client.restoreAll(rootId, parent);
+      } else {
+        await session.client.restore(rootId, picker.node.id, parent);
+      }
     } catch {
-      toastError("Could not restore this item");
+      toastError(
+        picker.kind === "all"
+          ? "Could not restore trash"
+          : "Could not restore this item",
+      );
       return;
     }
 
@@ -154,49 +184,80 @@
       <p class="text-sm text-muted-foreground">No roots are assigned.</p>
     {:else}
       {#each roots as root (root.id)}
-        <section class="overflow-hidden rounded-lg border bg-card">
-          <button
-            type="button"
-            class="flex min-h-11 w-full items-center gap-2.5 px-3 text-left text-sm font-medium"
-            aria-expanded={openRoots[root.id] ? "true" : "false"}
-            onclick={() => toggleRoot(root)}
+        {@const trashTree = trees[root.id]}
+        {@const trashCount = trashTree?.children.length ?? 0}
+        {@const hasTrash = trashTree != null && trashCount > 0}
+        <section
+          class="overflow-hidden rounded-lg border bg-card shadow-sm ring-1 ring-border/40"
+        >
+          <header
+            class="flex min-h-12 items-center gap-2 border-b bg-muted/40 px-2.5"
           >
-            <ChevronRight
-              size={16}
-              class={cn(
-                "shrink-0 text-muted-foreground transition-transform",
-                openRoots[root.id] && "rotate-90",
-              )}
-            />
-            <span class="truncate">{root.name}</span>
-            <span
-              class="text-xs font-normal tracking-wide text-muted-foreground uppercase"
+            <button
+              type="button"
+              class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              aria-expanded={openRoots[root.id] ? "true" : "false"}
+              aria-label={openRoots[root.id]
+                ? `Collapse ${root.name}`
+                : `Expand ${root.name}`}
+              onclick={() => toggleRoot(root)}
             >
-              {root.owner ? "Private" : "Shared"}
-            </span>
-            {#if trees[root.id]}
+              <ChevronRight
+                size={16}
+                class={cn(
+                  "transition-transform",
+                  openRoots[root.id] && "rotate-90",
+                )}
+              />
+            </button>
+
+            <div class="flex min-w-0 flex-1 items-center gap-2">
+              <span class="truncate text-sm font-medium tracking-tight">
+                {root.name}
+              </span>
               <span
-                class="ml-auto text-xs font-normal text-muted-foreground tabular-nums"
+                class="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
               >
-                {trees[root.id].children.length}
+                {root.owner ? "Private" : "Shared"}
+              </span>
+            </div>
+
+            {#if trashTree}
+              <span
+                class="shrink-0 rounded-md bg-background/80 px-1.5 py-0.5 text-xs font-medium text-muted-foreground tabular-nums ring-1 ring-border/60"
+              >
+                {trashCount}
               </span>
             {/if}
-          </button>
+
+            {#if hasTrash}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                class="h-8 shrink-0 gap-1.5 text-muted-foreground"
+                onclick={() => openRestoreAll(root)}
+              >
+                <RotateCcw size={14} />
+                Restore all
+              </Button>
+            {/if}
+          </header>
 
           {#if openRoots[root.id]}
-            <div class="border-t">
-              {#if loading[root.id]}
-                <p class="px-3 py-6 text-center text-sm text-muted-foreground">
-                  Loading…
-                </p>
-              {:else if (trees[root.id]?.children.length ?? 0) === 0}
-                <p class="px-3 py-8 text-center text-sm text-muted-foreground">
-                  Trash is empty
-                </p>
-              {:else}
-                {@render rows(root, trees[root.id].children, 0)}
-              {/if}
-            </div>
+            {#if loading[root.id]}
+              <p class="px-3 py-8 text-center text-sm text-muted-foreground">
+                Loading…
+              </p>
+            {:else if !trashTree || trashCount === 0}
+              <p class="px-3 py-10 text-center text-sm text-muted-foreground">
+                Trash is empty
+              </p>
+            {:else}
+              <div class="bg-card">
+                {@render rows(root, trashTree.children, 0)}
+              </div>
+            {/if}
           {/if}
         </section>
       {/each}
@@ -209,7 +270,7 @@
     enabled={picker !== null}
     tree={selectedTree}
     rootName={picker?.root.name ?? ""}
-    title={picker ? `Restore ${picker.node.name}` : ""}
+    title={pickerTitle}
     description="Choose a folder"
     onCancel={closePicker}
     onConfirm={confirmPlace}

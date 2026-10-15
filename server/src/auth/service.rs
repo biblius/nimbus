@@ -385,7 +385,11 @@ impl AuthenticationService {
 
     /// Verify the current authenticator code and clear the user's OTP secret.
     #[instrument(skip(self, session, data), fields(user_id = %session.user.id), err(Debug))]
-    pub async fn disable_otp(&self, session: Session, mut data: DisableOtp) -> Result<(), AppError> {
+    pub async fn disable_otp(
+        &self,
+        session: Session,
+        mut data: DisableOtp,
+    ) -> Result<(), AppError> {
         data.validify()?;
 
         let user = self.users.get_by_id(session.user.id).await?;

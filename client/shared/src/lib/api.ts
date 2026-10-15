@@ -417,6 +417,13 @@ export class NimbusClient {
     );
   }
 
+  restoreAll(rootId: string, parent: string | null): Promise<void> {
+    return this.request<void>(
+      `/roots/${encodeURIComponent(rootId)}/trash/restore`,
+      { method: "POST", body: JSON.stringify({ parent }) },
+    );
+  }
+
   deleteTrash(rootId: string, id: string): AsyncGenerator<DeletionEvent> {
     return this.events(
       `/roots/${encodeURIComponent(rootId)}/trash/${encodeURIComponent(id)}`,

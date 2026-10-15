@@ -77,6 +77,7 @@ use crate::{
         files::trash,
         files::delete_trash,
         files::restore_file,
+        files::restore_all,
     ),
     components(schemas(
         LoginCredentials,

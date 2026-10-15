@@ -124,6 +124,7 @@ pub fn router(state: AppState) -> Router {
         .route("/roots/{root_id}/files/{id}/preview", get(files::preview))
         .route("/roots/{root_id}/tree", get(files::tree))
         .route("/roots/{root_id}/trash", get(files::trash))
+        .route("/roots/{root_id}/trash/restore", post(files::restore_all))
         .route("/roots/{root_id}/trash/{id}", delete(files::delete_trash))
         .route(
             "/roots/{root_id}/trash/{id}/restore",

@@ -99,10 +99,7 @@ impl SessionRepository {
 
     /// Live (non-expired) sessions for a user, newest first.
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_live_for_user(
-        &self,
-        user_id: Uuid,
-    ) -> Result<Vec<SessionRecord>, AppError> {
+    pub async fn list_live_for_user(&self, user_id: Uuid) -> Result<Vec<SessionRecord>, AppError> {
         let now = Utc::now();
 
         sqlx::query_as!(

@@ -219,13 +219,9 @@ mod upload {
                 .iter()
                 .any(|entry| entry.kind == FileKind::Directory && entry.name == "Photos")
         );
-        assert!(
-            created
-                .iter()
-                .any(|entry| entry.kind == FileKind::Directory
-                    && entry.name == "Album"
-                    && entry.parent == Some(photos))
-        );
+        assert!(created.iter().any(|entry| entry.kind == FileKind::Directory
+            && entry.name == "Album"
+            && entry.parent == Some(photos)));
 
         let under_photos = state
             .services
