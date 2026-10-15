@@ -91,7 +91,7 @@
   let selected = $state<string[]>([]);
   /** Anchor for Shift+click range selection (last plain / Ctrl click). */
   let selectionAnchor = $state<string | null>(null);
-  /** When true, plain click/tap toggles additively (desktop sticky multi-select + mobile). */
+  /** When true, plain click/tap toggles. Entered via long-press or Shift range. */
   let selectMode = $state(false);
   let deleteOpen = $state(false);
   let deleting = $state(false);
@@ -667,10 +667,11 @@
   }
 
   /**
-   * OS-style selection + select mode:
+   * Selection:
    * - Click: select only this item (unless selectMode, then toggle)
    * - Ctrl/Cmd+Click: toggle and enter select mode while anything remains selected
-   * - Shift+Click: select contiguous range from anchor (only if something is already selected)
+   * - Shift+Click: contiguous range from anchor (desktop); enters select mode
+   * - Long-press: enter select mode with only this item selected
    */
   function selectEntry(id: string, event: MouseEvent) {
     const additive = event.ctrlKey || event.metaKey;
@@ -705,12 +706,10 @@
     selectionAnchor = id;
   }
 
-  /** Long-press / mobile: enter select mode and ensure this item is selected. */
+  /** Long-press: enter select mode with this item as the only selection. */
   function longSelectEntry(id: string) {
     selectMode = true;
-    if (!selected.includes(id)) {
-      selected.push(id);
-    }
+    selected = [id];
     selectionAnchor = id;
   }
 
@@ -1020,7 +1019,7 @@
         <FolderPlus size={15} />
         <span class="hidden sm:inline">New folder</span>
       </Button>
-      {#if selected.length >= 2}
+      {#if selectMode}
         <Button
           type="button"
           variant="outline"
@@ -1031,6 +1030,8 @@
           <X size={15} />
           <span class="hidden sm:inline">Clear</span>
         </Button>
+      {/if}
+      {#if selected.length >= 2}
         <Button
           type="button"
           variant="outline"

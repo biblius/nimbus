@@ -23,6 +23,7 @@
     fileFamily,
     isAudioFile,
     isImageFile,
+    isPdfFile,
     isTextFile,
     isVideoFile,
     parsePreviewFilter,
@@ -34,6 +35,7 @@
   import { cn } from "../utils";
   import AudioPreviewContent from "./preview/AudioPreviewContent.svelte";
   import ImagePreviewContent from "./preview/ImagePreviewContent.svelte";
+  import PdfPreviewContent from "./preview/PdfPreviewContent.svelte";
   import TextPreviewContent from "./preview/TextPreviewContent.svelte";
   import VideoPreviewContent from "./preview/VideoPreviewContent.svelte";
 
@@ -120,6 +122,7 @@
   const isVideo = $derived(current != null && isVideoFile(current));
   const isAudio = $derived(current != null && isAudioFile(current));
   const isText = $derived(current != null && isTextFile(current));
+  const isPdf = $derived(current != null && isPdfFile(current));
 
   function toggleAutoplay() {
     autoplay = !autoplay;
@@ -453,7 +456,9 @@
   <div
     class={cn(
       "absolute inset-0 flex px-14 py-20 sm:px-20 sm:py-24",
-      isText ? "items-stretch justify-stretch" : "items-center justify-center",
+      isText || isPdf
+        ? "items-stretch justify-stretch"
+        : "items-center justify-center",
     )}
   >
     {#if current && isImage}
@@ -484,6 +489,12 @@
         name={current.file.name}
         {onUpdated}
         bind:editing
+      />
+    {:else if current && isPdf}
+      <PdfPreviewContent
+        {rootId}
+        fileId={current.file.id}
+        name={current.file.name}
       />
     {/if}
   </div>

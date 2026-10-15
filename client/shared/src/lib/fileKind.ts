@@ -91,6 +91,15 @@ export function isTextFile(entry: FileView): boolean {
   return entry.file.kind === "file" && fileFamily(entry.file.fileType) === "text";
 }
 
+export function isPdfFile(entry: FileView): boolean {
+  return (
+    entry.file.kind === "file" &&
+    entry.file.fileType != null &&
+    "doc" in entry.file.fileType &&
+    entry.file.fileType.doc === "Pdf"
+  );
+}
+
 /** Files that show a generated WebP icon in the browser list. */
 export function hasListThumbnail(entry: FileView): boolean {
   return isImageFile(entry) || isVideoFile(entry);
@@ -113,6 +122,7 @@ export function isPreviewable(entry: FileView): boolean {
     isImageFile(entry) ||
     isVideoFile(entry) ||
     isAudioFile(entry) ||
-    isTextFile(entry)
+    isTextFile(entry) ||
+    isPdfFile(entry)
   );
 }

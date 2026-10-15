@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { Download, Folder, Share2, Trash } from "@lucide/svelte";
+  import { Download, Ear, Eye, Folder, Share2, Trash } from "@lucide/svelte";
   import { createDraggable, createDroppable } from "@dnd-kit/svelte";
   import { onDestroy, untrack } from "svelte";
-  import { hasListThumbnail, isPreviewable } from "../fileKind";
+  import { hasListThumbnail, isAudioFile, isPreviewable } from "../fileKind";
   import { formatBytes, formatDatetime } from "../format";
   import { session } from "../session.svelte";
   import type { FileView } from "../types";
@@ -43,7 +43,7 @@
     /** When true, plain taps toggle and icon clicks do not open/preview. */
     selectMode?: boolean;
     onSelect: (event: MouseEvent) => void;
-    /** Long-press to enter multi-select (mobile) and ensure this item is selected. */
+    /** Long-press: enter select mode with this item as the only selection. */
     onLongSelect?: () => void;
     onOpen: () => void;
     onPreview: () => void;
@@ -72,6 +72,7 @@
   });
 
   const previewable = $derived(isPreviewable(entry));
+  const audioFile = $derived(isAudioFile(entry));
   const showThumbnail = $derived(hasListThumbnail(entry));
 
   let longPressTimer: ReturnType<typeof setTimeout> | undefined;
@@ -143,10 +144,6 @@
     return true;
   }
 
-  function isModifiedClick(event: MouseEvent) {
-    return event.ctrlKey || event.metaKey || event.shiftKey;
-  }
-
   function onRowClick(event: MouseEvent) {
     if (consumeSuppressedClick(event)) {
       return;
@@ -170,7 +167,13 @@
       return;
     }
 
-    if (isModifiedClick(event) || selectMode || multiSelected) {
+    if (
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      selectMode ||
+      multiSelected
+    ) {
       event.preventDefault();
       onSelect(event);
       return;
@@ -310,7 +313,9 @@
     columns,
     "min-h-14 py-2 outline-none select-none [-webkit-touch-callout:none] hover:bg-accent/60 focus:outline-none focus-visible:outline-none",
     selected && "bg-accent/40",
-    selected && multiSelected && "ring-1 ring-primary/70 ring-inset",
+    selected &&
+      (selectMode || multiSelected) &&
+      "ring-1 ring-primary/70 ring-inset",
     draggable.isDragging && "opacity-40",
     directory &&
       droppable.isDropTarget &&
@@ -328,7 +333,7 @@
     {#if file.kind === "directory"}
       <button
         type="button"
-        class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        class="group relative flex size-12 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         data-no-select
         aria-label="Open {name}"
         title="Open"
@@ -339,7 +344,7 @@
     {:else if previewable}
       <button
         type="button"
-        class="relative size-12 shrink-0 overflow-hidden rounded-lg ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        class="group relative size-12 shrink-0 cursor-pointer overflow-hidden rounded-lg ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         data-no-select
         aria-label="Preview {name}"
         title="Preview"
@@ -360,6 +365,16 @@
             <FileTypeIcon fileType={file.fileType} size={ICON} />
           </span>
         {/if}
+        <span
+          class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          aria-hidden="true"
+        >
+          {#if audioFile}
+            <Ear size={20} strokeWidth={2} />
+          {:else}
+            <Eye size={20} strokeWidth={2} />
+          {/if}
+        </span>
       </button>
     {:else}
       <span
@@ -372,7 +387,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       {@attach draggable.attachHandle}
-      class="flex min-h-12 min-w-0 flex-1 cursor-grab items-center outline-none focus:outline-none focus-visible:outline-none active:cursor-grabbing"
+      class="flex min-h-12 min-w-0 flex-1 items-center outline-none focus:outline-none focus-visible:outline-none"
       data-no-select
       title={name}
       onclick={onNameClick}

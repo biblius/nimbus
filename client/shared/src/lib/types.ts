@@ -193,6 +193,7 @@ export type FileType =
   | { font: "Woff" | "Woff2" | "Ttf" | "Otf" }
   | {
       doc:
+        | "Pdf"
         | "Doc"
         | "Docx"
         | "Xls"
@@ -214,7 +215,6 @@ export type FileType =
         | "Bz3"
         | "SevenZ"
         | "Xz"
-        | "Pdf"
         | "Swf"
         | "Rtf"
         | "Eot"

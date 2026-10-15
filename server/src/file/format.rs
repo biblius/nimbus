@@ -146,6 +146,7 @@ formats!(Font, FontFormat {
 });
 
 formats!(Doc, DocFormat {
+    Pdf => "pdf", "application/pdf",
     Doc => "doc", "application/msword",
     Docx => "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     Xls => "xls", "application/vnd.ms-excel",
@@ -167,7 +168,6 @@ formats!(Archive, ArchiveFormat {
     Bz3 => "bz3", "application/vnd.bzip3",
     SevenZ => "7z", "application/x-7z-compressed",
     Xz => "xz", "application/x-xz",
-    Pdf => "pdf", "application/pdf",
     Swf => "swf", "application/x-shockwave-flash",
     Rtf => "rtf", "application/rtf",
     Eot => "eot", "application/octet-stream",
