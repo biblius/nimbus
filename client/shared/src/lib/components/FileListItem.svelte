@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, Eye, Folder, Share2, Trash } from "@lucide/svelte";
+  import { Download, Folder, Share2, Trash } from "@lucide/svelte";
   import { createDraggable, createDroppable } from "@dnd-kit/svelte";
   import { untrack } from "svelte";
   import { hasListThumbnail, isPreviewable } from "../fileKind";
@@ -12,6 +12,7 @@
 
   const PREVIEW_POLL_MS = 3000;
   const PREVIEW_MAX_ATTEMPTS = 5;
+  const ICON = 24;
 
   let {
     entry,
@@ -19,7 +20,7 @@
     name,
     columns,
     selected,
-    onToggle,
+    onSelect,
     onOpen,
     onPreview,
     onDownload,
@@ -31,7 +32,7 @@
     name: string;
     columns: string;
     selected: boolean;
-    onToggle: () => void;
+    onSelect: (event: MouseEvent) => void;
     onOpen: () => void;
     onPreview: () => void;
     onDownload: () => void;
@@ -61,7 +62,62 @@
   const previewable = $derived(isPreviewable(entry));
   const showThumbnail = $derived(hasListThumbnail(entry));
 
-  function onRowDoubleClick() {
+  function isModifiedClick(event: MouseEvent) {
+    return event.ctrlKey || event.metaKey || event.shiftKey;
+  }
+
+  function onRowClick(event: MouseEvent) {
+    if (
+      event.target instanceof Element &&
+      event.target.closest("button, a, input, [data-no-select]")
+    ) {
+      return;
+    }
+
+    onSelect(event);
+  }
+
+  /** Icon: open / preview (or select only with modifiers). */
+  function onIconClick(event: MouseEvent) {
+    event.stopPropagation();
+
+    if (isModifiedClick(event)) {
+      event.preventDefault();
+      onSelect(event);
+      return;
+    }
+
+    onSelect(event);
+
+    if (file.kind === "directory") {
+      onOpen();
+      return;
+    }
+
+    if (previewable) {
+      onPreview();
+    }
+  }
+
+  /** Name: select + drag handle (does not open). */
+  function onNameClick(event: MouseEvent) {
+    event.stopPropagation();
+    onSelect(event);
+  }
+
+  function onRowDoubleClick(event: MouseEvent) {
+    if (
+      event.target instanceof Element &&
+      event.target.closest("[data-no-open]")
+    ) {
+      return;
+    }
+
+    if (file.kind === "directory") {
+      onOpen();
+      return;
+    }
+
     if (previewable) {
       onPreview();
     }
@@ -144,89 +200,80 @@
   }}
 />
 
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <li
   {@attach draggable.attach}
   {@attach directory ? droppable.attach : undefined}
   class={cn(
     columns,
-    "min-h-11 cursor-grab py-1 hover:bg-accent/60 active:cursor-grabbing",
+    "min-h-14 py-2 select-none outline-none hover:bg-accent/60 focus:outline-none focus-visible:outline-none",
     selected && "bg-accent/40",
     draggable.isDragging && "opacity-40",
     directory &&
       droppable.isDropTarget &&
       "bg-primary/10 ring-1 ring-primary ring-inset",
   )}
+  onclick={onRowClick}
   ondblclick={onRowDoubleClick}
 >
-  <input
-    type="checkbox"
-    class="size-4"
-    data-no-drag
-    aria-label="Select {name}"
-    checked={selected}
-    onchange={onToggle}
-    ondblclick={(event) => event.stopPropagation()}
-  />
-  {#if file.kind === "directory"}
-    <button
-      type="button"
-      class="flex min-h-9 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm font-medium"
-      onclick={onOpen}
-    >
-      <span
-        class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
-      >
-        <Folder size={18} strokeWidth={1.75} />
-      </span>
-      <span class="truncate" title={name}>{name}</span>
-    </button>
-  {:else if previewable}
-    <div
-      class="flex min-h-9 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
-    >
+  <div class="flex min-h-12 w-full min-w-0 items-center gap-3 overflow-hidden">
+    {#if file.kind === "directory"}
       <button
         type="button"
-        class="group/preview relative size-8 shrink-0 cursor-pointer overflow-hidden rounded-md ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        data-no-drag
+        class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        data-no-select
+        aria-label="Open {name}"
+        title="Open"
+        onclick={onIconClick}
+      >
+        <Folder size={ICON} strokeWidth={1.75} />
+      </button>
+    {:else if previewable}
+      <button
+        type="button"
+        class="relative size-12 shrink-0 overflow-hidden rounded-lg ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        data-no-select
         aria-label="Preview {name}"
         title="Preview"
-        onclick={onPreview}
+        onclick={onIconClick}
       >
         {#if showThumbnail && previewUrl}
           <img
             src={previewUrl}
             alt=""
-            width="32"
-            height="32"
-            class="size-full object-cover shadow-sm"
+            width="48"
+            height="48"
+            class="size-full object-cover"
           />
         {:else}
           <span
             class="flex size-full items-center justify-center bg-muted text-muted-foreground"
           >
-            <FileTypeIcon fileType={file.fileType} size={16} />
+            <FileTypeIcon fileType={file.fileType} size={ICON} />
           </span>
         {/if}
-        <span
-          class="absolute inset-0 flex items-center justify-center bg-black/55 text-white opacity-0 transition-opacity group-hover/preview:opacity-100 group-focus-visible/preview:opacity-100"
-        >
-          <Eye size={16} />
-        </span>
       </button>
-      <span class="truncate font-medium" title={name}>{name}</span>
-    </div>
-  {:else}
-    <div
-      class="flex min-h-9 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm"
-    >
+    {:else}
       <span
-        class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
+        class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground ring-1 ring-border/60"
       >
-        <FileTypeIcon fileType={file.fileType} size={16} />
+        <FileTypeIcon fileType={file.fileType} size={ICON} />
       </span>
-      <span class="truncate font-medium" title={name}>{name}</span>
+    {/if}
+
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      {@attach draggable.attachHandle}
+      class="flex min-h-12 min-w-0 flex-1 cursor-grab items-center outline-none active:cursor-grabbing focus:outline-none focus-visible:outline-none"
+      data-no-select
+      title={name}
+      onclick={onNameClick}
+    >
+      <span class="truncate text-sm font-medium">{name}</span>
     </div>
-  {/if}
+  </div>
+
   <span
     class="hidden min-w-0 overflow-hidden text-right text-sm text-muted-foreground tabular-nums @lg:block"
   >
@@ -240,7 +287,9 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="flex items-center justify-end gap-1"
-    data-no-drag
+    data-no-select
+    data-no-open
+    onclick={(event) => event.stopPropagation()}
     ondblclick={(event) => event.stopPropagation()}
   >
     {#if file.kind === "file"}

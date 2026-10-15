@@ -26,21 +26,20 @@
   {@attach droppable.attach}
   class={cn(
     columns,
-    "min-h-11 py-1 text-muted-foreground",
+    "min-h-14 py-2 text-muted-foreground",
     droppable.isDropTarget && "bg-primary/10 ring-1 ring-primary ring-inset",
   )}
   aria-label="Parent folder"
 >
-  <span class="size-4" aria-hidden="true"></span>
   <button
     type="button"
-    class="flex min-h-9 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm font-medium"
+    class="flex min-h-12 w-full min-w-0 items-center gap-3 overflow-hidden text-left text-sm font-medium"
     onclick={onOpen}
   >
     <span
-      class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+      class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
     >
-      <FolderUp size={18} strokeWidth={1.75} />
+      <FolderUp size={24} strokeWidth={1.75} />
     </span>
     <span class="truncate">..</span>
   </button>

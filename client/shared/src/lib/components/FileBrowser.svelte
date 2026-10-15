@@ -11,7 +11,6 @@
     X,
   } from "@lucide/svelte";
   import {
-    KeyboardSensor,
     PointerActivationConstraints,
     PointerSensor,
   } from "@dnd-kit/dom";
@@ -80,17 +79,18 @@
         event.target instanceof Element &&
         Boolean(event.target.closest("[data-no-drag]")),
     }),
-    KeyboardSensor,
   ];
 
   type SortColumn = "kind" | "name" | "size" | "created";
   type SortDirection = "asc" | "desc";
 
   const columns =
-    "grid grid-cols-[1.75rem_minmax(0,1fr)_7.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_7.5rem] @2xl:grid-cols-[1.75rem_minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_7.5rem]";
+    "grid grid-cols-[minmax(0,1fr)_7.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_7.5rem] @2xl:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_7.5rem]";
 
   let entries = $state<FileView[]>([]);
   let selected = $state<string[]>([]);
+  /** Anchor for Shift+click range selection (last plain / Ctrl click). */
+  let selectionAnchor = $state<string | null>(null);
   let deleteOpen = $state(false);
   let deleting = $state(false);
   let pendingDelete = $state<string[]>([]);
@@ -266,6 +266,7 @@
 
     entries = [];
     selected = [];
+    selectionAnchor = null;
     previewFileId = null;
 
     loadAncestors(rootId, parent, currentLoad);
@@ -656,13 +657,41 @@
     selected.splice(index, 1);
   }
 
-  function toggleAll() {
-    if (selected.length === entries.length) {
-      selected = [];
+  /**
+   * OS-style selection:
+   * - Click: select only this item
+   * - Ctrl/Cmd+Click: toggle in multiselect
+   * - Shift+Click: select contiguous range from anchor (only if something is already selected)
+   */
+  function selectEntry(id: string, event: MouseEvent) {
+    const additive = event.ctrlKey || event.metaKey;
+    const range = event.shiftKey;
+
+    if (range && selected.length > 0) {
+      const anchorId =
+        selectionAnchor != null && entries.some((entry) => entry.file.id === selectionAnchor)
+          ? selectionAnchor
+          : selected[0];
+      const ids = entries.map((entry) => entry.file.id);
+      const from = ids.indexOf(anchorId);
+      const to = ids.indexOf(id);
+
+      if (from !== -1 && to !== -1) {
+        const start = Math.min(from, to);
+        const end = Math.max(from, to);
+        selected = ids.slice(start, end + 1);
+        return;
+      }
+    }
+
+    if (additive) {
+      toggle(id);
+      selectionAnchor = id;
       return;
     }
 
-    selected = entries.map((entry) => entry.file.id);
+    selected = [id];
+    selectionAnchor = id;
   }
 
   function askDelete(ids: string[]) {
@@ -925,7 +954,7 @@
       {/each}
     </nav>
 
-    <div class="flex shrink-0 items-center gap-2">
+    <div class="flex shrink-0 items-center gap-1.5">
       <input
         bind:this={fileInput}
         type="file"
@@ -938,25 +967,34 @@
       <Button
         type="button"
         variant="outline"
+        size="sm"
         aria-label="Upload"
         onclick={() => fileInput?.click()}
       >
-        <Upload size={16} />
+        <Upload size={15} />
         <span class="hidden sm:inline">Upload</span>
       </Button>
-      <Button type="button" aria-label="New folder" onclick={beginDirectory}>
-        <FolderPlus size={16} />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-label="New folder"
+        onclick={beginDirectory}
+      >
+        <FolderPlus size={15} />
         <span class="hidden sm:inline">New folder</span>
       </Button>
-      {#if selected.length > 0}
+      {#if selected.length >= 2}
         <Button
           type="button"
           variant="outline"
+          size="sm"
+          class="text-destructive hover:bg-destructive/10 hover:text-destructive"
           aria-label="Delete selected"
           onclick={() => askDelete(selected)}
         >
-          <Trash size={16} />
-          <span class="hidden sm:inline">Delete</span>
+          <Trash size={15} />
+          <span class="hidden sm:inline">Delete ({selected.length})</span>
         </Button>
       {/if}
     </div>
@@ -1026,18 +1064,10 @@
     <div
       class="{columns} h-10 shrink-0 border-b text-xs font-medium text-muted-foreground"
     >
-      <input
-        type="checkbox"
-        class="size-4"
-        aria-label="Select all"
-        checked={entries.length > 0 && selected.length === entries.length}
-        disabled={entries.length === 0}
-        onchange={toggleAll}
-      />
       {@render columnHeader("name", "Name", "", "")}
       {@render columnHeader("size", "Size", "hidden @lg:flex", "justify-end")}
       {@render columnHeader("created", "Created", "hidden @2xl:flex", "")}
-      <span class="sr-only">Actions</span>
+      <span aria-hidden="true"></span>
     </div>
 
     <!-- FILE LIST -->
@@ -1137,7 +1167,7 @@
                 name={label(entry)}
                 {columns}
                 selected={selected.includes(entry.file.id)}
-                onToggle={() => toggle(entry.file.id)}
+                onSelect={(event) => selectEntry(entry.file.id, event)}
                 onOpen={() => openDirectory(entry)}
                 onPreview={() => (previewFileId = entry.file.id)}
                 onDownload={() => download(entry)}
