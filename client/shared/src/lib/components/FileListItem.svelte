@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, Ear, Eye, Folder, Share2, Trash } from "@lucide/svelte";
+  import { Download, Eye, Folder, Share2, Trash } from "@lucide/svelte";
   import { createDraggable, createDroppable } from "@dnd-kit/svelte";
   import { onDestroy, untrack } from "svelte";
   import { hasListThumbnail, isAudioFile, isPreviewable } from "../fileKind";
@@ -369,11 +369,7 @@
           class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-foreground opacity-0 transition-opacity group-hover:opacity-100"
           aria-hidden="true"
         >
-          {#if audioFile}
-            <Ear size={20} strokeWidth={2} />
-          {:else}
-            <Eye size={20} strokeWidth={2} />
-          {/if}
+          <Eye size={20} strokeWidth={2} />
         </span>
       </button>
     {:else}
