@@ -23,11 +23,13 @@
     type FileView,
     type Root,
   } from "../types";
-  import { kv } from "../storage";
+  import { kv, type FilesViewMode } from "../storage";
   import { hasListThumbnail, isPreviewable } from "../fileKind";
   import FileListItem from "./FileListItem.svelte";
   import FilePreview from "./FilePreview.svelte";
+  import FileTileItem from "./FileTileItem.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
+  import FileViewModeMenu from "./FileViewModeMenu.svelte";
   import FolderPicker from "./FolderPicker.svelte";
   import ParentDropItem, { PARENT_DROPPABLE_ID } from "./ParentDropItem.svelte";
   import RootPicker from "./RootPicker.svelte";
@@ -114,8 +116,23 @@
   let copyBusy = $state(false);
   let copyPicker = $state<{ root: Root; entry: FileView } | null>(null);
   let copyTree = $state<FileTree | null>(null);
+  let viewMode = $state<FilesViewMode>(kv.filesViewMode.get());
 
   const previewEntries = $derived(entries.filter(isPreviewable));
+  const tiles = $derived(
+    viewMode === "tiles-small" || viewMode === "tiles-large",
+  );
+  const tileSize = $derived<"small" | "large">(
+    viewMode === "tiles-large" ? "large" : "small",
+  );
+  const listDensity = $derived<"default" | "compact">(
+    viewMode === "compact" ? "compact" : "default",
+  );
+  const tileGridClass = $derived(
+    viewMode === "tiles-large"
+      ? "grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1 p-2 sm:gap-2"
+      : "grid grid-cols-[repeat(auto-fill,minmax(6.25rem,1fr))] gap-0.5 p-1.5 sm:gap-1 sm:p-2",
+  );
   const storedSort = kv.filesSort.get();
   let sort = $state<{ column: SortColumn; direction: SortDirection }>({
     column: storedSort.column as SortColumn,
@@ -1386,14 +1403,24 @@
   >
     <!-- COLUMN HEADERS -->
 
-    <div
-      class="{columns} h-10 shrink-0 border-b text-xs font-medium text-muted-foreground"
-    >
-      {@render columnHeader("name", "Name")}
-      {@render columnHeader("size", "Size", "hidden @lg:flex", "justify-end")}
-      {@render columnHeader("created", "Created", "hidden @2xl:flex")}
-      <span aria-hidden="true"></span>
-    </div>
+    {#if tiles}
+      <div
+        class="flex h-10 shrink-0 items-center justify-end border-b px-3"
+      >
+        <FileViewModeMenu bind:mode={viewMode} />
+      </div>
+    {:else}
+      <div
+        class="{columns} h-10 shrink-0 border-b text-xs font-medium text-muted-foreground"
+      >
+        {@render columnHeader("name", "Name")}
+        {@render columnHeader("size", "Size", "hidden @lg:flex", "justify-end")}
+        {@render columnHeader("created", "Created", "hidden @2xl:flex")}
+        <div class="flex items-center justify-end">
+          <FileViewModeMenu bind:mode={viewMode} />
+        </div>
+      </div>
+    {/if}
 
     <!-- FILE LIST -->
 
@@ -1419,15 +1446,19 @@
         </div>
       {:else}
         <DragDropProvider {sensors} {onDragEnd}>
-          <ul class="divide-y">
+          <ul class={tiles ? tileGridClass : "divide-y"}>
             {#if showParentDrop}
-              <ParentDropItem {columns} onOpen={openParentDirectory} />
+              <ParentDropItem
+                {columns}
+                {viewMode}
+                onOpen={openParentDirectory}
+              />
             {/if}
 
             <!-- NEW DIRECTORY DRAFT -->
 
             {#if drafting}
-              <li class="px-3 py-2">
+              <li class={["px-3 py-2", tiles && "col-span-full"]}>
                 <div class="flex min-w-0 items-center gap-2">
                   {#if draftKind === "text"}
                     <FileIcon
@@ -1493,23 +1524,44 @@
             <!-- FILES -->
 
             {#each entries as entry (entry.file.id)}
-              <FileListItem
-                {entry}
-                rootId={root.id}
-                thumbnailUrl={previewThumbs[entry.file.id]}
-                name={label(entry)}
-                {columns}
-                selected={selected.includes(entry.file.id)}
-                multiSelected={selected.length >= 2}
-                {selectMode}
-                onSelect={(event) => selectEntry(entry.file.id, event)}
-                onLongSelect={() => longSelectEntry(entry.file.id)}
-                onOpen={() => openDirectory(entry)}
-                onPreview={() => (previewFileId = entry.file.id)}
-                onDownload={() => download(entry)}
-                onCopy={() => askCopy(entry)}
-                onDelete={() => askDelete([entry.file.id])}
-              />
+              {#if tiles}
+                <FileTileItem
+                  {entry}
+                  rootId={root.id}
+                  thumbnailUrl={previewThumbs[entry.file.id]}
+                  name={label(entry)}
+                  size={tileSize}
+                  selected={selected.includes(entry.file.id)}
+                  multiSelected={selected.length >= 2}
+                  {selectMode}
+                  onSelect={(event) => selectEntry(entry.file.id, event)}
+                  onLongSelect={() => longSelectEntry(entry.file.id)}
+                  onOpen={() => openDirectory(entry)}
+                  onPreview={() => (previewFileId = entry.file.id)}
+                  onDownload={() => download(entry)}
+                  onCopy={() => askCopy(entry)}
+                  onDelete={() => askDelete([entry.file.id])}
+                />
+              {:else}
+                <FileListItem
+                  {entry}
+                  rootId={root.id}
+                  thumbnailUrl={previewThumbs[entry.file.id]}
+                  name={label(entry)}
+                  {columns}
+                  density={listDensity}
+                  selected={selected.includes(entry.file.id)}
+                  multiSelected={selected.length >= 2}
+                  {selectMode}
+                  onSelect={(event) => selectEntry(entry.file.id, event)}
+                  onLongSelect={() => longSelectEntry(entry.file.id)}
+                  onOpen={() => openDirectory(entry)}
+                  onPreview={() => (previewFileId = entry.file.id)}
+                  onDownload={() => download(entry)}
+                  onCopy={() => askCopy(entry)}
+                  onDelete={() => askDelete([entry.file.id])}
+                />
+              {/if}
             {/each}
           </ul>
           <DragOverlay>

@@ -100,6 +100,34 @@ function sortEntry(
   };
 }
 
+export const FILES_VIEW_MODES = [
+  "list",
+  "compact",
+  "tiles-small",
+  "tiles-large",
+] as const;
+
+export type FilesViewMode = (typeof FILES_VIEW_MODES)[number];
+
+function enumEntry<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): KvEntry<T> {
+  return {
+    key,
+    get: () => {
+      const value = read(key);
+      if (value !== null && (allowed as readonly string[]).includes(value)) {
+        return value as T;
+      }
+      return fallback;
+    },
+    set: (value) => write(key, value),
+    clear: () => remove(key),
+  };
+}
+
 /** App-wide persisted keys. */
 export const kv = {
   theme: stringEntry("nimbus-theme", "dark"),
@@ -111,6 +139,11 @@ export const kv = {
     "nimbus-files-sort",
     ["kind", "name", "size", "created"],
     { column: "kind", direction: "asc" },
+  ),
+  filesViewMode: enumEntry(
+    "nimbus-files-view-mode",
+    FILES_VIEW_MODES,
+    "list",
   ),
   usersSort: sortEntry(
     "nimbus-users-sort",

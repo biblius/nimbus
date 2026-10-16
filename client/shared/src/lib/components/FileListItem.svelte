@@ -12,7 +12,6 @@
   import Menu from "./ui/menu/menu.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
 
-  const ICON = 24;
   const LONG_PRESS_MS = 480;
   /** Match parent PointerSensor drag distance so long-press cancels before drag starts. */
   const MOVE_THRESHOLD_PX = 8;
@@ -22,6 +21,7 @@
     rootId,
     name,
     columns,
+    density = "default",
     selected,
     multiSelected = false,
     selectMode = false,
@@ -39,6 +39,8 @@
     thumbnailUrl?: string;
     name: string;
     columns: string;
+    /** Compact rows for denser Nextcloud-style list view. */
+    density?: "default" | "compact";
     selected: boolean;
     /** True when this row is selected as part of a multi-item selection. */
     multiSelected?: boolean;
@@ -55,6 +57,17 @@
   } = $props();
 
   const file = $derived(entry.file);
+  const compact = $derived(density === "compact");
+  const iconSize = $derived(compact ? 18 : 24);
+  const eyeSize = $derived(compact ? 16 : 20);
+  const thumbPx = $derived(compact ? 36 : 48);
+  const boxClass = $derived(compact ? "size-9" : "size-12");
+  const rowPadClass = $derived(compact ? "min-h-10 py-1" : "min-h-14 py-2");
+  const innerRowClass = $derived(
+    compact ? "min-h-9 gap-2.5" : "min-h-12 gap-3",
+  );
+  const nameAreaClass = $derived(compact ? "min-h-9" : "min-h-12");
+  const textClass = $derived(compact ? "text-xs" : "text-sm");
 
   const fileId = untrack(() => entry.file.id);
   const directory = untrack(() => entry.file.kind === "directory");
@@ -268,7 +281,8 @@
   {@attach directory ? droppable.attach : undefined}
   class={cn(
     columns,
-    "min-h-14 py-2 outline-none select-none [-webkit-touch-callout:none] hover:bg-accent/60 focus:outline-none focus-visible:outline-none",
+    rowPadClass,
+    "outline-none select-none [-webkit-touch-callout:none] hover:bg-accent/60 focus:outline-none focus-visible:outline-none",
     selected && "bg-accent/40",
     selected &&
       (selectMode || multiSelected) &&
@@ -286,22 +300,33 @@
   onpointercancel={onRowPointerEnd}
   oncontextmenu={onRowContextMenu}
 >
-  <div class="flex min-h-12 w-full min-w-0 items-center gap-3 overflow-hidden">
+  <div
+    class={cn(
+      "flex w-full min-w-0 items-center overflow-hidden",
+      innerRowClass,
+    )}
+  >
     {#if file.kind === "directory"}
       <button
         type="button"
-        class="group relative flex size-12 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        class={cn(
+          "group relative flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          boxClass,
+        )}
         data-no-select
         aria-label="Open {name}"
         title="Open"
         onclick={onIconClick}
       >
-        <Folder size={ICON} strokeWidth={1.75} />
+        <Folder size={iconSize} strokeWidth={1.75} />
       </button>
     {:else if previewable}
       <button
         type="button"
-        class="group relative size-12 shrink-0 cursor-pointer overflow-hidden rounded-lg ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        class={cn(
+          "group relative shrink-0 cursor-pointer overflow-hidden rounded-lg ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          boxClass,
+        )}
         data-no-select
         aria-label="Preview {name}"
         title="Preview"
@@ -311,51 +336,63 @@
           <img
             src={thumbnailUrl ?? previewUrl}
             alt=""
-            width="48"
-            height="48"
+            width={thumbPx}
+            height={thumbPx}
             class="size-full object-cover"
           />
         {:else}
           <span
             class="flex size-full items-center justify-center bg-muted text-muted-foreground"
           >
-            <FileTypeIcon fileType={file.fileType} size={ICON} />
+            <FileTypeIcon fileType={file.fileType} size={iconSize} />
           </span>
         {/if}
         <span
           class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-foreground opacity-0 transition-opacity group-hover:opacity-100"
           aria-hidden="true"
         >
-          <Eye size={20} strokeWidth={2} />
+          <Eye size={eyeSize} strokeWidth={2} />
         </span>
       </button>
     {:else}
       <span
-        class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground ring-1 ring-border/60"
+        class={cn(
+          "flex shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground ring-1 ring-border/60",
+          boxClass,
+        )}
       >
-        <FileTypeIcon fileType={file.fileType} size={ICON} />
+        <FileTypeIcon fileType={file.fileType} size={iconSize} />
       </span>
     {/if}
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       {@attach draggable.attachHandle}
-      class="flex min-h-12 min-w-0 flex-1 items-center outline-none focus:outline-none focus-visible:outline-none"
+      class={cn(
+        "flex min-w-0 flex-1 items-center outline-none focus:outline-none focus-visible:outline-none",
+        nameAreaClass,
+      )}
       data-no-select
       title={name}
       onclick={onNameClick}
     >
-      <span class="truncate text-sm font-medium">{name}</span>
+      <span class={cn("truncate font-medium", textClass)}>{name}</span>
     </div>
   </div>
 
   <span
-    class="hidden min-w-0 overflow-hidden text-right text-sm text-muted-foreground tabular-nums @lg:block"
+    class={cn(
+      "hidden min-w-0 overflow-hidden text-right text-muted-foreground tabular-nums @lg:block",
+      textClass,
+    )}
   >
     {file.kind === "directory" ? "-" : formatBytes(file.sizeBytes)}
   </span>
   <span
-    class="hidden min-w-0 truncate text-sm text-muted-foreground @2xl:block"
+    class={cn(
+      "hidden min-w-0 truncate text-muted-foreground @2xl:block",
+      textClass,
+    )}
   >
     {formatDatetime(file.createdAt)}
   </span>
