@@ -5,8 +5,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validify::{ValidationError, Validify};
 use webauthn_rs::prelude::{
-    CreationChallengeResponse, Passkey, PublicKeyCredential, RegisterPublicKeyCredential,
-    RequestChallengeResponse,
+    COSEAlgorithm, CreationChallengeResponse, Passkey, PublicKeyCredential,
+    RegisterPublicKeyCredential, RequestChallengeResponse,
 };
 
 /// Successful password check: either a real session, or OTP still required.
@@ -131,19 +131,39 @@ pub struct UserPasskey {
     pub created_at: DateTime<Utc>,
 }
 
-/// Client-facing passkey row (no credential material).
+/// Client-facing passkey row (no public-key / attestation material).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserPasskeyView {
     pub id: i64,
     pub created_at: DateTime<Utc>,
+    pub algorithm: String,
 }
 
 impl From<UserPasskey> for UserPasskeyView {
     fn from(value: UserPasskey) -> Self {
+        let Json(passkey) = value.data;
+
+        let algorithm = match passkey.cred_algorithm() {
+            COSEAlgorithm::ES256 => "ES256",
+            COSEAlgorithm::ES384 => "ES384",
+            COSEAlgorithm::ES512 => "ES512",
+            COSEAlgorithm::RS256 => "RS256",
+            COSEAlgorithm::RS384 => "RS384",
+            COSEAlgorithm::RS512 => "RS512",
+            COSEAlgorithm::PS256 => "PS256",
+            COSEAlgorithm::PS384 => "PS384",
+            COSEAlgorithm::PS512 => "PS512",
+            COSEAlgorithm::EDDSA => "EdDSA",
+            COSEAlgorithm::INSECURE_RS1 => "",
+            COSEAlgorithm::PinUvProtocol => "",
+        }
+        .to_owned();
+
         Self {
             id: value.id,
             created_at: value.created_at,
+            algorithm,
         }
     }
 }

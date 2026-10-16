@@ -422,6 +422,27 @@ impl UserRepository {
         Ok(())
     }
 
+    /// Delete one passkey owned by the user.
+    #[instrument(skip(self), fields(user_id = %user_id, passkey_id = %id), err(Debug))]
+    pub async fn delete_passkey(&self, user_id: Uuid, id: i64) -> Result<(), AppError> {
+        let result = sqlx::query!(
+            r#"
+            DELETE FROM user_passkeys
+            WHERE id = $1 AND user_id = $2
+            "#,
+            id,
+            user_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::ResourceMissing("Passkey does not exist".into()));
+        }
+
+        Ok(())
+    }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where

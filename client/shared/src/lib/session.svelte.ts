@@ -9,7 +9,7 @@ export const session = $state<{
   client: NimbusClient;
   user: UserView | null;
   menuOpen: boolean;
-  /** Native (Tauri) client — login creates a permanent session. */
+  /** Native (Tauri) client - login creates a permanent session. */
   native: boolean;
   /** Native only: persisted server URL, or `null` if not configured yet. */
   endpoint: string | null;

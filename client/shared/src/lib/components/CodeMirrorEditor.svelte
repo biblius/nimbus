@@ -59,7 +59,7 @@
       doc: value,
       editable,
       lineWrap: editorPrefs.lineWrap,
-      // VIM only while editing — view mode keeps a normal caret.
+      // VIM only while editing - view mode keeps a normal caret.
       vim: editable && editorPrefs.vim,
       onUpdate: (update) => {
         if (update.docChanged) {

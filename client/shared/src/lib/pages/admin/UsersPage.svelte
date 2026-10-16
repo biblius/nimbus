@@ -150,9 +150,9 @@
   />
 {/snippet}
 
-<div class="flex min-h-0 flex-1 flex-col gap-3">
-  <div class="flex shrink-0 flex-wrap items-end justify-between gap-3 border-b pb-3">
-    <div class="min-w-0 space-y-1">
+<div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+  <div class="flex flex-wrap items-end justify-between gap-3 border-b pb-3">
+    <div class="min-w-0 space-y-0.5">
       <h2 class="text-lg font-semibold tracking-tight">Users</h2>
       <p class="text-sm text-muted-foreground">
         Accounts, roles, and private folder ownership.
@@ -170,7 +170,7 @@
   </div>
 
   {#if creating}
-    <div class="shrink-0 rounded-lg border bg-card p-4 sm:p-5">
+    <div class="rounded-lg border bg-card p-4 sm:p-5">
       <div class="mx-auto max-w-lg">
         <UserForm
           title="Add user"
@@ -183,7 +183,7 @@
   {:else if editingUser}
     {@const editId = editingUser.id}
     {#key editId}
-      <div class="shrink-0 rounded-lg border bg-card p-4 sm:p-5">
+      <div class="rounded-lg border bg-card p-4 sm:p-5">
         <div class="mx-auto max-w-lg">
           <UserForm
             user={editingUser}
@@ -204,7 +204,7 @@
     revision={listRevision}
   >
     {#snippet listHeader()}
-      <div class="{columns} h-10 text-xs font-medium text-muted-foreground">
+      <div class="{columns} h-9 text-xs font-medium text-muted-foreground">
         {@render sortHeader("username", "Username")}
         {@render sortHeader("email", "Email", "hidden @md:flex")}
         <span class="hidden @xl:block">Role</span>
@@ -217,9 +217,9 @@
     {#snippet children(users)}
       {#if users.length === 0}
         <div
-          class="flex h-full flex-col items-center justify-center gap-2 px-6 py-16 text-center"
+          class="flex flex-col items-center justify-center gap-1.5 px-6 py-10 text-center"
         >
-          <UserRound class="size-9 text-muted-foreground opacity-50" />
+          <UserRound class="size-8 text-muted-foreground opacity-50" />
           <p class="text-sm font-medium">No users match</p>
           <p class="max-w-sm text-sm text-muted-foreground">
             Try another search, or add a user to get started.
@@ -228,7 +228,7 @@
       {:else}
         <ul class="divide-y">
           {#each users as user (user.id)}
-            <li class="{columns} min-h-14 py-2 hover:bg-accent/60">
+            <li class="{columns} min-h-11 py-1.5 hover:bg-accent/60">
               <div class="min-w-0">
                 <div class="flex min-w-0 items-center gap-2">
                   <span class="truncate text-sm font-medium"
@@ -253,7 +253,7 @@
               <span
                 class="hidden min-w-0 truncate text-sm text-muted-foreground @md:block"
               >
-                {user.email ?? "—"}
+                {user.email ?? "-"}
               </span>
 
               <span class="hidden @xl:block">

@@ -544,7 +544,7 @@ impl LiveFileService {
     /// Copy a live file (and its descendants, if a directory) into `input.target_root_id`.
     ///
     /// Each copied row gets a new id and `created_at`; other metadata is retained.
-    /// Blob content is shared by hash — no filesystem copy is performed.
+    /// Blob content is shared by hash - no filesystem copy is performed.
     #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
     pub async fn copy_file(
         &self,

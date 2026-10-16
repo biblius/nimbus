@@ -86,7 +86,7 @@ export class ValidationError extends Error {
 const VALIDATION_CODE = 4;
 
 /**
- * Paths where 401 means bad credentials / OTP / current password — not a dead session.
+ * Paths where 401 means bad credentials / OTP / current password - not a dead session.
  * These must not trigger a redirect to login.
  */
 const AUTH_CHALLENGE_PATHS = new Set([
@@ -242,6 +242,12 @@ export class NimbusClient {
 
   listPasskeys(): Promise<UserPasskeyView[]> {
     return this.request<UserPasskeyView[]>("/auth/passkeys");
+  }
+
+  deletePasskey(id: number): Promise<void> {
+    return this.request<void>(`/auth/passkeys/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   }
 
   startPasskeySetup(): Promise<PasskeySetupChallenge> {

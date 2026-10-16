@@ -351,6 +351,24 @@ pub(crate) async fn list_passkeys(
     Ok(Json(state.services.auth.list_passkeys(&session).await?))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/auth/passkeys/{id}",
+    params(("id" = i64, Path, description = "Passkey id to remove")),
+    responses(
+        (status = 204, description = "Passkey removed"),
+        (status = 404, description = "Passkey missing or not owned")
+    )
+)]
+pub(crate) async fn delete_passkey(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    state.services.auth.delete_passkey(&session, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub(crate) async fn start_passkey_setup(
     State(state): State<AppState>,
     session: Session,

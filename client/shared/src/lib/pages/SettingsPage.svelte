@@ -6,24 +6,24 @@
     Pencil,
     ShieldAlert,
     ShieldCheck,
+    Trash,
   } from "@lucide/svelte";
   import { ApiError, ValidationError } from "../api";
   import ActiveSessions from "../components/ActiveSessions.svelte";
   import PanelShell from "../components/PanelShell.svelte";
   import Banner from "../components/ui/banner/banner.svelte";
   import Button from "../components/ui/button/button.svelte";
+  import ConfirmDialog from "../components/ui/confirm-dialog/confirm-dialog.svelte";
   import Field from "../components/ui/field/field.svelte";
   import UserForm from "../components/user/UserForm.svelte";
   import UserInfo from "../components/user/UserInfo.svelte";
   import UserSidebar from "../components/UserSidebar.svelte";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
-  import type { Root, UserData } from "../types";
+  import type { Root, UserData, UserPasskeyView } from "../types";
   import { createPasskey } from "../webauthn";
 
   type OtpPanel = "idle" | "setup" | "disable";
-
-  type PasskeyItem = { id: number; createdAt: string };
 
   let roots = $state<Root[]>([]);
   let editing = $state(false);
@@ -33,8 +33,10 @@
   let otpToken = $state<string | null>(null);
   let qrUrl = $state<string | null>(null);
   let otpValidation = $state<ValidationError | undefined>();
-  let passkeys = $state<PasskeyItem[]>([]);
+  let passkeys = $state<UserPasskeyView[]>([]);
   let passkeyBusy = $state(false);
+  let deletePasskeyId = $state<number | null>(null);
+  let deletingPasskey = $state(false);
 
   let passkeysEnabled = $derived(passkeys.length > 0);
 
@@ -110,6 +112,29 @@
       month: "short",
       day: "numeric",
     });
+  }
+
+  async function removePasskey() {
+    const id = deletePasskeyId;
+    if (id === null || deletingPasskey) {
+      return;
+    }
+
+    deletingPasskey = true;
+
+    try {
+      await session.client.deletePasskey(id);
+      passkeys = passkeys.filter((p) => p.id !== id);
+      deletePasskeyId = null;
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not remove passkey",
+      );
+    } finally {
+      deletingPasskey = false;
+    }
   }
 
   async function addPasskey() {
@@ -281,8 +306,8 @@
                   Add an email in Account below so you can recover your account
                   if you lose access.
                 {:else}
-                  No email on file. Add one so you can recover your account if
-                  you lose access.
+                  Email not configured. Add one so you can recover your account
+                  if you lose access.
                 {/if}
                 {#snippet action()}
                   {#if !editing}
@@ -301,18 +326,7 @@
             {#if otpOff}
               <Banner tone="warning">
                 {#snippet icon()}<ShieldAlert />{/snippet}
-                Two-factor authentication is not enabled. We recommend turning
-                it on to protect your account.
-                {#snippet action()}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onclick={startOtpSetup}
-                  >
-                    Set up
-                  </Button>
-                {/snippet}
+                Two-factor authentication is not enabled.
               </Banner>
             {/if}
           </div>
@@ -351,7 +365,7 @@
           {/if}
         </section>
 
-        <section class="rounded-xl border bg-card p-4 sm:p-5 space-y-4">
+        <section class="space-y-4 rounded-xl border bg-card p-4 sm:p-5">
           <h3 class="text-sm font-semibold tracking-tight">Security</h3>
 
           <div class="space-y-3">
@@ -522,25 +536,16 @@
                       ? 'bg-success/15 text-success'
                       : 'bg-muted text-muted-foreground'}"
                   >
-                    {passkeysEnabled ? "Enabled" : "Off"}
+                    {passkeysEnabled ? "Enabled" : "None"}
                   </span>
                 </h4>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  {#if passkeysEnabled}
-                    Passkeys allow you to securely sign in to Nimbus without a
-                    password.
-                  {:else}
-                    Register a passkey for passwordless, phishing-resistant
-                    sign-in.
-                  {/if}
-                </p>
               </div>
 
               <Button
                 type="button"
                 size="sm"
                 class="shrink-0"
-                disabled={passkeyBusy}
+                disabled={passkeyBusy || deletingPasskey}
                 onclick={addPasskey}
               >
                 Add passkey
@@ -551,9 +556,22 @@
               <ul class="space-y-1.5">
                 {#each passkeys as passkey (passkey.id)}
                   <li
-                    class="rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground"
+                    class="flex items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground"
                   >
-                    Passkey · {formatPasskeyDate(passkey.createdAt)}
+                    <span class="min-w-0 flex-1 truncate">
+                      Passkey · {formatPasskeyDate(passkey.createdAt)} · {passkey.algorithm}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      class="shrink-0 text-muted-foreground hover:text-destructive"
+                      disabled={passkeyBusy || deletingPasskey}
+                      aria-label="Remove passkey"
+                      onclick={() => (deletePasskeyId = passkey.id)}
+                    >
+                      <Trash size={15} />
+                    </Button>
                   </li>
                 {/each}
               </ul>
@@ -566,3 +584,13 @@
     </div>
   </div>
 </PanelShell>
+
+<ConfirmDialog
+  open={deletePasskeyId !== null}
+  title="Remove passkey?"
+  description="You will no longer be able to sign in with this passkey."
+  confirmLabel="Remove"
+  busy={deletingPasskey}
+  onCancel={() => (deletePasskeyId = null)}
+  onConfirm={() => void removePasskey()}
+/>

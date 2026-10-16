@@ -57,10 +57,11 @@ export type OtpSetup = {
   token: string;
 };
 
-/** Passkey row from `GET /auth/passkeys` (no credential material). */
+/** Passkey row from `GET /auth/passkeys` (no public-key material). */
 export type UserPasskeyView = {
   id: number;
   createdAt: string;
+  algorithm: string;
 };
 
 /** Challenge + token from `POST /auth/passkey/setup`. */

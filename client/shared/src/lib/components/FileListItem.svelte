@@ -352,7 +352,7 @@
   <span
     class="hidden min-w-0 overflow-hidden text-right text-sm text-muted-foreground tabular-nums @lg:block"
   >
-    {file.kind === "directory" ? "—" : formatBytes(file.sizeBytes)}
+    {file.kind === "directory" ? "-" : formatBytes(file.sizeBytes)}
   </span>
   <span
     class="hidden min-w-0 truncate text-sm text-muted-foreground @2xl:block"

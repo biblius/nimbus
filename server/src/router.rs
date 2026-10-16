@@ -98,6 +98,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/otp/setup/confirm", post(auth::finish_otp_setup))
         .route("/auth/otp/disable", post(auth::disable_otp))
         .route("/auth/passkeys", get(auth::list_passkeys))
+        .route("/auth/passkeys/{id}", delete(auth::delete_passkey))
         .route("/auth/passkey/setup", post(auth::start_passkey_setup))
         .route(
             "/auth/passkey/setup/confirm",

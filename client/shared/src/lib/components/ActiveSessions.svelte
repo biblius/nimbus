@@ -224,7 +224,7 @@
                 <div class="flex min-w-0 gap-1.5">
                   <dt class="shrink-0">IP</dt>
                   <dd class="truncate tabular-nums">
-                    {s.remoteAddress ?? "—"}
+                    {s.remoteAddress ?? "-"}
                   </dd>
                 </div>
                 <div class="flex min-w-0 gap-1.5">

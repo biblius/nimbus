@@ -37,11 +37,7 @@
   } = $props();
 </script>
 
-<div
-  role="status"
-  class={cn(bannerVariants({ tone }), className)}
-  {...rest}
->
+<div role="status" class={cn(bannerVariants({ tone }), className)} {...rest}>
   {#if icon}
     <span
       class={cn(

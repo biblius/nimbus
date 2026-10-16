@@ -464,6 +464,12 @@ impl AuthenticationService {
         Ok(passkeys.into_iter().map(UserPasskeyView::from).collect())
     }
 
+    /// Remove one of the signed-in user's registered passkeys.
+    #[instrument(skip(self, session), fields(user_id = %session.user.id, passkey_id = %id), err(Debug))]
+    pub async fn delete_passkey(&self, session: &Session, id: i64) -> Result<(), AppError> {
+        self.repo.users.delete_passkey(session.user.id, id).await
+    }
+
     /// Start WebAuthn passkey registration and cache the in-progress state.
     #[instrument(skip(self, session), fields(user_id = %session.user.id), err(Debug))]
     pub async fn start_passkey_setup(
@@ -543,7 +549,7 @@ impl AuthenticationService {
     ) -> Result<PasskeyLoginChallenge, AppError> {
         let (token, remember, permanent) = if let Some(token) = data.token {
             // Bridge restart: prove the ceremony exists, keep the original prefs.
-            // Do NOT type-infer this get as Uuid — the payload is PasskeyLoginCeremony.
+            // Do NOT type-infer this get as Uuid - the payload is PasskeyLoginCeremony.
             let existing: PasskeyLoginCeremony = self
                 .tokens
                 .get(OneShotToken::Passkey, token)

@@ -13,7 +13,7 @@
     autoplay?: boolean;
   } = $props();
 
-  // Direct chunk URL — browser issues Range requests and streams.
+  // Direct chunk URL - browser issues Range requests and streams.
   const videoUrl = $derived(session.client.contentUrl(rootId, fileId));
 
   let loading = $state(true);

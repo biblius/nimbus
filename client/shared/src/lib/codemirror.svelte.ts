@@ -23,7 +23,7 @@ type VimExHandlers = {
   writeQuit: () => void;
   /** `:q` */
   quit: () => void;
-  /** `:w` alone — nudge toward `:wq` */
+  /** `:w` alone - nudge toward `:wq` */
   writeHint: () => void;
 };
 

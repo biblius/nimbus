@@ -235,7 +235,7 @@
         session.user = await session.client.me();
         navigate("/", { replace: true });
       } catch {
-        // Stay on login — credentials still required.
+        // Stay on login - credentials still required.
       }
     } catch {
       toastError("Could not save server URL");

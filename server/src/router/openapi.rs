@@ -43,6 +43,7 @@ use crate::{
         auth::finish_otp_setup,
         auth::disable_otp,
         auth::list_passkeys,
+        auth::delete_passkey,
         auth::start_passkey_login,
         auth::finish_native_login,
         users::create_user,
