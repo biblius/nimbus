@@ -10,6 +10,7 @@
   import { ApiError, ValidationError } from "../api";
   import ActiveSessions from "../components/ActiveSessions.svelte";
   import PanelShell from "../components/PanelShell.svelte";
+  import Banner from "../components/ui/banner/banner.svelte";
   import Button from "../components/ui/button/button.svelte";
   import Field from "../components/ui/field/field.svelte";
   import UserForm from "../components/user/UserForm.svelte";
@@ -37,12 +38,22 @@
 
   let passkeysEnabled = $derived(passkeys.length > 0);
 
+  let missingEmail = $derived(
+    Boolean(session.user && !session.user.email?.trim()),
+  );
+  let otpOff = $derived(Boolean(session.user && !session.user.otpEnabled));
+
   onMount(async () => {
-    try {
-      roots = await session.client.roots();
-    } catch {
-      toastError("Could not load files");
-    }
+    await Promise.all([
+      (async () => {
+        try {
+          roots = await session.client.roots();
+        } catch {
+          toastError("Could not load files");
+        }
+      })(),
+      loadPasskeys(),
+    ]);
   });
 
   onDestroy(() => {
@@ -64,13 +75,9 @@
 
   function startEditing() {
     editing = true;
-    void loadPasskeys();
   }
 
   function stopEditing() {
-    clearOtpUi();
-    passkeys = [];
-    passkeyBusy = false;
     editing = false;
   }
 
@@ -260,291 +267,65 @@
     class="h-[calc(100dvh-3.5rem)] min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6"
   >
     <div class="mx-auto max-w-3xl space-y-5">
-      <div class="space-y-0.5 border-b pb-3">
-        <h2 class="text-lg font-semibold tracking-tight">Account</h2>
-        <p class="text-sm text-muted-foreground">
-          Profile, security, and signed-in sessions.
-        </p>
+      <div class="border-b pb-3">
+        <h2 class="text-lg font-semibold tracking-tight">Settings</h2>
       </div>
 
       {#if session.user}
-        <section class="rounded-xl border bg-card p-4 sm:p-5">
-          {#if !session.user.email?.trim()}
-            <div
-              class="mb-4 flex flex-wrap items-start justify-between gap-2 rounded-lg border border-warning/35 bg-warning/8 p-3"
-            >
-              <div class="min-w-0">
-                <h3
-                  class="flex items-center gap-1.5 text-sm font-semibold tracking-tight"
-                >
-                  <MailWarning size={15} class="shrink-0 text-warning" />
-                  Email required for recovery
-                  <span
-                    class="rounded-md bg-warning/20 px-1.5 py-0.5 text-[11px] leading-none font-medium text-warning"
-                  >
-                    Missing
-                  </span>
-                </h3>
-                <p class="mt-1 text-xs text-warning/90">
-                  {#if editing}
-                    Add an email below so you can reset your password if you
-                    lose access.
-                  {:else}
-                    Without an email, you cannot reset your password if you lose
-                    account access.
-                  {/if}
-                </p>
-              </div>
-              {#if !editing}
-                <Button
-                  type="button"
-                  size="sm"
-                  class="shrink-0"
-                  onclick={startEditing}
-                >
-                  Add email
-                </Button>
-              {/if}
-            </div>
-          {/if}
-
-          {#if editing}
-            <div class="space-y-5">
-              <UserForm
-                user={session.user}
-                selfService
-                title="Edit account"
-                description="Blank password keeps the current one."
-                save={saveProfile}
-                cancel={stopEditing}
-              />
-
-              <div
-                class="space-y-3 rounded-lg border p-3 {session.user.otpEnabled
-                  ? 'border-success/25 bg-success/5'
-                  : 'border-warning/35 bg-warning/8'}"
-              >
-                <div class="flex flex-wrap items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <h3
-                      class="flex items-center gap-1.5 text-sm font-semibold tracking-tight"
-                    >
-                      {#if session.user.otpEnabled}
-                        <ShieldCheck size={15} class="shrink-0 text-success" />
-                      {:else}
-                        <ShieldAlert size={15} class="shrink-0 text-warning" />
-                      {/if}
-                      Two-factor authentication
-                      <span
-                        class="rounded-md px-1.5 py-0.5 text-[11px] leading-none font-medium {session
-                          .user.otpEnabled
-                          ? 'bg-success/15 text-success'
-                          : 'bg-warning/20 text-warning'}"
-                      >
-                        {session.user.otpEnabled ? "Enabled" : "Off"}
-                      </span>
-                    </h3>
-                    <p
-                      class="mt-1 text-xs {session.user.otpEnabled
-                        ? 'text-muted-foreground'
-                        : 'text-warning/90'}"
-                    >
-                      {#if session.user.otpEnabled}
-                        Authenticator codes are required at sign-in.
-                      {:else}
-                        Your account is only protected by a password. Enable
-                        2FA.
-                      {/if}
-                    </p>
-                  </div>
-
-                  {#if otpPanel === "idle"}
-                    <div class="flex shrink-0 gap-1.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={otpBusy}
-                        onclick={startOtpSetup}
-                      >
-                        {session.user.otpEnabled ? "Change" : "Set up"}
-                      </Button>
-                      {#if session.user.otpEnabled}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={otpBusy}
-                          onclick={beginDisableOtp}
-                        >
-                          Disable
-                        </Button>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-
-                {#if otpPanel === "setup" && qrUrl}
-                  <div
-                    class="flex flex-col items-center gap-3 rounded-lg border bg-muted/20 p-4"
-                  >
-                    <p class="text-center text-xs text-muted-foreground">
-                      Scan with your authenticator, then enter the 6-digit code.
-                    </p>
-                    <div
-                      class="flex size-44 items-center justify-center rounded-md border bg-white p-3"
-                    >
-                      <img
-                        src={qrUrl}
-                        alt="Two-factor authentication QR code"
-                        class="size-full object-contain"
-                      />
-                    </div>
-                    <form
-                      class="flex w-full max-w-sm flex-wrap items-end justify-center gap-2"
-                      onsubmit={confirmOtpSetup}
-                    >
-                      <div class="min-w-0 flex-1">
-                        <Field
-                          label="Code"
-                          id="otp-setup-code"
-                          dense
-                          bind:value={otpCode}
-                          error={otpValidation?.field("otp_code")}
-                          inputmode="numeric"
-                          autocomplete="one-time-code"
-                          maxlength={6}
-                          required
-                        />
-                      </div>
-                      <Button
-                        type="submit"
-                        size="sm"
-                        disabled={otpBusy || otpCode.length !== 6}
-                      >
-                        Confirm
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={otpBusy}
-                        onclick={clearOtpUi}
-                      >
-                        Cancel
-                      </Button>
-                    </form>
-                  </div>
-                {:else if otpPanel === "disable"}
-                  <form
-                    class="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
-                    onsubmit={confirmDisableOtp}
-                  >
-                    <p class="text-xs text-muted-foreground">
-                      Enter a current authenticator code to turn off 2FA.
-                    </p>
-                    <div class="flex max-w-sm flex-wrap items-end gap-2">
-                      <div class="min-w-0 flex-1">
-                        <Field
-                          label="Code"
-                          id="otp-disable-code"
-                          dense
-                          bind:value={otpCode}
-                          error={otpValidation?.field("otp_code")}
-                          inputmode="numeric"
-                          autocomplete="one-time-code"
-                          maxlength={6}
-                          required
-                        />
-                      </div>
-                      <Button
-                        type="submit"
-                        variant="destructive"
-                        size="sm"
-                        disabled={otpBusy || otpCode.length !== 6}
-                      >
-                        Disable
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={otpBusy}
-                        onclick={clearOtpUi}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </form>
+        {#if missingEmail || otpOff}
+          <div class="space-y-2">
+            {#if missingEmail}
+              <Banner tone="warning">
+                {#snippet icon()}<MailWarning />{/snippet}
+                {#if editing}
+                  Add an email in Account below so you can recover your account
+                  if you lose access.
+                {:else}
+                  No email on file. Add one so you can recover your account if
+                  you lose access.
                 {/if}
-              </div>
-
-              <div
-                class="space-y-3 rounded-lg border p-3 {passkeysEnabled
-                  ? 'border-success/25 bg-success/5'
-                  : 'border-muted bg-muted/20'}"
-              >
-                <div class="flex flex-wrap items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <h3
-                      class="flex items-center gap-1.5 text-sm font-semibold tracking-tight"
+                {#snippet action()}
+                  {#if !editing}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onclick={startEditing}
                     >
-                      <KeyRound
-                        size={15}
-                        class="shrink-0 {passkeysEnabled
-                          ? 'text-success'
-                          : 'text-muted-foreground'}"
-                      />
-                      Passkeys
-                      <span
-                        class="rounded-md px-1.5 py-0.5 text-[11px] leading-none font-medium {passkeysEnabled
-                          ? 'bg-success/15 text-success'
-                          : 'bg-muted text-muted-foreground'}"
-                      >
-                        {passkeysEnabled ? "Enabled" : "Off"}
-                      </span>
-                    </h3>
-                    <p class="mt-1 text-xs text-muted-foreground">
-                      {#if passkeysEnabled}
-                        Passkeys allow you to securely sign in to Nimbus without
-                        a password.
-                      {:else}
-                        Register a passkey for passwordless, phishing-resistant
-                        sign-in.
-                      {/if}
-                    </p>
-                  </div>
-
+                      Add email
+                    </Button>
+                  {/if}
+                {/snippet}
+              </Banner>
+            {/if}
+            {#if otpOff}
+              <Banner tone="warning">
+                {#snippet icon()}<ShieldAlert />{/snippet}
+                Two-factor authentication is not enabled. We recommend turning
+                it on to protect your account.
+                {#snippet action()}
                   <Button
                     type="button"
                     size="sm"
-                    class="shrink-0"
-                    disabled={passkeyBusy}
-                    onclick={addPasskey}
+                    variant="outline"
+                    onclick={startOtpSetup}
                   >
-                    Add passkey
+                    Set up
                   </Button>
-                </div>
+                {/snippet}
+              </Banner>
+            {/if}
+          </div>
+        {/if}
 
-                {#if passkeys.length > 0}
-                  <ul class="space-y-1.5">
-                    {#each passkeys as passkey (passkey.id)}
-                      <li
-                        class="rounded-md border bg-background/60 px-2.5 py-1.5 text-xs text-muted-foreground"
-                      >
-                        Passkey · {formatPasskeyDate(passkey.createdAt)}
-                      </li>
-                    {/each}
-                  </ul>
-                {/if}
-              </div>
-            </div>
-          {:else}
-            <div
-              class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
-            >
-              <div class="min-w-0 flex-1">
-                <UserInfo user={session.user} />
-              </div>
+        <section class="rounded-xl border bg-card p-4 sm:p-5">
+          <div
+            class="flex flex-wrap items-start justify-between gap-3 {editing
+              ? 'mb-4'
+              : ''}"
+          >
+            <h3 class="text-sm font-semibold tracking-tight">Account</h3>
+            {#if !editing}
               <Button
                 type="button"
                 variant="outline"
@@ -555,8 +336,229 @@
                 <Pencil size={15} />
                 Edit
               </Button>
-            </div>
+            {/if}
+          </div>
+
+          {#if editing}
+            <UserForm
+              user={session.user}
+              selfService
+              save={saveProfile}
+              cancel={stopEditing}
+            />
+          {:else}
+            <UserInfo user={session.user} />
           {/if}
+        </section>
+
+        <section class="rounded-xl border bg-card p-4 sm:p-5 space-y-4">
+          <h3 class="text-sm font-semibold tracking-tight">Security</h3>
+
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="min-w-0">
+                <h4
+                  class="flex items-center gap-1.5 text-sm font-medium tracking-tight"
+                >
+                  {#if session.user.otpEnabled}
+                    <ShieldCheck size={15} class="shrink-0 text-success" />
+                  {:else}
+                    <ShieldAlert size={15} class="shrink-0 text-warning" />
+                  {/if}
+                  Two-factor authentication
+                  <span
+                    class="rounded-md px-1.5 py-0.5 text-[11px] leading-none font-medium {session
+                      .user.otpEnabled
+                      ? 'bg-success/15 text-success'
+                      : 'bg-warning/20 text-warning'}"
+                  >
+                    {session.user.otpEnabled ? "Enabled" : "Off"}
+                  </span>
+                </h4>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  {#if session.user.otpEnabled}
+                    Authenticator codes are required at sign-in.
+                  {:else}
+                    Use an authenticator app for a second sign-in step.
+                  {/if}
+                </p>
+              </div>
+
+              {#if otpPanel === "idle"}
+                <div class="flex shrink-0 gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={otpBusy}
+                    onclick={startOtpSetup}
+                  >
+                    {session.user.otpEnabled ? "Change" : "Set up"}
+                  </Button>
+                  {#if session.user.otpEnabled}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={otpBusy}
+                      onclick={beginDisableOtp}
+                    >
+                      Disable
+                    </Button>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+
+            {#if otpPanel === "setup" && qrUrl}
+              <div
+                class="flex flex-col items-center gap-3 rounded-lg border p-4"
+              >
+                <p class="text-center text-xs text-muted-foreground">
+                  Scan with your authenticator, then enter the 6-digit code.
+                </p>
+                <div
+                  class="flex size-44 items-center justify-center rounded-md border bg-white p-3"
+                >
+                  <img
+                    src={qrUrl}
+                    alt="Two-factor authentication QR code"
+                    class="size-full object-contain"
+                  />
+                </div>
+                <form
+                  class="flex w-full max-w-sm flex-wrap items-end justify-center gap-2"
+                  onsubmit={confirmOtpSetup}
+                >
+                  <div class="min-w-0 flex-1">
+                    <Field
+                      label="Code"
+                      id="otp-setup-code"
+                      dense
+                      bind:value={otpCode}
+                      error={otpValidation?.field("otp_code")}
+                      inputmode="numeric"
+                      autocomplete="one-time-code"
+                      maxlength={6}
+                      required
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={otpBusy || otpCode.length !== 6}
+                  >
+                    Confirm
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={otpBusy}
+                    onclick={clearOtpUi}
+                  >
+                    Cancel
+                  </Button>
+                </form>
+              </div>
+            {:else if otpPanel === "disable"}
+              <form
+                class="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
+                onsubmit={confirmDisableOtp}
+              >
+                <p class="text-xs text-muted-foreground">
+                  Enter a current authenticator code to turn off 2FA.
+                </p>
+                <div class="flex max-w-sm flex-wrap items-end gap-2">
+                  <div class="min-w-0 flex-1">
+                    <Field
+                      label="Code"
+                      id="otp-disable-code"
+                      dense
+                      bind:value={otpCode}
+                      error={otpValidation?.field("otp_code")}
+                      inputmode="numeric"
+                      autocomplete="one-time-code"
+                      maxlength={6}
+                      required
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    variant="destructive"
+                    size="sm"
+                    disabled={otpBusy || otpCode.length !== 6}
+                  >
+                    Disable
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={otpBusy}
+                    onclick={clearOtpUi}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            {/if}
+          </div>
+
+          <div class="space-y-3 border-t pt-4">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="min-w-0">
+                <h4
+                  class="flex items-center gap-1.5 text-sm font-medium tracking-tight"
+                >
+                  <KeyRound
+                    size={15}
+                    class="shrink-0 {passkeysEnabled
+                      ? 'text-success'
+                      : 'text-muted-foreground'}"
+                  />
+                  Passkeys
+                  <span
+                    class="rounded-md px-1.5 py-0.5 text-[11px] leading-none font-medium {passkeysEnabled
+                      ? 'bg-success/15 text-success'
+                      : 'bg-muted text-muted-foreground'}"
+                  >
+                    {passkeysEnabled ? "Enabled" : "Off"}
+                  </span>
+                </h4>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  {#if passkeysEnabled}
+                    Passkeys allow you to securely sign in to Nimbus without a
+                    password.
+                  {:else}
+                    Register a passkey for passwordless, phishing-resistant
+                    sign-in.
+                  {/if}
+                </p>
+              </div>
+
+              <Button
+                type="button"
+                size="sm"
+                class="shrink-0"
+                disabled={passkeyBusy}
+                onclick={addPasskey}
+              >
+                Add passkey
+              </Button>
+            </div>
+
+            {#if passkeys.length > 0}
+              <ul class="space-y-1.5">
+                {#each passkeys as passkey (passkey.id)}
+                  <li
+                    class="rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground"
+                  >
+                    Passkey · {formatPasskeyDate(passkey.createdAt)}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
         </section>
 
         <ActiveSessions />

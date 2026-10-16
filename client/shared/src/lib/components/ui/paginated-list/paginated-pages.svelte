@@ -87,11 +87,12 @@
   });
 </script>
 
+<!-- Content-height card (not flex-1 fill). Page scroll lives on the parent. -->
 <div
-  class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card"
+  class="@container flex min-w-0 flex-col overflow-hidden rounded-lg border bg-card"
 >
   <div
-    class="flex shrink-0 items-center justify-between gap-3 border-b bg-muted/40 px-3 py-2"
+    class="flex shrink-0 items-center justify-between gap-3 border-b bg-muted/40 px-3 py-1.5"
   >
     <p class="text-xs text-muted-foreground tabular-nums sm:text-sm">
       Page {page} of {pages}
@@ -129,17 +130,13 @@
     </div>
   {/if}
 
-  <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+  <div>
     {#if failed}
-      <p
-        class="flex h-full items-center justify-center px-4 py-12 text-center text-sm text-muted-foreground"
-      >
+      <p class="px-4 py-8 text-center text-sm text-muted-foreground">
         Could not load this page.
       </p>
     {:else if !items}
-      <p
-        class="flex h-full items-center justify-center px-4 py-12 text-center text-sm text-muted-foreground"
-      >
+      <p class="px-4 py-8 text-center text-sm text-muted-foreground">
         Loading…
       </p>
     {:else}

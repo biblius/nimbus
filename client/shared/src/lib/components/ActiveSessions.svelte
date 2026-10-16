@@ -166,12 +166,7 @@
 
 <section class="rounded-xl border bg-card p-4 sm:p-5">
   <div class="flex flex-wrap items-start justify-between gap-3">
-    <div class="min-w-0 space-y-0.5">
-      <h3 class="text-sm font-semibold tracking-tight">Sessions</h3>
-      <p class="text-xs text-muted-foreground">
-        Devices currently signed in to your account.
-      </p>
-    </div>
+    <h3 class="min-w-0 text-sm font-semibold tracking-tight">Sessions</h3>
     <Button
       type="button"
       variant="outline"

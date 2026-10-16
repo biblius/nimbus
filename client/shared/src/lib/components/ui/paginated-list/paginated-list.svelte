@@ -43,8 +43,8 @@
   }
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col gap-3 [overflow-anchor:none]">
-  <div class="flex shrink-0 items-center gap-2">
+<div class="flex flex-col gap-2.5 [overflow-anchor:none]">
+  <div class="flex items-center gap-2">
     <QuerySearch
       class="min-w-0 flex-1"
       columns={searchColumns}
