@@ -261,10 +261,21 @@ export class NimbusClient {
     });
   }
 
-  startPasskeyLogin(token: string): Promise<PasskeyLoginChallenge> {
+  /** Start a discoverable (usernameless) passkey login ceremony. */
+  startPasskeyLogin(
+    options: {
+      token?: string;
+      remember?: boolean;
+      permanent?: boolean;
+    } = {},
+  ): Promise<PasskeyLoginChallenge> {
     return this.request<PasskeyLoginChallenge>("/auth/login/passkey", {
       method: "POST",
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({
+        token: options.token,
+        remember: options.remember ?? false,
+        permanent: options.permanent ?? false,
+      }),
     });
   }
 
@@ -279,7 +290,7 @@ export class NimbusClient {
   }
 
   /**
-   * Browser half of native passkey 2FA: verify the assertion without creating
+   * Browser half of native passkey login: verify the assertion without creating
    * a session. Returns the pickup token the desktop app should exchange.
    */
   confirmNativePasskeyLogin(
@@ -293,7 +304,7 @@ export class NimbusClient {
   }
 
   /**
-   * Desktop half of native passkey 2FA: exchange the pickup token for a
+   * Desktop half of native passkey login: exchange the pickup token for a
    * session cookie. Returns 404 until the browser step has completed.
    */
   finishNativeLogin(token: string): Promise<LoginResult> {

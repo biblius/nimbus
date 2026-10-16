@@ -28,7 +28,9 @@
         throw new Error("empty endpoint");
       }
       await saveEndpoint(trimmed);
+
       session.endpoint = trimmed;
+
       session.client = new NimbusClient(trimmed, {
         onUnauthorized: clearSession,
       });

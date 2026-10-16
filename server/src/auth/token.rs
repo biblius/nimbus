@@ -75,8 +75,7 @@ impl TokenStore {
 /// auth related operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OneShotToken {
-    /// Used during the initial steps in login if the user
-    /// has 2FA enabled.
+    /// Used after password login when OTP verification is still required.
     PendingLogin,
 
     /// Used during OTP registration.
@@ -85,7 +84,7 @@ pub enum OneShotToken {
     /// Used when requesting password resets via email.
     PasswordReset,
 
-    /// Used when registering and authenticating with passkeys.
+    /// In-progress discoverable passkey login (or registration) ceremony.
     Passkey,
 
     /// Passkey verified in the browser; desktop exchanges this for a session.

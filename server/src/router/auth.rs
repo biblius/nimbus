@@ -36,7 +36,7 @@ use crate::{
     path = "/auth/login",
     request_body = LoginCredentials,
     responses(
-        (status = 200, description = "Session created or two-factor authentication required", body = LoginResult),
+        (status = 200, description = "Session created or OTP verification required", body = LoginResult),
         (status = 401, description = "Invalid credentials"),
         (status = 422, description = "Validation error")
     )
@@ -379,9 +379,8 @@ pub(crate) async fn finish_passkey_setup(
     path = "/auth/login/passkey",
     request_body = StartPasskeyLogin,
     responses(
-        (status = 200, description = "WebAuthn authentication challenge"),
-        (status = 404, description = "Missing, used, or expired login token"),
-        (status = 422, description = "No passkeys registered")
+        (status = 200, description = "Discoverable WebAuthn authentication challenge"),
+        (status = 404, description = "Missing, used, or expired ceremony token")
     )
 )]
 pub(crate) async fn start_passkey_login(
@@ -408,15 +407,17 @@ pub(crate) async fn finish_passkey_login(
     login_response(result, &state).await
 }
 
-/// Browser half of native passkey 2FA: verify the assertion, do not create a session.
+/// Browser half of native passkey login: verify the assertion, do not create a session.
 pub(crate) async fn start_native_passkey_login(
     State(state): State<AppState>,
     Json(data): Json<FinishPasskeyLogin>,
 ) -> Result<Json<Uuid>, AppError> {
-    Ok(Json(state.services.auth.start_native_login(data).await?))
+    Ok(Json(
+        state.services.auth.start_native_passkey_login(data).await?,
+    ))
 }
 
-/// Desktop half of native passkey 2FA: exchange the pickup token for a session cookie.
+/// Desktop half of native passkey login: exchange the pickup token for a session cookie.
 #[utoipa::path(
     post,
     path = "/auth/login/native",
@@ -437,7 +438,7 @@ pub(crate) async fn finish_native_login(
     let result = state
         .services
         .auth
-        .finish_native_login(data.token, Some(remote_address), user_agent)
+        .finish_native_passkey_login(data.token, Some(remote_address), user_agent)
         .await?;
 
     login_response(result, &state).await

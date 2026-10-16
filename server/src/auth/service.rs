@@ -3,8 +3,7 @@ use super::{
     model::{
         DisableOtp, FinishPasskeyLogin, FinishPasskeySetup, GeneratedOtp, LoginCredentials,
         LoginResult, Otp, PasskeyLoginChallenge, PasskeySetupChallenge, PasswordChange,
-        PasswordReset, PasswordResetRequest, StartPasskeyLogin, TFAType, UserPasskey,
-        UserPasskeyView,
+        PasswordReset, PasswordResetRequest, StartPasskeyLogin, UserPasskey, UserPasskeyView,
     },
     session::{ActiveSessionView, Session},
     token::{OneShotToken, TokenStore},
@@ -21,7 +20,9 @@ use thotp::encoding::data_encoding::BASE32;
 use tracing::instrument;
 use uuid::Uuid;
 use validify::Validify;
-use webauthn_rs::prelude::{PasskeyAuthentication, PasskeyRegistration, Webauthn};
+use webauthn_rs::prelude::{
+    DiscoverableAuthentication, DiscoverableKey, PasskeyRegistration, Webauthn,
+};
 
 /// Sessions without "remember" expire after this long.
 const SESSION_HOURS: i64 = 12;
@@ -32,6 +33,14 @@ const REMEMBER_SESSION_DAYS: i64 = 30;
 #[derive(Serialize, Deserialize)]
 struct PendingLogin {
     user_id: Uuid,
+    remember: bool,
+    permanent: bool,
+}
+
+/// In-progress discoverable passkey ceremony, plus session prefs for when it finishes.
+#[derive(Serialize, Deserialize)]
+struct PasskeyLoginCeremony {
+    auth: DiscoverableAuthentication,
     remember: bool,
     permanent: bool,
 }
@@ -84,21 +93,11 @@ impl AuthenticationService {
 
         self.validate_password(&user, &credentials.password)?;
 
-        let mut available = Vec::new();
-
         if user
             .otp_secret
             .as_deref()
             .is_some_and(|secret| !secret.is_empty())
         {
-            available.push(TFAType::Otp);
-        }
-
-        if self.repo.users.is_passkey_enabled(user.id).await? {
-            available.push(TFAType::Passkey);
-        }
-
-        if !available.is_empty() {
             let token = Uuid::new_v4();
 
             self.tokens
@@ -115,8 +114,6 @@ impl AuthenticationService {
 
             return Ok(LoginResult::TwoFactorRequired {
                 token: token.to_string(),
-                available,
-                frontend_url: self.frontend_url.clone(),
             });
         }
 
@@ -535,40 +532,50 @@ impl AuthenticationService {
             .await
     }
 
-    /// Start WebAuthn passkey authentication for a pending 2FA login.
+    /// Start a discoverable (usernameless) WebAuthn passkey login.
+    ///
+    /// When [`StartPasskeyLogin::token`] is set, restarts the ceremony for that
+    /// token while keeping the session prefs from the first start (native bridge).
     #[instrument(skip(self, data), err(Debug))]
     pub async fn start_passkey_login(
         &self,
         data: StartPasskeyLogin,
     ) -> Result<PasskeyLoginChallenge, AppError> {
-        let pending: PendingLogin = self
-            .tokens
-            .get(OneShotToken::PendingLogin, data.token)
-            .await?;
+        let (token, remember, permanent) = if let Some(token) = data.token {
+            // Bridge restart: prove the ceremony exists, keep the original prefs.
+            // Do NOT type-infer this get as Uuid — the payload is PasskeyLoginCeremony.
+            let existing: PasskeyLoginCeremony = self
+                .tokens
+                .get(OneShotToken::Passkey, token)
+                .await?;
 
-        let rows = self.repo.users.list_passkeys(pending.user_id).await?;
+            (token, existing.remember, existing.permanent)
+        } else {
+            (Uuid::new_v4(), data.remember, data.permanent)
+        };
 
-        if rows.is_empty() {
-            return Err(AppError::Unprocessable(
-                "No passkeys are registered for this account".into(),
-            ));
-        }
-
-        let creds = rows.into_iter().map(|row| row.data.0).collect::<Vec<_>>();
-
-        let (challenge, auth_state) = self.webauthn.start_passkey_authentication(&creds)?;
+        let (challenge, auth) = self.webauthn.start_discoverable_authentication()?;
 
         self.tokens
-            .store(OneShotToken::Passkey, data.token, &auth_state)
+            .store(
+                OneShotToken::Passkey,
+                token,
+                &PasskeyLoginCeremony {
+                    auth,
+                    remember,
+                    permanent,
+                },
+            )
             .await?;
 
         Ok(PasskeyLoginChallenge {
-            token: data.token,
+            token,
             challenge,
+            frontend_url: self.frontend_url.clone(),
         })
     }
 
-    /// Finish WebAuthn passkey authentication and create a session.
+    /// Finish discoverable passkey authentication and create a session.
     #[instrument(skip(self, data), err(Debug))]
     pub async fn finish_passkey_login(
         &self,
@@ -597,10 +604,13 @@ impl AuthenticationService {
 
     /// Verify the WebAuthn assertion in the browser without creating a session.
     ///
-    /// Stores the pending login under [`OneShotToken::NativeSession`] using the
+    /// Stores the verified login under [`OneShotToken::NativeSession`] using the
     /// same token id so the native app can poll [`Self::finish_native_login`].
     #[instrument(skip(self, data), err(Debug))]
-    pub async fn start_native_login(&self, data: FinishPasskeyLogin) -> Result<Uuid, AppError> {
+    pub async fn start_native_passkey_login(
+        &self,
+        data: FinishPasskeyLogin,
+    ) -> Result<Uuid, AppError> {
         let token = data.token;
         let pending = self.verify_passkey_login(data).await?;
 
@@ -613,7 +623,7 @@ impl AuthenticationService {
 
     /// Exchange the token from [`Self::start_native_login`] for a real session.
     #[instrument(skip(self), err(Debug))]
-    pub async fn finish_native_login(
+    pub async fn finish_native_passkey_login(
         &self,
         token: Uuid,
         remote_address: Option<String>,
@@ -641,27 +651,37 @@ impl AuthenticationService {
         })
     }
 
-    /// Verify the assertion, update credential counters, and consume the
-    /// pending-login + passkey challenge tokens. Does not create a session.
+    /// Verify a discoverable assertion, update credential counters, and consume
+    /// the ceremony token. Does not create a session.
     async fn verify_passkey_login(
         &self,
         data: FinishPasskeyLogin,
     ) -> Result<PendingLogin, AppError> {
-        let auth_state: PasskeyAuthentication = self
+        let ceremony: PasskeyLoginCeremony = self
             .tokens
             .consume(OneShotToken::Passkey, data.token)
             .await?;
 
-        let pending: PendingLogin = self
-            .tokens
-            .get(OneShotToken::PendingLogin, data.token)
-            .await?;
-
-        let auth_result = self
+        let (user_id, _cred_id) = self
             .webauthn
-            .finish_passkey_authentication(&data.credential, &auth_state)?;
+            .identify_discoverable_authentication(&data.credential)?;
 
-        let passkeys = self.repo.users.list_passkeys(pending.user_id).await?;
+        let passkeys = self.repo.users.list_passkeys(user_id).await?;
+
+        if passkeys.is_empty() {
+            return Err(AppError::Auth(AuthFailure::InvalidCredentials));
+        }
+
+        let disc_keys = passkeys
+            .iter()
+            .map(|row| DiscoverableKey::from(&row.data.0))
+            .collect::<Vec<_>>();
+
+        let auth_result = self.webauthn.finish_discoverable_authentication(
+            &data.credential,
+            ceremony.auth,
+            &disc_keys,
+        )?;
 
         for mut passkey in passkeys {
             if !passkey
@@ -672,7 +692,12 @@ impl AuthenticationService {
             {
                 continue;
             }
-            tracing::debug!(user=%pending.user_id, cred_id=?passkey.data.0.cred_id(), "updating passkey");
+
+            tracing::debug!(
+                user = %user_id,
+                cred_id = ?passkey.data.0.cred_id(),
+                "updating passkey"
+            );
 
             self.repo
                 .users
@@ -680,12 +705,14 @@ impl AuthenticationService {
                 .await?;
         }
 
-        let pending: PendingLogin = self
-            .tokens
-            .consume(OneShotToken::PendingLogin, data.token)
-            .await?;
+        // Ensure the user still exists before handing back a pending login.
+        let _user = self.repo.users.get_by_id(user_id).await?;
 
-        Ok(pending)
+        Ok(PendingLogin {
+            user_id,
+            remember: ceremony.remember,
+            permanent: ceremony.permanent,
+        })
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]

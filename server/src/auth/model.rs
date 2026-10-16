@@ -9,32 +9,22 @@ use webauthn_rs::prelude::{
     RequestChallengeResponse,
 };
 
-/// Successful password check: either a real session, or 2FA still required.
+/// Successful password check: either a real session, or OTP still required.
 #[derive(Debug, Serialize, ToSchema)]
-#[serde(tag = "status", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum LoginResult {
     /// A successful session has been established.
     Session { session_id: Uuid },
 
-    /// Additional authentication step required.
+    /// TOTP verification required after a successful password check.
     TwoFactorRequired {
-        /// One-shot token to present when finishing 2FA login.
+        /// One-shot token to present when finishing OTP login.
         token: String,
-
-        /// Represents which 2FA methods are available.
-        available: Vec<TFAType>,
-
-        /// Web app origin for native passkey browser handoff.
-        frontend_url: String,
     },
-}
-
-/// Sent as part of [LoginResult] if the user has 2FA enabled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum TFAType {
-    Otp,
-    Passkey,
 }
 
 #[derive(Debug, Deserialize, Validify, ToSchema)]
@@ -178,25 +168,38 @@ pub struct FinishPasskeySetup {
     pub credential: RegisterPublicKeyCredential,
 }
 
-/// Start passkey login using the pending-login token from [`LoginResult::TwoFactorRequired`].
+/// Start a discoverable (usernameless) passkey login ceremony.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StartPasskeyLogin {
-    pub token: Uuid,
+    /// When set, restart the ceremony for an existing token (native browser bridge).
+    #[serde(default)]
+    pub token: Option<Uuid>,
+
+    /// Extend the session to 30 days (web "remember me"). Ignored when `permanent` is set.
+    #[serde(default)]
+    pub remember: bool,
+
+    /// Never expire until logout. For native clients that store a Bearer token.
+    #[serde(default)]
+    pub permanent: bool,
 }
 
-/// Challenge returned when starting passkey authentication.
+/// Challenge returned when starting discoverable passkey authentication.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PasskeyLoginChallenge {
-    /// Same pending-login token; present it again when finishing.
+    /// One-shot token; present it again when finishing.
     pub token: Uuid,
 
     /// WebAuthn `PublicKeyCredentialRequestOptions` for the browser.
     pub challenge: RequestChallengeResponse,
+
+    /// Web app origin for native passkey browser handoff.
+    pub frontend_url: String,
 }
 
-/// Finish passkey login: pending-login token plus the authenticator assertion.
+/// Finish discoverable passkey login: ceremony token plus the authenticator assertion.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FinishPasskeyLogin {

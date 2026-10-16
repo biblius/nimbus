@@ -65,9 +65,11 @@ infer = "0.22.0"
 tokio-stream = "0.1.19"
 image = "0.25.10"
 webauthn-rs = { version = "0.5.5", features = [
-  # Used ONLY to serialize the state on the server during registration.
-  # Serialized PasskeyAuthenticaton is never sent to clients.
+  # Used ONLY to serialize the state on the server during registration /
+  # discoverable authentication. Serialized state is never sent to clients.
   "danger-allow-state-serialisation",
+  # Usermameless passkey login via start/finish_discoverable_authentication.
+  "conditional-ui",
 ] }
 
 [dev-dependencies]

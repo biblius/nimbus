@@ -78,18 +78,15 @@ export type PasskeyLoginChallenge = {
   token: string;
   /** webauthn-rs `RequestChallengeResponse` (`{ publicKey: ... }`). */
   challenge: import("./webauthn").RequestChallengeResponse;
+  /** Web app origin for native passkey browser handoff. */
+  frontendUrl: string;
 };
-
-export type TFAType = "otp" | "passkey";
 
 export type LoginResult =
   | { status: "session"; sessionId: string }
   | {
       status: "twoFactorRequired";
       token: string;
-      available: TFAType[];
-      /** Web app origin for native passkey browser handoff. */
-      frontendUrl: string;
     };
 
 export type Root = {

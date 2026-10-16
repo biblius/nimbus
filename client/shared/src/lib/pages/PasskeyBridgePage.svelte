@@ -66,7 +66,7 @@
     clearCloseTimer();
 
     try {
-      const challenge = await session.client.startPasskeyLogin(token);
+      const challenge = await session.client.startPasskeyLogin({ token });
       const credential = await getPasskey(challenge.challenge);
       await session.client.confirmNativePasskeyLogin(
         challenge.token,
@@ -140,8 +140,8 @@
         {:else if status === "error"}
           {errorMessage}
         {:else}
-          Use your password manager or security key. This confirms sign-in for
-          the desktop app.
+          Choose a passkey for this site. This confirms sign-in for the desktop
+          app.
         {/if}
       </p>
     </div>

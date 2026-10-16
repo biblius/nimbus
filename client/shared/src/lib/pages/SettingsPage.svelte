@@ -505,9 +505,10 @@
                     </h3>
                     <p class="mt-1 text-xs text-muted-foreground">
                       {#if passkeysEnabled}
-                        Sign in with a device passkey instead of a password code.
+                        Passkeys allow you to securely sign in to Nimbus without
+                        a password.
                       {:else}
-                        Register a passkey for passwordless or phishing-resistant
+                        Register a passkey for passwordless, phishing-resistant
                         sign-in.
                       {/if}
                     </p>

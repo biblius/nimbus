@@ -3,7 +3,7 @@ use utoipa::OpenApi;
 use crate::{
     auth::model::{
         DisableOtp, FinishNativeLogin, LoginCredentials, LoginResult, Otp, PasswordChange,
-        PasswordReset, PasswordResetRequest, StartPasskeyLogin, TFAType, UserPasskeyView,
+        PasswordReset, PasswordResetRequest, StartPasskeyLogin, UserPasskeyView,
     },
     auth::session::{ActiveSessionView, SessionView},
     file::{
@@ -89,7 +89,6 @@ use crate::{
         Otp,
         StartPasskeyLogin,
         FinishNativeLogin,
-        TFAType,
         DisableOtp,
         UserPasskeyView,
         PasswordResetRequest,
