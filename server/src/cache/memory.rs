@@ -33,6 +33,18 @@ impl MemoryCache {
         Ok(())
     }
 
+    pub async fn get(&self, key: &str) -> Result<Option<String>, AppError> {
+        let mut entries = self.entries.lock().map_err(|_| AppError::Internal)?;
+        let Some(entry) = entries.get(key) else {
+            return Ok(None);
+        };
+        if entry.expires_at <= Instant::now() {
+            entries.remove(key);
+            return Ok(None);
+        }
+        Ok(Some(entry.value.clone()))
+    }
+
     pub async fn get_del(&self, key: &str) -> Result<Option<String>, AppError> {
         let mut entries = self.entries.lock().map_err(|_| AppError::Internal)?;
         let Some(entry) = entries.remove(key) else {

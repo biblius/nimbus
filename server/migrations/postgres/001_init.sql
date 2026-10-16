@@ -15,6 +15,13 @@ CREATE UNIQUE INDEX users_email_idx ON users (email)
 WHERE
   email IS NOT NULL;
 
+CREATE TABLE user_passkeys (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  data JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
 -- A root directory, either private or shared.
 -- `owner` is set for a user's private root and null for a shared root.
 -- A user can have only one private root.

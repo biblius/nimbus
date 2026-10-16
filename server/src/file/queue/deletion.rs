@@ -125,6 +125,7 @@ impl DeletionQueue {
                         self.listeners.remove(&request_id);
                     },
                     _ = tick.tick() => {
+                        tracing::debug!("running deletion queue sweep");
                         if let Err(e) = self.delete_files(None, None).await {
                             tracing::error!(error=%e, "error sweeping deletion queue");
                         }

@@ -199,11 +199,20 @@ async fn build_services(
         1024 * 1024,
     );
     let repository = Repository::new(pool.clone());
+
+    let rp_origin = webauthn_rs::prelude::Url::parse("http://localhost:5173")
+        .expect("test webauthn origin");
+    let webauthn = webauthn_rs::prelude::WebauthnBuilder::new("localhost", &rp_origin)
+        .expect("test webauthn builder")
+        .rp_name("Nimbus")
+        .build()
+        .expect("test webauthn");
+
     let auth = AuthenticationService::new(
-        repository.users.clone(),
-        repository.sessions.clone(),
+        repository.clone(),
         TokenStore::new(cache),
         email.clone(),
+        webauthn,
     );
 
     let user_service = UserService::new(

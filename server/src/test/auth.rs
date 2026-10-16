@@ -182,4 +182,141 @@ mod auth_service {
 
         assert!(matches!(result, Err(AppError::Unprocessable(_))));
     }
+
+    #[test]
+    async fn password_reset_clears_2fa_and_sessions(state: TestState) {
+        use crate::{
+            auth::{
+                model::{LoginCredentials, LoginResult, PasswordReset},
+                token::{OneShotToken, TokenStore},
+            },
+            db::{SessionRepository, UserRepository},
+        };
+        use chrono::Utc;
+        use uuid::Uuid;
+
+        let user = state
+            .services
+            .users
+            .create_user(CreateUser {
+                username: "ada-reset".into(),
+                password: "temporary".into(),
+                email: Some("ada-reset@example.com".into()),
+                role: Role::User,
+            })
+            .await
+            .unwrap();
+
+        let session = crate::test::login(state, "ada-reset", "temporary").await;
+
+        let users = UserRepository::new(state.pool.clone());
+        let sessions = SessionRepository::new(state.pool.clone());
+
+        users
+            .update_otp_secret(user.id, "JBSWY3DPEHPK3PXP")
+            .await
+            .unwrap();
+
+        // Placeholder JSON is enough for EXISTS / DELETE; we never deserialize it here.
+        sqlx::query(
+            r#"
+            INSERT INTO user_passkeys (user_id, data, created_at)
+            VALUES ($1, $2, $3)
+            "#,
+        )
+        .bind(user.id)
+        .bind(serde_json::json!({ "test": true }))
+        .bind(Utc::now())
+        .execute(&state.pool)
+        .await
+        .unwrap();
+
+        assert!(users.is_passkey_enabled(user.id).await.unwrap());
+        assert!(
+            users
+                .get_by_id(user.id)
+                .await
+                .unwrap()
+                .otp_secret
+                .is_some()
+        );
+        assert_eq!(
+            sessions.list_live_for_user(user.id).await.unwrap().len(),
+            1
+        );
+
+        let token = Uuid::new_v4();
+        TokenStore::new(state.cache.clone())
+            .store(OneShotToken::PasswordReset, token, &user.id)
+            .await
+            .unwrap();
+
+        state
+            .services
+            .auth
+            .finish_password_reset(
+                token,
+                PasswordReset {
+                    new_password: "correct-horse-battery-staple-99".into(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let reset_user = users.get_by_id(user.id).await.unwrap();
+        assert!(reset_user.otp_secret.is_none());
+        assert!(!users.is_passkey_enabled(user.id).await.unwrap());
+        assert!(
+            sessions
+                .list_live_for_user(user.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        let old_login = state
+            .services
+            .auth
+            .login(
+                LoginCredentials {
+                    username: "ada-reset".into(),
+                    password: "temporary".into(),
+                    remember: false,
+                    permanent: false,
+                },
+                None,
+                None,
+            )
+            .await;
+        assert!(matches!(old_login, Err(AppError::Auth(_))));
+
+        let login = state
+            .services
+            .auth
+            .login(
+                LoginCredentials {
+                    username: "ada-reset".into(),
+                    password: "correct-horse-battery-staple-99".into(),
+                    remember: false,
+                    permanent: false,
+                },
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let LoginResult::Session { .. } = login else {
+            panic!("expected a session without 2FA after password reset");
+        };
+
+        assert!(
+            sessions
+                .list_live_for_user(user.id)
+                .await
+                .unwrap()
+                .iter()
+                .all(|live| live.id != session.id)
+        );
+    }
 }

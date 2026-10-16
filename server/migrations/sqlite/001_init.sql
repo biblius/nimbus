@@ -15,6 +15,13 @@ CREATE UNIQUE INDEX users_email_idx ON users (email)
 WHERE
   email IS NOT NULL;
 
+CREATE TABLE user_passkeys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id BLOB NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 -- A root is the quota and access boundary. It is not a file row: directories and
 -- files live in `files` and point back here with `root_id`.
 -- `owner` is set for a user's private root and null for a shared root.

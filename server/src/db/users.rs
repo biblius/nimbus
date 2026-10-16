@@ -4,11 +4,14 @@ use tracing::instrument;
 use uuid::Uuid;
 
 use crate::{
+    auth::model::UserPasskey,
     db::{Db, DbPool},
     error::AppError,
     model::{List, PaginationSort, ToSearchColumn},
     user::model::{CreateUser, Role, User, UserSearch, UserSort, UserView, UserViewFull},
 };
+use sqlx::types::Json;
+use webauthn_rs::prelude::{CredentialID, Passkey};
 
 #[derive(Clone)]
 pub struct UserRepository {
@@ -294,6 +297,19 @@ impl UserRepository {
 
     #[instrument(skip(self, password), fields(user_id = %id), err(Debug))]
     pub async fn update_password(&self, id: Uuid, password: &str) -> Result<(), AppError> {
+        self.update_password_with(&self.pool, id, password).await
+    }
+
+    #[instrument(skip(self, executor, password), fields(user_id = %id), err(Debug))]
+    pub async fn update_password_with<'e, E>(
+        &self,
+        executor: E,
+        id: Uuid,
+        password: &str,
+    ) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
         let now = Utc::now();
 
         let result = sqlx::query!(
@@ -308,7 +324,7 @@ impl UserRepository {
             now,
             id
         )
-        .execute(&self.pool)
+        .execute(executor)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -347,6 +363,14 @@ impl UserRepository {
 
     #[instrument(skip(self), fields(user_id = %id), err(Debug))]
     pub async fn clear_otp_secret(&self, id: Uuid) -> Result<(), AppError> {
+        self.clear_otp_secret_with(&self.pool, id).await
+    }
+
+    #[instrument(skip(self, executor), fields(user_id = %id), err(Debug))]
+    pub async fn clear_otp_secret_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
         let now = Utc::now();
 
         let result = sqlx::query!(
@@ -361,12 +385,35 @@ impl UserRepository {
             now,
             id
         )
-        .execute(&self.pool)
+        .execute(executor)
         .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::ResourceMissing("User does not exist".into()));
         }
+
+        Ok(())
+    }
+
+    /// Delete every passkey registered to the user.
+    #[instrument(skip(self, executor), fields(user_id = %user_id), err(Debug))]
+    pub async fn clear_passkeys_with<'e, E>(
+        &self,
+        executor: E,
+        user_id: Uuid,
+    ) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query!(
+            r#"
+            DELETE FROM user_passkeys
+            WHERE user_id = $1
+            "#,
+            user_id
+        )
+        .execute(executor)
+        .await?;
 
         Ok(())
     }
@@ -384,6 +431,110 @@ impl UserRepository {
             return Err(AppError::ResourceMissing("User does not exist".into()));
         }
 
+        Ok(())
+    }
+
+    /// Whether the user has at least one registered passkey.
+    #[instrument(skip(self), fields(user_id = %user_id), err(Debug))]
+    pub async fn is_passkey_enabled(&self, user_id: Uuid) -> Result<bool, AppError> {
+        let exists = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM user_passkeys WHERE user_id = $1
+            ) AS "exists!"
+            "#,
+            user_id
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(exists)
+    }
+
+    #[instrument(skip(self), fields(user_id = %user_id), err(Debug))]
+    pub async fn list_passkeys(&self, user_id: Uuid) -> Result<Vec<UserPasskey>, AppError> {
+        sqlx::query_as!(
+            UserPasskey,
+            r#"
+            SELECT
+                id,
+                user_id,
+                data AS "data: Json<Passkey>",
+                created_at
+            FROM user_passkeys
+            WHERE user_id = $1
+            ORDER BY created_at
+            "#,
+            user_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    #[instrument(skip(self, passkey), fields(user_id = %user_id), err(Debug))]
+    pub async fn insert_passkey(
+        &self,
+        user_id: Uuid,
+        passkey: Passkey,
+    ) -> Result<UserPasskey, AppError> {
+        let now = Utc::now();
+        let data = Json(passkey);
+
+        sqlx::query_as!(
+            UserPasskey,
+            r#"
+            INSERT INTO user_passkeys (user_id, data, created_at)
+            VALUES ($1, $2, $3)
+            RETURNING
+                id,
+                user_id,
+                data AS "data: Json<Passkey>",
+                created_at
+            "#,
+            user_id,
+            data as Json<Passkey>,
+            now
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// Whether any account already owns this authenticator credential.
+    #[instrument(skip(self, cred_id), err(Debug))]
+    pub async fn passkey_cred_id_taken(&self, cred_id: &CredentialID) -> Result<bool, AppError> {
+        let passkeys = sqlx::query_scalar!(
+            r#"
+            SELECT data AS "data: Json<Passkey>"
+            FROM user_passkeys
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(passkeys.iter().any(|passkey| passkey.cred_id() == cred_id))
+    }
+
+    /// Persist counter / backup-state updates after a successful passkey authentication.
+    #[instrument(skip(self, passkey), err(Debug))]
+    pub async fn apply_passkey_authentication(
+        &self,
+        id: i64,
+        passkey: Passkey,
+    ) -> Result<(), AppError> {
+        let data = Json(passkey);
+        sqlx::query!(
+            r#"
+            UPDATE user_passkeys
+            SET data = $1
+            WHERE id = $2 
+            "#,
+            data as Json<Passkey>,
+            id
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 }

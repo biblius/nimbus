@@ -13,7 +13,7 @@
   <dt class="text-muted-foreground">Username</dt>
   <dd class="truncate">{user.username}</dd>
   <dt class="text-muted-foreground">Email</dt>
-  <dd class="truncate">{user.email ?? "—"}</dd>
+  <dd class="truncate">{user.email ?? "Not set"}</dd>
   <dt class="text-muted-foreground">Role</dt>
   <dd>
     <span

@@ -61,8 +61,25 @@ impl AppState {
 
         #[cfg(feature = "valkey")]
         let cache = Cache::connect(&args.valkey_url()).expect("unable to create the valkey pool");
+
         #[cfg(feature = "memory-cache")]
         let cache = Cache::new();
+
+        let rp_id = &args.webauthn_rp_id();
+        let rp_origin = &args.webauthn_rp_origin();
+
+        let rp_origin = webauthn_rs::prelude::Url::parse(rp_origin)
+            .unwrap_or_else(|error| panic!("invalid WEBAUTHN_RP_ORIGIN `{rp_origin}`: {error}"));
+
+        let webauthn = webauthn_rs::prelude::WebauthnBuilder::new(rp_id, &rp_origin)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "invalid WebAuthn configuration (RP_ID={rp_id}, RP_ORIGIN={rp_origin}): {error}"
+                )
+            })
+            .rp_name("Nimbus")
+            .build()
+            .unwrap_or_else(|error| panic!("unable to build WebAuthn: {error}"));
 
         let storage = Storage::new(
             args.upload_dir().into(),
@@ -82,10 +99,10 @@ impl AppState {
         let transactor = Transactor::new(db);
 
         let auth = AuthenticationService::new(
-            repository.users.clone(),
-            repository.sessions.clone(),
+            repository.clone(),
             tokens,
             email.clone(),
+            webauthn,
         );
 
         let user_service = UserService::new(

@@ -163,3 +163,10 @@ impl From<std::io::Error> for AppError {
         Self::Internal
     }
 }
+
+impl From<webauthn_rs::prelude::WebauthnError> for AppError {
+    fn from(error: webauthn_rs::prelude::WebauthnError) -> Self {
+        tracing::warn!(%error, "webauthn error");
+        Self::Unprocessable("Passkey verification failed".into())
+    }
+}

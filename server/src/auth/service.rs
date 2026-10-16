@@ -1,14 +1,16 @@
 use super::{
     crypto::{decode_otp_secret, hash_password, verify_otp, verify_password},
     model::{
-        DisableOtp, GeneratedOtp, LoginCredentials, LoginResult, Otp, PasswordChange,
-        PasswordReset, PasswordResetRequest,
+        DisableOtp, FinishPasskeyLogin, FinishPasskeySetup, GeneratedOtp, LoginCredentials,
+        LoginResult, Otp, PasskeyLoginChallenge, PasskeySetupChallenge, PasswordChange,
+        PasswordReset, PasswordResetRequest, StartPasskeyLogin, TFAType, UserPasskey,
+        UserPasskeyView,
     },
     session::{ActiveSessionView, Session},
     token::{OneShotToken, TokenStore},
 };
 use crate::{
-    db::{SessionRepository, UserRepository, sessions::NewSession},
+    db::{Repository, sessions::NewSession},
     email::EmailSender,
     error::{AppError, AuthFailure},
     user::model::User,
@@ -19,6 +21,7 @@ use thotp::encoding::data_encoding::BASE32;
 use tracing::instrument;
 use uuid::Uuid;
 use validify::Validify;
+use webauthn_rs::prelude::{PasskeyAuthentication, PasskeyRegistration, Webauthn};
 
 /// Sessions without "remember" expire after this long.
 const SESSION_HOURS: i64 = 12;
@@ -35,24 +38,24 @@ struct PendingLogin {
 
 #[derive(Clone)]
 pub struct AuthenticationService {
-    users: UserRepository,
-    sessions: SessionRepository,
+    repo: Repository,
     tokens: TokenStore,
     email: EmailSender,
+    webauthn: Webauthn,
 }
 
 impl AuthenticationService {
     pub fn new(
-        users: UserRepository,
-        sessions: SessionRepository,
+        repo: Repository,
         tokens: TokenStore,
         email: EmailSender,
+        webauthn: Webauthn,
     ) -> Self {
         Self {
-            users,
-            sessions,
+            repo,
             tokens,
             email,
+            webauthn,
         }
     }
 
@@ -70,6 +73,7 @@ impl AuthenticationService {
         credentials.validify()?;
 
         let user = self
+            .repo
             .users
             .get_by_username(&credentials.username)
             .await?
@@ -77,41 +81,57 @@ impl AuthenticationService {
 
         self.validate_password(&user, &credentials.password)?;
 
-        if user.otp_secret.is_none() {
-            let session = self
-                .create_session(
-                    user,
-                    remote_address,
-                    user_agent,
-                    credentials.remember,
-                    credentials.permanent,
+        let mut available = Vec::new();
+
+        if user
+            .otp_secret
+            .as_deref()
+            .is_some_and(|secret| !secret.is_empty())
+        {
+            available.push(TFAType::Otp);
+        }
+
+        if self.repo.users.is_passkey_enabled(user.id).await? {
+            available.push(TFAType::Passkey);
+        }
+
+        if !available.is_empty() {
+            let token = Uuid::new_v4();
+
+            self.tokens
+                .store(
+                    OneShotToken::OneTimePassword,
+                    token,
+                    &PendingLogin {
+                        user_id: user.id,
+                        remember: credentials.remember,
+                        permanent: credentials.permanent,
+                    },
                 )
                 .await?;
-            return Ok(LoginResult::Session {
-                session: session.into(),
+
+            return Ok(LoginResult::TwoFactorRequired {
+                token: token.to_string(),
+                available,
             });
         }
 
-        let token = Uuid::new_v4();
-
-        self.tokens
-            .store(
-                OneShotToken::OneTimePassword,
-                token,
-                &PendingLogin {
-                    user_id: user.id,
-                    remember: credentials.remember,
-                    permanent: credentials.permanent,
-                },
+        let session = self
+            .create_session(
+                user,
+                remote_address,
+                user_agent,
+                credentials.remember,
+                credentials.permanent,
             )
             .await?;
 
-        Ok(LoginResult::TwoFactorRequired {
-            token: token.to_string(),
+        Ok(LoginResult::Session {
+            session: session.into(),
         })
     }
 
-    /// Finish a 2FA login.
+    /// Finish a TOTP login using the pending-login token from [`Self::login`].
     #[instrument(skip(self, otp), err(Debug))]
     pub async fn login_with_otp(
         &self,
@@ -127,6 +147,7 @@ impl AuthenticationService {
             .await?;
 
         let user = self
+            .repo
             .users
             .get_by_id(pending.user_id)
             .await
@@ -159,12 +180,13 @@ impl AuthenticationService {
     #[instrument(skip_all, err(Debug))]
     pub async fn get_session_by_id(&self, id: Uuid) -> Result<Session, AppError> {
         let record = self
+            .repo
             .sessions
             .get(id)
             .await?
             .ok_or(AppError::Auth(AuthFailure::SessionNotFound))?;
 
-        let user = self.users.get_by_id(record.user_id).await?;
+        let user = self.repo.users.get_by_id(record.user_id).await?;
 
         Ok(Session::from_record(record, user, false))
     }
@@ -172,7 +194,7 @@ impl AuthenticationService {
     /// Expire the session under the given ID.
     #[instrument(skip_all, err(Debug))]
     pub async fn logout(&self, session_id: Uuid) -> Result<(), AppError> {
-        self.sessions.expire(session_id).await
+        self.repo.sessions.expire(session_id).await
     }
 
     /// Live sessions for the signed-in user.
@@ -181,7 +203,11 @@ impl AuthenticationService {
         &self,
         session: &Session,
     ) -> Result<Vec<ActiveSessionView>, AppError> {
-        let rows = self.sessions.list_live_for_user(session.user.id).await?;
+        let rows = self
+            .repo
+            .sessions
+            .list_live_for_user(session.user.id)
+            .await?;
         Ok(rows
             .into_iter()
             .map(|row| ActiveSessionView::from_record(row, session.id))
@@ -200,6 +226,7 @@ impl AuthenticationService {
         session_id: Uuid,
     ) -> Result<(), AppError> {
         let row = self
+            .repo
             .sessions
             .get(session_id)
             .await?
@@ -216,13 +243,14 @@ impl AuthenticationService {
             return Err(AppError::ResourceMissing("Session does not exist".into()));
         }
 
-        self.sessions.expire(session_id).await
+        self.repo.sessions.expire(session_id).await
     }
 
     /// Expire every live session for the user except the current one.
     #[instrument(skip(self, session), fields(user_id = %session.user.id), err(Debug))]
     pub async fn expire_other_sessions(&self, session: &Session) -> Result<(), AppError> {
-        self.sessions
+        self.repo
+            .sessions
             .expire_others(session.user.id, session.id)
             .await
     }
@@ -241,6 +269,7 @@ impl AuthenticationService {
         change.validify()?;
 
         let user = self
+            .repo
             .users
             .get_by_id(session.user.id)
             .await
@@ -250,9 +279,12 @@ impl AuthenticationService {
 
         let password = hash_password(&change.new_password)?;
 
-        self.users.update_password(user.id, &password).await?;
+        self.repo.users.update_password(user.id, &password).await?;
 
-        self.sessions.expire_others(user.id, session.id).await?;
+        self.repo
+            .sessions
+            .expire_others(user.id, session.id)
+            .await?;
 
         if let Some(email) = user.email.as_deref()
             && let Err(error) = self
@@ -274,7 +306,7 @@ impl AuthenticationService {
     ) -> Result<(), AppError> {
         data.validify()?;
 
-        let user = match self.users.get_by_email(&data.email).await {
+        let user = match self.repo.users.get_by_email(&data.email).await {
             Ok(Some(user)) => user,
             Ok(None) => return Ok(()),
             Err(error) => {
@@ -311,13 +343,33 @@ impl AuthenticationService {
             .consume(OneShotToken::PasswordReset, token)
             .await?;
 
-        let user = self.users.get_by_id(user_id).await?;
+        let user = self.repo.users.get_by_id(user_id).await?;
 
         let password = hash_password(&data.new_password)?;
 
-        self.users.update_password(user_id, &password).await?;
+        let mut tx = self.repo.start_tx().await?;
 
-        self.sessions.expire_all(user_id).await?;
+        self.repo
+            .users
+            .update_password_with(&mut *tx, user_id, &password)
+            .await?;
+
+        self.repo
+            .users
+            .clear_otp_secret_with(&mut *tx, user_id)
+            .await?;
+
+        self.repo
+            .users
+            .clear_passkeys_with(&mut *tx, user_id)
+            .await?;
+
+        self.repo
+            .sessions
+            .expire_all_with(&mut *tx, user_id)
+            .await?;
+
+        tx.commit().await?;
 
         if let Some(email) = user.email.as_deref()
             && let Err(error) = self
@@ -378,7 +430,8 @@ impl AuthenticationService {
 
         verify_otp(&secret, &otp.otp_code)?;
 
-        self.users
+        self.repo
+            .users
             .update_otp_secret(session.user.id, &encoded)
             .await
     }
@@ -392,7 +445,7 @@ impl AuthenticationService {
     ) -> Result<(), AppError> {
         data.validify()?;
 
-        let user = self.users.get_by_id(session.user.id).await?;
+        let user = self.repo.users.get_by_id(session.user.id).await?;
 
         let encoded = user.otp_secret.as_deref().ok_or_else(|| {
             AppError::Unprocessable("Two-factor authentication is not enabled".into())
@@ -400,7 +453,176 @@ impl AuthenticationService {
 
         verify_otp(&decode_otp_secret(encoded)?, &data.otp_code)?;
 
-        self.users.clear_otp_secret(session.user.id).await
+        self.repo.users.clear_otp_secret(session.user.id).await
+    }
+
+    /// List the signed-in user's registered passkeys.
+    #[instrument(skip(self, session), fields(user_id = %session.user.id), err(Debug))]
+    pub async fn list_passkeys(&self, session: &Session) -> Result<Vec<UserPasskeyView>, AppError> {
+        let passkeys = self.repo.users.list_passkeys(session.user.id).await?;
+        Ok(passkeys.into_iter().map(UserPasskeyView::from).collect())
+    }
+
+    /// Start WebAuthn passkey registration and cache the in-progress state.
+    #[instrument(skip(self, session), fields(user_id = %session.user.id), err(Debug))]
+    pub async fn start_passkey_setup(
+        &self,
+        session: Session,
+    ) -> Result<PasskeySetupChallenge, AppError> {
+        let existing = self.repo.users.list_passkeys(session.user.id).await?;
+
+        let exclude = existing
+            .iter()
+            .map(|passkey| passkey.data.cred_id().clone())
+            .collect::<Vec<_>>();
+
+        let exclude = (!exclude.is_empty()).then_some(exclude);
+
+        let (challenge, regdata) = self.webauthn.start_passkey_registration(
+            session.user.id,
+            session
+                .user
+                .email
+                .as_ref()
+                .unwrap_or(&session.user.username),
+            &session.user.username,
+            exclude,
+        )?;
+
+        let token = Uuid::new_v4();
+
+        self.tokens
+            .store(OneShotToken::Passkey, token, &regdata)
+            .await?;
+
+        Ok(PasskeySetupChallenge { token, challenge })
+    }
+
+    /// Finish WebAuthn passkey registration and persist the credential.
+    #[instrument(skip(self, session, data), fields(user_id = %session.user.id), err(Debug))]
+    pub async fn finish_passkey_setup(
+        &self,
+        session: Session,
+        data: FinishPasskeySetup,
+    ) -> Result<UserPasskey, AppError> {
+        let regdata: PasskeyRegistration = self
+            .tokens
+            .consume(OneShotToken::Passkey, data.token)
+            .await?;
+
+        let passkey = self
+            .webauthn
+            .finish_passkey_registration(&data.credential, &regdata)?;
+
+        if self
+            .repo
+            .users
+            .passkey_cred_id_taken(passkey.cred_id())
+            .await?
+        {
+            return Err(AppError::ResourceConflict(
+                "This passkey is already registered".into(),
+            ));
+        }
+
+        self.repo
+            .users
+            .insert_passkey(session.user.id, passkey)
+            .await
+    }
+
+    /// Start WebAuthn passkey authentication for a pending 2FA login.
+    #[instrument(skip(self, data), err(Debug))]
+    pub async fn start_passkey_login(
+        &self,
+        data: StartPasskeyLogin,
+    ) -> Result<PasskeyLoginChallenge, AppError> {
+        let pending: PendingLogin = self
+            .tokens
+            .get(OneShotToken::OneTimePassword, data.token)
+            .await?;
+
+        let rows = self.repo.users.list_passkeys(pending.user_id).await?;
+
+        if rows.is_empty() {
+            return Err(AppError::Unprocessable(
+                "No passkeys are registered for this account".into(),
+            ));
+        }
+
+        let creds = rows.into_iter().map(|row| row.data.0).collect::<Vec<_>>();
+
+        let (challenge, auth_state) = self.webauthn.start_passkey_authentication(&creds)?;
+
+        self.tokens
+            .store(OneShotToken::Passkey, data.token, &auth_state)
+            .await?;
+
+        Ok(PasskeyLoginChallenge {
+            token: data.token,
+            challenge,
+        })
+    }
+
+    /// Finish WebAuthn passkey authentication and create a session.
+    #[instrument(skip(self, data), err(Debug))]
+    pub async fn finish_passkey_login(
+        &self,
+        data: FinishPasskeyLogin,
+        remote_address: Option<String>,
+        user_agent: Option<String>,
+    ) -> Result<LoginResult, AppError> {
+        let auth_state: PasskeyAuthentication = self
+            .tokens
+            .consume(OneShotToken::Passkey, data.token)
+            .await?;
+
+        let pending: PendingLogin = self
+            .tokens
+            .get(OneShotToken::OneTimePassword, data.token)
+            .await?;
+
+        let auth_result = self
+            .webauthn
+            .finish_passkey_authentication(&data.credential, &auth_state)?;
+
+        let passkeys = self.repo.users.list_passkeys(pending.user_id).await?;
+
+        for mut passkey in passkeys {
+            if !passkey
+                .data
+                .0
+                .update_credential(&auth_result)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            self.repo
+                .users
+                .apply_passkey_authentication(passkey.id, passkey.data.0)
+                .await?;
+        }
+
+        let _: PendingLogin = self
+            .tokens
+            .consume(OneShotToken::OneTimePassword, data.token)
+            .await?;
+
+        let user = self.repo.users.get_by_id(pending.user_id).await?;
+
+        let session = self
+            .create_session(
+                user,
+                remote_address,
+                user_agent,
+                pending.remember,
+                pending.permanent,
+            )
+            .await?;
+
+        Ok(LoginResult::Session {
+            session: session.into(),
+        })
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
@@ -412,7 +634,7 @@ impl AuthenticationService {
         remember: bool,
         permanent: bool,
     ) -> Result<Session, AppError> {
-        let first_login = self.sessions.count_for_user(user.id).await? == 0;
+        let first_login = self.repo.sessions.count_for_user(user.id).await? == 0;
 
         let now = Utc::now();
 
@@ -425,6 +647,7 @@ impl AuthenticationService {
         };
 
         let record = self
+            .repo
             .sessions
             .insert(NewSession {
                 id: Uuid::new_v4(),

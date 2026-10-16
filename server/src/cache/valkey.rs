@@ -35,6 +35,14 @@ impl ValkeyCache {
             })
     }
 
+    pub async fn get(&self, key: &str) -> Result<Option<String>, AppError> {
+        let mut conn = self.connection().await?;
+        conn.get(key).await.map_err(|error| {
+            tracing::error!(%error, "valkey read failed");
+            AppError::Internal
+        })
+    }
+
     pub async fn get_del(&self, key: &str) -> Result<Option<String>, AppError> {
         let mut conn = self.connection().await?;
         conn.get_del(key).await.map_err(|error| {

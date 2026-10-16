@@ -18,8 +18,9 @@ use uuid::Uuid;
 use crate::{
     auth::{
         model::{
-            DisableOtp, LoginCredentials, LoginResult, OTP_TOKEN_HEADER, Otp, PasswordChange,
-            PasswordReset, PasswordResetRequest,
+            DisableOtp, FinishPasskeyLogin, FinishPasskeySetup, LoginCredentials, LoginResult,
+            OTP_TOKEN_HEADER, Otp, PasskeyLoginChallenge, PasskeySetupChallenge, PasswordChange,
+            PasswordReset, PasswordResetRequest, StartPasskeyLogin, UserPasskeyView,
         },
         session::{ActiveSessionView, Session},
     },
@@ -58,26 +59,27 @@ pub(crate) async fn credentials_login(
 
 #[utoipa::path(
     post,
-    path = "/auth/login/2fa",
+    path = "/auth/login/otp",
     request_body = Otp,
     responses(
         (status = 200, description = "Session created", body = LoginResult),
         (status = 401, description = "Invalid OTP"),
-        (status = 404, description = "Missing, used, or expired login token")
+        (status = 404, description = "Missing, used, or expired login token"),
+        (status = 422, description = "Validation error")
     )
 )]
 pub(crate) async fn otp_login(
     State(state): State<AppState>,
     RemoteAddress(remote_address): RemoteAddress,
     user_agent: Option<TypedHeader<UserAgent>>,
-    Json(otp): Json<Otp>,
+    Json(login): Json<Otp>,
 ) -> Result<Response, AppError> {
     let user_agent = user_agent.map(|TypedHeader(agent)| agent.as_str().to_owned());
 
     let result = state
         .services
         .auth
-        .login_with_otp(otp, Some(remote_address), user_agent)
+        .login_with_otp(login, Some(remote_address), user_agent)
         .await?;
 
     Ok(login_response(result, &state.http_config))
@@ -309,9 +311,9 @@ pub(crate) async fn start_otp_setup(
 pub(crate) async fn finish_otp_setup(
     State(state): State<AppState>,
     session: Session,
-    Json(otp): Json<Otp>,
+    Json(data): Json<Otp>,
 ) -> Result<StatusCode, AppError> {
-    state.services.auth.finish_otp_setup(session, otp).await?;
+    state.services.auth.finish_otp_setup(session, data).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -334,6 +336,75 @@ pub(crate) async fn disable_otp(
     state.services.auth.disable_otp(session, data).await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    get,
+    path = "/auth/passkeys",
+    responses((status = 200, description = "Registered passkeys", body = Vec<UserPasskeyView>))
+)]
+pub(crate) async fn list_passkeys(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Json<Vec<UserPasskeyView>>, AppError> {
+    Ok(Json(state.services.auth.list_passkeys(&session).await?))
+}
+
+pub(crate) async fn start_passkey_setup(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Json<PasskeySetupChallenge>, AppError> {
+    Ok(Json(
+        state.services.auth.start_passkey_setup(session).await?,
+    ))
+}
+
+pub(crate) async fn finish_passkey_setup(
+    State(state): State<AppState>,
+    session: Session,
+    Json(data): Json<FinishPasskeySetup>,
+) -> Result<StatusCode, AppError> {
+    state
+        .services
+        .auth
+        .finish_passkey_setup(session, data)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/login/passkey",
+    request_body = StartPasskeyLogin,
+    responses(
+        (status = 200, description = "WebAuthn authentication challenge"),
+        (status = 404, description = "Missing, used, or expired login token"),
+        (status = 422, description = "No passkeys registered")
+    )
+)]
+pub(crate) async fn start_passkey_login(
+    State(state): State<AppState>,
+    Json(data): Json<StartPasskeyLogin>,
+) -> Result<Json<PasskeyLoginChallenge>, AppError> {
+    Ok(Json(state.services.auth.start_passkey_login(data).await?))
+}
+
+pub(crate) async fn finish_passkey_login(
+    State(state): State<AppState>,
+    RemoteAddress(remote_address): RemoteAddress,
+    user_agent: Option<TypedHeader<UserAgent>>,
+    Json(data): Json<FinishPasskeyLogin>,
+) -> Result<Response, AppError> {
+    let user_agent = user_agent.map(|TypedHeader(agent)| agent.as_str().to_owned());
+
+    let result = state
+        .services
+        .auth
+        .finish_passkey_login(data, Some(remote_address), user_agent)
+        .await?;
+
+    Ok(login_response(result, &state.http_config))
 }
 
 fn login_response(result: LoginResult, config: &HttpConfiguration) -> Response {

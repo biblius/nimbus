@@ -1,8 +1,13 @@
 use chrono::{DateTime, Utc};
+use sqlx::Executor;
 use tracing::instrument;
 use uuid::Uuid;
 
-use crate::{auth::session::SessionRecord, db::DbPool, error::AppError};
+use crate::{
+    auth::session::SessionRecord,
+    db::{Db, DbPool},
+    error::AppError,
+};
 
 #[derive(Clone)]
 pub struct SessionRepository {
@@ -154,6 +159,14 @@ impl SessionRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn expire_all(&self, user_id: Uuid) -> Result<(), AppError> {
+        self.expire_all_with(&self.pool, user_id).await
+    }
+
+    #[instrument(skip(self, executor), fields(user_id = %user_id), err(Debug))]
+    pub async fn expire_all_with<'e, E>(&self, executor: E, user_id: Uuid) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
         let now = Utc::now();
 
         sqlx::query!(
@@ -169,7 +182,7 @@ impl SessionRepository {
             now,
             user_id
         )
-        .execute(&self.pool)
+        .execute(executor)
         .await?;
 
         Ok(())

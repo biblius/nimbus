@@ -1,8 +1,14 @@
 use super::session::SessionView;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validify::{ValidationError, Validify};
+use webauthn_rs::prelude::{
+    CreationChallengeResponse, Passkey, PublicKeyCredential, RegisterPublicKeyCredential,
+    RequestChallengeResponse,
+};
 
 /// Successful password check: either a real session, or 2FA still required.
 #[derive(Debug, Serialize, ToSchema)]
@@ -11,8 +17,22 @@ pub enum LoginResult {
     /// A successful session has been established.
     Session { session: SessionView },
 
-    /// Contains a 1-shot token that must be provided when finishing the login with 2FA.
-    TwoFactorRequired { token: String },
+    /// Additional authentication step required.
+    TwoFactorRequired {
+        /// One-shot token to present when finishing 2FA login.
+        token: String,
+
+        /// Represents which 2FA methods are available.
+        available: Vec<TFAType>,
+    },
+}
+
+/// Sent as part of [LoginResult] if the user has 2FA enabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum TFAType {
+    Otp,
+    Passkey,
 }
 
 #[derive(Debug, Deserialize, Validify, ToSchema)]
@@ -47,11 +67,11 @@ pub struct GeneratedOtp {
 /// Header carrying the one-shot token from `POST /auth/otp/setup`.
 pub const OTP_TOKEN_HEADER: &str = "x-otp-token";
 
-/// OTP verification input. Used both for initial setup and later verification.
+/// Finish a TOTP login using the pending-login token from [`LoginResult::TwoFactorRequired`].
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Otp {
-    /// 1-shot token provided on initial login with credentials.
+    /// One-shot token from the password login step.
     pub token: Uuid,
 
     /// The OTP 6 digit code.
@@ -107,4 +127,77 @@ fn strong_password(password: &str) -> Result<(), validify::ValidationError> {
         );
     }
     Ok(())
+}
+
+/// Row in `user_passkeys`.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct UserPasskey {
+    pub id: i64,
+    pub user_id: Uuid,
+    pub data: Json<Passkey>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Client-facing passkey row (no credential material).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UserPasskeyView {
+    pub id: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<UserPasskey> for UserPasskeyView {
+    fn from(value: UserPasskey) -> Self {
+        Self {
+            id: value.id,
+            created_at: value.created_at,
+        }
+    }
+}
+
+/// Challenge returned when starting passkey registration, plus the one-shot token
+/// needed to finish it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasskeySetupChallenge {
+    /// One-shot token to present when finishing registration.
+    pub token: Uuid,
+
+    /// WebAuthn `PublicKeyCredentialCreationOptions` for the browser.
+    pub challenge: CreationChallengeResponse,
+}
+
+/// Finish passkey registration: one-shot token plus the authenticator response.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinishPasskeySetup {
+    pub token: Uuid,
+    pub credential: RegisterPublicKeyCredential,
+}
+
+/// Start passkey login using the pending-login token from [`LoginResult::TwoFactorRequired`].
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StartPasskeyLogin {
+    pub token: Uuid,
+}
+
+/// Challenge returned when starting passkey authentication.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasskeyLoginChallenge {
+    /// Same pending-login token; present it again when finishing.
+    pub token: Uuid,
+
+    /// WebAuthn `PublicKeyCredentialRequestOptions` for the browser.
+    pub challenge: RequestChallengeResponse,
+}
+
+/// Finish passkey login: pending-login token plus the authenticator assertion.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinishPasskeyLogin {
+    pub token: Uuid,
+    pub credential: PublicKeyCredential,
 }

@@ -3,7 +3,7 @@ use utoipa::OpenApi;
 use crate::{
     auth::model::{
         DisableOtp, LoginCredentials, LoginResult, Otp, PasswordChange, PasswordReset,
-        PasswordResetRequest,
+        PasswordResetRequest, StartPasskeyLogin, TFAType, UserPasskeyView,
     },
     auth::session::{ActiveSessionView, SessionView},
     file::{
@@ -42,6 +42,8 @@ use crate::{
         auth::start_otp_setup,
         auth::finish_otp_setup,
         auth::disable_otp,
+        auth::list_passkeys,
+        auth::start_passkey_login,
         users::create_user,
         users::list_users,
         users::update_user,
@@ -84,7 +86,10 @@ use crate::{
         LoginCredentials,
         LoginResult,
         Otp,
+        StartPasskeyLogin,
+        TFAType,
         DisableOtp,
+        UserPasskeyView,
         PasswordResetRequest,
         PasswordReset,
         PasswordChange,

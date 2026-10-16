@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ShieldAlert } from "@lucide/svelte";
   import { ValidationError } from "../api";
   import { toastError } from "../toast";
   import Button from "../components/ui/button/button.svelte";
@@ -48,6 +49,22 @@
         <p class="text-sm text-muted-foreground">
           Enter your account email and we’ll send you a reset link.
         </p>
+      </div>
+
+      <div
+        class="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/8 p-3"
+      >
+        <ShieldAlert size={15} class="mt-0.5 shrink-0 text-warning" />
+        <div class="min-w-0 text-xs text-warning/90">
+          <p class="font-semibold tracking-tight text-warning">
+            Two-factor authentication will be cleared
+          </p>
+          <p class="mt-1">
+            Completing a reset removes authenticator codes and passkeys, and
+            signs out all sessions. You will need to set up 2FA again after
+            signing in with your new password.
+          </p>
+        </div>
       </div>
 
       {#if sent}

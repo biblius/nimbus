@@ -81,6 +81,14 @@ pub struct StartArgs {
     /// Public web URL used in email links.
     #[arg(long)]
     frontend_url: Option<String>,
+
+    /// WebAuthn relying party ID (effective domain of the origin).
+    #[arg(long)]
+    webauthn_rp_id: Option<String>,
+
+    /// WebAuthn relying party origin (scheme + host + optional port).
+    #[arg(long)]
+    webauthn_rp_origin: Option<String>,
 }
 
 /// Implement a getter method on [StartArgs], using the `$var` environment variable as a fallback
@@ -218,6 +226,12 @@ arg!(gmail_address, "GMAIL_ADDRESS", default String::new());
 arg!(gmail_app_password, "GMAIL_APP_PASSWORD", default String::new());
 arg!(mail_from_name, "MAIL_FROM_NAME", default "Nimbus".to_string());
 arg!(frontend_url, "FRONTEND_URL", default "http://localhost:5173".to_string());
+arg!(webauthn_rp_id, "WEBAUTHN_RP_ID", default "localhost".to_string());
+arg!(
+    webauthn_rp_origin,
+    "WEBAUTHN_RP_ORIGIN",
+    default "http://localhost:5173".to_string()
+);
 
 /// Shows every resolved setting (CLI argument, environment variable, or default), so the
 /// effective configuration can be logged on startup. Secrets are redacted.
@@ -274,6 +288,8 @@ impl fmt::Display for StartArgs {
             redact(&self.gmail_app_password())
         )?;
         writeln!(f, "mail_from_name: {}", self.mail_from_name())?;
-        write!(f, "frontend_url: {}", self.frontend_url())
+        writeln!(f, "frontend_url: {}", self.frontend_url())?;
+        writeln!(f, "webauthn_rp_id: {}", self.webauthn_rp_id())?;
+        write!(f, "webauthn_rp_origin: {}", self.webauthn_rp_origin())
     }
 }

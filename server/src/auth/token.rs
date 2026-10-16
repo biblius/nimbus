@@ -36,6 +36,23 @@ impl TokenStore {
         self.cache.del(&action.key(key)).await
     }
 
+    /// Read the token without consuming it. Missing or expired tokens are a 404.
+    pub async fn get<T: DeserializeOwned>(
+        &self,
+        action: OneShotToken,
+        key: Uuid,
+    ) -> Result<T, AppError> {
+        let Some(body) = self.cache.get(&action.key(key)).await? else {
+            return Err(AppError::ResourceMissing(
+                "Token is missing, used, or expired".into(),
+            ));
+        };
+        serde_json::from_str(&body).map_err(|error| {
+            tracing::error!(%error, "deserializing one-shot token payload");
+            AppError::Internal
+        })
+    }
+
     /// Atomically read and delete the token. Missing or expired tokens are a 404.
     pub async fn consume<T: DeserializeOwned>(
         &self,
@@ -54,17 +71,26 @@ impl TokenStore {
     }
 }
 
+/// A token stored in the cache required to complete
+/// auth related operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OneShotToken {
+    /// Used during OTP registration and pending OTP login.
     OneTimePassword,
+
+    /// Used when requesting password resets via email.
     PasswordReset,
+
+    /// Used when registering and authenticating with passkeys.
+    Passkey,
 }
 
 impl OneShotToken {
     pub fn ttl_secs(self) -> u64 {
         match self {
             Self::PasswordReset => 60 * 60,
-            Self::OneTimePassword => 60 * 5,
+            Self::OneTimePassword => 300,
+            Self::Passkey => 300,
         }
     }
 
@@ -76,8 +102,9 @@ impl OneShotToken {
 impl Display for OneShotToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PasswordReset => write!(f, "password_reset"),
+            Self::PasswordReset => write!(f, "pwreset"),
             Self::OneTimePassword => write!(f, "otp"),
+            Self::Passkey => write!(f, "passkey"),
         }
     }
 }

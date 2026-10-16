@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { Pencil, ShieldAlert, ShieldCheck } from "@lucide/svelte";
+  import {
+    KeyRound,
+    MailWarning,
+    Pencil,
+    ShieldAlert,
+    ShieldCheck,
+  } from "@lucide/svelte";
   import { ApiError, ValidationError } from "../api";
   import ActiveSessions from "../components/ActiveSessions.svelte";
   import PanelShell from "../components/PanelShell.svelte";
@@ -12,8 +18,11 @@
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
   import type { Root, UserData } from "../types";
+  import { createPasskey } from "../webauthn";
 
   type OtpPanel = "idle" | "setup" | "disable";
+
+  type PasskeyItem = { id: number; createdAt: string };
 
   let roots = $state<Root[]>([]);
   let editing = $state(false);
@@ -23,6 +32,10 @@
   let otpToken = $state<string | null>(null);
   let qrUrl = $state<string | null>(null);
   let otpValidation = $state<ValidationError | undefined>();
+  let passkeys = $state<PasskeyItem[]>([]);
+  let passkeyBusy = $state(false);
+
+  let passkeysEnabled = $derived(passkeys.length > 0);
 
   onMount(async () => {
     try {
@@ -49,9 +62,74 @@
     otpPanel = "idle";
   }
 
+  function startEditing() {
+    editing = true;
+    void loadPasskeys();
+  }
+
   function stopEditing() {
     clearOtpUi();
+    passkeys = [];
+    passkeyBusy = false;
     editing = false;
+  }
+
+  async function loadPasskeys() {
+    try {
+      passkeys = await session.client.listPasskeys();
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not load passkeys",
+      );
+    }
+  }
+
+  function isWebAuthnCancelled(cause: unknown): boolean {
+    return (
+      (cause instanceof DOMException || cause instanceof Error) &&
+      (cause.name === "NotAllowedError" || cause.name === "AbortError")
+    );
+  }
+
+  function formatPasskeyDate(iso: string): string {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) {
+      return iso;
+    }
+    return date.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  async function addPasskey() {
+    if (passkeyBusy) {
+      return;
+    }
+
+    passkeyBusy = true;
+
+    try {
+      const setup = await session.client.startPasskeySetup();
+      const credential = await createPasskey(setup.challenge);
+      await session.client.finishPasskeySetup(setup.token, credential);
+      await loadPasskeys();
+    } catch (cause) {
+      if (isWebAuthnCancelled(cause)) {
+        return;
+      }
+
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not register passkey",
+      );
+    } finally {
+      passkeyBusy = false;
+    }
   }
 
   async function saveProfile(data: UserData) {
@@ -191,6 +269,45 @@
 
       {#if session.user}
         <section class="rounded-xl border bg-card p-4 sm:p-5">
+          {#if !session.user.email?.trim()}
+            <div
+              class="mb-4 flex flex-wrap items-start justify-between gap-2 rounded-lg border border-warning/35 bg-warning/8 p-3"
+            >
+              <div class="min-w-0">
+                <h3
+                  class="flex items-center gap-1.5 text-sm font-semibold tracking-tight"
+                >
+                  <MailWarning size={15} class="shrink-0 text-warning" />
+                  Email required for recovery
+                  <span
+                    class="rounded-md bg-warning/20 px-1.5 py-0.5 text-[11px] leading-none font-medium text-warning"
+                  >
+                    Missing
+                  </span>
+                </h3>
+                <p class="mt-1 text-xs text-warning/90">
+                  {#if editing}
+                    Add an email below so you can reset your password if you
+                    lose access.
+                  {:else}
+                    Without an email, you cannot reset your password if you lose
+                    account access.
+                  {/if}
+                </p>
+              </div>
+              {#if !editing}
+                <Button
+                  type="button"
+                  size="sm"
+                  class="shrink-0"
+                  onclick={startEditing}
+                >
+                  Add email
+                </Button>
+              {/if}
+            </div>
+          {/if}
+
           {#if editing}
             <div class="space-y-5">
               <UserForm
@@ -360,6 +477,65 @@
                   </form>
                 {/if}
               </div>
+
+              <div
+                class="space-y-3 rounded-lg border p-3 {passkeysEnabled
+                  ? 'border-success/25 bg-success/5'
+                  : 'border-muted bg-muted/20'}"
+              >
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <h3
+                      class="flex items-center gap-1.5 text-sm font-semibold tracking-tight"
+                    >
+                      <KeyRound
+                        size={15}
+                        class="shrink-0 {passkeysEnabled
+                          ? 'text-success'
+                          : 'text-muted-foreground'}"
+                      />
+                      Passkeys
+                      <span
+                        class="rounded-md px-1.5 py-0.5 text-[11px] leading-none font-medium {passkeysEnabled
+                          ? 'bg-success/15 text-success'
+                          : 'bg-muted text-muted-foreground'}"
+                      >
+                        {passkeysEnabled ? "Enabled" : "Off"}
+                      </span>
+                    </h3>
+                    <p class="mt-1 text-xs text-muted-foreground">
+                      {#if passkeysEnabled}
+                        Sign in with a device passkey instead of a password code.
+                      {:else}
+                        Register a passkey for passwordless or phishing-resistant
+                        sign-in.
+                      {/if}
+                    </p>
+                  </div>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    class="shrink-0"
+                    disabled={passkeyBusy}
+                    onclick={addPasskey}
+                  >
+                    Add passkey
+                  </Button>
+                </div>
+
+                {#if passkeys.length > 0}
+                  <ul class="space-y-1.5">
+                    {#each passkeys as passkey (passkey.id)}
+                      <li
+                        class="rounded-md border bg-background/60 px-2.5 py-1.5 text-xs text-muted-foreground"
+                      >
+                        Passkey · {formatPasskeyDate(passkey.createdAt)}
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </div>
             </div>
           {:else}
             <div
@@ -373,7 +549,7 @@
                 variant="outline"
                 size="sm"
                 class="shrink-0"
-                onclick={() => (editing = true)}
+                onclick={startEditing}
               >
                 <Pencil size={15} />
                 Edit

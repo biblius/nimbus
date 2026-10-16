@@ -86,9 +86,18 @@ impl Storage {
     }
 
     pub async fn prepare(&self) -> Result<(), AppError> {
-        tokio::fs::create_dir_all(self.root.join(DATA_DIR)).await?;
-        tokio::fs::create_dir_all(self.root.join(TMP_DIR)).await?;
+        let data = self.root.join(DATA_DIR);
+        let tmp = self.root.join(TMP_DIR);
+
+        tracing::debug!(path = %data.display(), "creating storage data directory");
+        tokio::fs::create_dir_all(&data).await?;
+
+        tracing::debug!(path = %tmp.display(), "creating storage tmp directory");
+        tokio::fs::create_dir_all(&tmp).await?;
+
+        tracing::debug!(path = %self.preview.display(), "creating preview directory");
         tokio::fs::create_dir_all(&self.preview).await?;
+
         Ok(())
     }
 

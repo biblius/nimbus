@@ -60,9 +60,31 @@ export type OtpSetup = {
   token: string;
 };
 
+/** Passkey row from `GET /auth/passkeys` (no credential material). */
+export type UserPasskeyView = {
+  id: number;
+  createdAt: string;
+};
+
+/** Challenge + token from `POST /auth/passkey/setup`. */
+export type PasskeySetupChallenge = {
+  token: string;
+  /** webauthn-rs `CreationChallengeResponse` (`{ publicKey: ... }`). */
+  challenge: import("./webauthn").CreationChallengeResponse;
+};
+
+/** Challenge + token from `POST /auth/login/passkey`. */
+export type PasskeyLoginChallenge = {
+  token: string;
+  /** webauthn-rs `RequestChallengeResponse` (`{ publicKey: ... }`). */
+  challenge: import("./webauthn").RequestChallengeResponse;
+};
+
+export type TFAType = "otp" | "passkey";
+
 export type LoginResult =
   | { status: "session"; session: SessionView }
-  | { status: "twoFactorRequired"; token: string };
+  | { status: "twoFactorRequired"; token: string; available: TFAType[] };
 
 export type Root = {
   id: string;

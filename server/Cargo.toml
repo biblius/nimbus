@@ -12,7 +12,15 @@ valkey = ["dep:deadpool-redis"]
 memory-cache = []
 
 [dependencies]
-tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "sync", "time", "net", "fs", "io-util"] }
+tokio = { version = "1.53.3", features = [
+  "rt-multi-thread",
+  "macros",
+  "sync",
+  "time",
+  "net",
+  "fs",
+  "io-util",
+] }
 uuid = { version = "1.28.0", features = ["v4", "serde"] }
 thiserror = "2.0.21"
 clap = { version = "4.6.7", features = ["derive"] }
@@ -27,7 +35,15 @@ utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 validify = "2.0.0"
-sqlx = { version = "0.9.0", default-features = false, features = ["chrono", "uuid", "migrate", "runtime-tokio", "derive", "macros"] }
+sqlx = { version = "0.9.0", default-features = false, features = [
+  "chrono",
+  "uuid",
+  "migrate",
+  "runtime-tokio",
+  "derive",
+  "macros",
+  "json",
+] }
 chrono = { version = "0.4.45", features = ["serde"] }
 time = "0.3.55"
 thotp = "0.1.11"
@@ -37,12 +53,22 @@ sha2 = "0.11.1"
 hex = "0.4.3"
 tokio-util = { version = "0.7.20", features = ["io"] }
 futures = "0.3.34"
-lettre = { version = "0.11.23", default-features = false, features = ["smtp-transport", "tokio1-rustls-tls", "builder", "hostname"] }
+lettre = { version = "0.11.23", default-features = false, features = [
+  "smtp-transport",
+  "tokio1-rustls-tls",
+  "builder",
+  "hostname",
+] }
 deadpool-redis = { version = "0.23.1", optional = true }
 serde_with = "3.24.0"
 infer = "0.22.0"
 tokio-stream = "0.1.19"
 image = "0.25.10"
+webauthn-rs = { version = "0.5.5", features = [
+  # Used ONLY to serialize the state on the server during registration.
+  # Serialized PasskeyAuthenticaton is never sent to clients.
+  "danger-allow-state-serialisation",
+] }
 
 [dev-dependencies]
 suitest = "0.1.4"

@@ -71,7 +71,12 @@ pub fn router(state: AppState) -> Router {
 
     let public = Router::new()
         .route("/auth/login", post(auth::credentials_login))
-        .route("/auth/login/2fa", post(auth::otp_login))
+        .route("/auth/login/otp", post(auth::otp_login))
+        .route("/auth/login/passkey", post(auth::start_passkey_login))
+        .route(
+            "/auth/login/passkey/confirm",
+            post(auth::finish_passkey_login),
+        )
         .route("/auth/reset", post(auth::start_password_reset))
         .route("/auth/reset/{token}", post(auth::finish_password_reset));
 
@@ -87,6 +92,12 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/otp/setup", post(auth::start_otp_setup))
         .route("/auth/otp/setup/confirm", post(auth::finish_otp_setup))
         .route("/auth/otp/disable", post(auth::disable_otp))
+        .route("/auth/passkeys", get(auth::list_passkeys))
+        .route("/auth/passkey/setup", post(auth::start_passkey_setup))
+        .route(
+            "/auth/passkey/setup/confirm",
+            post(auth::finish_passkey_setup),
+        )
         .route("/roots", get(files::roots))
         .route("/roots/{root_id}/users", get(folders::list_members))
         .route("/roots/{root_id}/users/all", get(folders::list_all_members))

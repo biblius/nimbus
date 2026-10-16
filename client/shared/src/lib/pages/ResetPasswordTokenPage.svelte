@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ShieldAlert } from "@lucide/svelte";
   import { ValidationError } from "../api";
   import Button from "../components/ui/button/button.svelte";
   import Card from "../components/ui/card/card.svelte";
@@ -59,6 +60,23 @@
           Enter a new password for your Nimbus account.
         </p>
       </div>
+
+      {#if !changed}
+        <div
+          class="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/8 p-3"
+        >
+          <ShieldAlert size={15} class="mt-0.5 shrink-0 text-warning" />
+          <div class="min-w-0 text-xs text-warning/90">
+            <p class="font-semibold tracking-tight text-warning">
+              Two-factor authentication will be cleared
+            </p>
+            <p class="mt-1">
+              Changing your password removes authenticator codes and passkeys,
+              and signs out all sessions. Set up 2FA again after you sign in.
+            </p>
+          </div>
+        </div>
+      {/if}
 
       {#if changed}
         <p class="text-sm">

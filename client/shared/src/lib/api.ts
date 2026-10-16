@@ -11,13 +11,20 @@ import type {
   ListQuery,
   OtpSetup,
   Page,
+  PasskeyLoginChallenge,
+  PasskeySetupChallenge,
   Root,
   RootData,
   SelfUserData,
   UserData,
+  UserPasskeyView,
   UserView,
   UserViewFull,
 } from "./types";
+import type {
+  AuthenticatePublicKeyCredentialJSON,
+  RegisterPublicKeyCredentialJSON,
+} from "./webauthn";
 
 const OTP_TOKEN_HEADER = "x-otp-token";
 
@@ -85,7 +92,9 @@ const VALIDATION_CODE = 4;
  */
 const AUTH_CHALLENGE_PATHS = new Set([
   "/auth/login",
-  "/auth/login/2fa",
+  "/auth/login/otp",
+  "/auth/login/passkey",
+  "/auth/login/passkey/confirm",
   "/auth/password",
   "/auth/otp/setup/confirm",
   "/auth/otp/disable",
@@ -139,7 +148,7 @@ export class NimbusClient {
   }
 
   loginOtp(token: string, otpCode: string): Promise<LoginResult> {
-    return this.request<LoginResult>("/auth/login/2fa", {
+    return this.request<LoginResult>("/auth/login/otp", {
       method: "POST",
       body: JSON.stringify({ token, otpCode }),
     });
@@ -223,6 +232,43 @@ export class NimbusClient {
     return this.request<void>("/auth/otp/disable", {
       method: "POST",
       body: JSON.stringify({ otpCode }),
+    });
+  }
+
+  listPasskeys(): Promise<UserPasskeyView[]> {
+    return this.request<UserPasskeyView[]>("/auth/passkeys");
+  }
+
+  startPasskeySetup(): Promise<PasskeySetupChallenge> {
+    return this.request<PasskeySetupChallenge>("/auth/passkey/setup", {
+      method: "POST",
+    });
+  }
+
+  finishPasskeySetup(
+    token: string,
+    credential: RegisterPublicKeyCredentialJSON,
+  ): Promise<void> {
+    return this.request<void>("/auth/passkey/setup/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token, credential }),
+    });
+  }
+
+  startPasskeyLogin(token: string): Promise<PasskeyLoginChallenge> {
+    return this.request<PasskeyLoginChallenge>("/auth/login/passkey", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  finishPasskeyLogin(
+    token: string,
+    credential: AuthenticatePublicKeyCredentialJSON,
+  ): Promise<LoginResult> {
+    return this.request<LoginResult>("/auth/login/passkey/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token, credential }),
     });
   }
 
