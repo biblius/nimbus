@@ -26,7 +26,6 @@
   import { kv, type FilesViewMode } from "../storage";
   import { hasListThumbnail, isPreviewable } from "../fileKind";
   import FileListItem from "./FileListItem.svelte";
-  import FilePreview from "./FilePreview.svelte";
   import FileTileItem from "./FileTileItem.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
   import FileViewModeMenu from "./FileViewModeMenu.svelte";
@@ -899,11 +898,15 @@
     const range = event.shiftKey;
 
     if (range && selected.length > 0) {
-      const anchorId =
+      let anchorId = selected[0];
+
+      if (
         selectionAnchor != null &&
         entries.some((entry) => entry.file.id === selectionAnchor)
-          ? selectionAnchor
-          : selected[0];
+      ) {
+        anchorId = selectionAnchor;
+      }
+
       const ids = entries.map((entry) => entry.file.id);
       const from = ids.indexOf(anchorId);
       const to = ids.indexOf(id);
@@ -1404,9 +1407,7 @@
     <!-- COLUMN HEADERS -->
 
     {#if tiles}
-      <div
-        class="flex h-10 shrink-0 items-center justify-end border-b px-3"
-      >
+      <div class="flex h-10 shrink-0 items-center justify-end border-b px-3">
         <FileViewModeMenu bind:mode={viewMode} />
       </div>
     {:else}
@@ -1616,18 +1617,20 @@
   </div>
 
   {#if previewFileId !== null && previewEntries.some((entry) => entry.file.id === previewFileId)}
-    <FilePreview
-      rootId={root.id}
-      files={previewEntries}
-      fileId={previewFileId}
-      onClose={() => (previewFileId = null)}
-      onSelect={(id) => (previewFileId = id)}
-      onUpdated={(entry) => {
-        entries = entries.map((item) =>
-          item.file.id === entry.id ? { file: entry, metadata: null } : item,
-        );
-      }}
-    />
+    {#await import("./FilePreview.svelte") then { default: FilePreview }}
+      <FilePreview
+        rootId={root.id}
+        files={previewEntries}
+        fileId={previewFileId}
+        onClose={() => (previewFileId = null)}
+        onSelect={(id) => (previewFileId = id)}
+        onUpdated={(entry) => {
+          entries = entries.map((item) =>
+            item.file.id === entry.id ? { file: entry, metadata: null } : item,
+          );
+        }}
+      />
+    {/await}
   {/if}
 
   <ConfirmDialog

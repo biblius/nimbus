@@ -35,8 +35,6 @@
   import { cn } from "../utils";
   import AudioPreviewContent from "./preview/AudioPreviewContent.svelte";
   import ImagePreviewContent from "./preview/ImagePreviewContent.svelte";
-  import PdfPreviewContent from "./preview/PdfPreviewContent.svelte";
-  import TextPreviewContent from "./preview/TextPreviewContent.svelte";
   import VideoPreviewContent from "./preview/VideoPreviewContent.svelte";
 
   let {
@@ -580,20 +578,24 @@
         {autoplay}
       />
     {:else if current && isText}
-      <TextPreviewContent
-        bind:this={textPreview}
-        {rootId}
-        fileId={current.file.id}
-        name={current.file.name}
-        {onUpdated}
-        bind:editing
-      />
+      {#await import("./preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}
+        <TextPreviewContent
+          bind:this={textPreview}
+          {rootId}
+          fileId={current.file.id}
+          name={current.file.name}
+          {onUpdated}
+          bind:editing
+        />
+      {/await}
     {:else if current && isPdf}
-      <PdfPreviewContent
-        {rootId}
-        fileId={current.file.id}
-        name={current.file.name}
-      />
+      {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
+        <PdfPreviewContent
+          {rootId}
+          fileId={current.file.id}
+          name={current.file.name}
+        />
+      {/await}
     {/if}
   </div>
 
