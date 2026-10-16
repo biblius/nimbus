@@ -12,7 +12,7 @@
   } from "@lucide/svelte";
   import { PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
   import { DragDropProvider, DragOverlay } from "@dnd-kit/svelte";
-  import { tick, untrack } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import { navigate } from "../router";
   import { ApiError, ValidationError } from "../api";
   import { session } from "../session.svelte";
@@ -24,7 +24,7 @@
     type Root,
   } from "../types";
   import { kv } from "../storage";
-  import { isPreviewable } from "../fileKind";
+  import { hasListThumbnail, isPreviewable } from "../fileKind";
   import FileListItem from "./FileListItem.svelte";
   import FilePreview from "./FilePreview.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
@@ -68,6 +68,15 @@
 
   /// How many files are sent at the same time.
   const PARALLEL_UPLOADS = 10;
+  const PREVIEW_POLL_MS = 3000;
+  const PREVIEW_MAX_ATTEMPTS = 5;
+
+  type PreviewJob = { id: string; attempts: number };
+
+  const previewQueue: PreviewJob[] = [];
+  let previewThumbs = $state<Record<string, string>>({});
+  let previewTimer: ReturnType<typeof setInterval> | undefined;
+  let previewPolling = false;
 
   const sensors = [
     PointerSensor.configure({
@@ -275,12 +284,121 @@
     directoryError = "";
   }
 
+  function stopPreviewPoll() {
+    if (previewTimer !== undefined) {
+      clearInterval(previewTimer);
+      previewTimer = undefined;
+    }
+  }
+
+  function clearPreviewThumbs() {
+    stopPreviewPoll();
+
+    previewQueue.length = 0;
+
+    for (const url of Object.values(previewThumbs)) {
+      URL.revokeObjectURL(url);
+    }
+
+    previewThumbs = {};
+  }
+
+  function enqueuePreview(file: FileEntry) {
+    if (file.kind !== "file" || file.parent !== location.id) {
+      return;
+    }
+
+    if (!hasListThumbnail({ file, metadata: null })) {
+      return;
+    }
+
+    if (
+      previewThumbs[file.id] ||
+      previewQueue.some((job) => job.id === file.id)
+    ) {
+      return;
+    }
+
+    previewQueue.push({ id: file.id, attempts: 0 });
+
+    startPreviewPoll();
+  }
+
+  function startPreviewPoll() {
+    if (previewTimer !== undefined) {
+      return;
+    }
+
+    void drainPreviewQueue();
+
+    previewTimer = setInterval(() => {
+      void drainPreviewQueue();
+    }, PREVIEW_POLL_MS);
+  }
+
+  async function drainPreviewQueue() {
+    if (previewPolling || previewQueue.length === 0) {
+      if (previewQueue.length === 0) {
+        stopPreviewPoll();
+      }
+      return;
+    }
+
+    previewPolling = true;
+
+    const rootId = root.id;
+    const jobs = previewQueue.slice();
+
+    try {
+      await Promise.all(
+        jobs.map(async (job) => {
+          try {
+            const blob = await session.client.preview(rootId, job.id);
+
+            const prev = previewThumbs[job.id];
+
+            if (prev) {
+              URL.revokeObjectURL(prev);
+            }
+
+            previewThumbs[job.id] = URL.createObjectURL(blob);
+
+            const index = previewQueue.findIndex((item) => item.id === job.id);
+
+            if (index !== -1) {
+              previewQueue.splice(index, 1);
+            }
+          } catch {
+            job.attempts += 1;
+            if (job.attempts >= PREVIEW_MAX_ATTEMPTS) {
+              const index = previewQueue.findIndex(
+                (item) => item.id === job.id,
+              );
+              if (index !== -1) {
+                previewQueue.splice(index, 1);
+              }
+            }
+          }
+        }),
+      );
+    } finally {
+      previewPolling = false;
+      if (previewQueue.length === 0) {
+        stopPreviewPoll();
+      }
+    }
+  }
+
+  onDestroy(clearPreviewThumbs);
+
   async function open(rootId: string, parent: string | null) {
     const currentLoad = ++latestLoad;
 
     resetDraft();
 
     loading = true;
+
+    clearPreviewThumbs();
 
     entries = [];
     selected = [];
@@ -511,6 +629,7 @@
 
             if (root.id === rootId && location.id === parent) {
               insertEntry(created);
+              enqueuePreview(created);
             }
           } catch (cause) {
             uploadFailure(item, cause);
@@ -577,6 +696,7 @@
       if (root.id === rootId && location.id === parent) {
         for (const entry of created) {
           insertEntry(entry);
+          enqueuePreview(entry);
         }
       }
     } catch (cause) {
@@ -1376,6 +1496,7 @@
               <FileListItem
                 {entry}
                 rootId={root.id}
+                thumbnailUrl={previewThumbs[entry.file.id]}
                 name={label(entry)}
                 {columns}
                 selected={selected.includes(entry.file.id)}

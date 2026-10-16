@@ -12,8 +12,6 @@
   import Menu from "./ui/menu/menu.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
 
-  const PREVIEW_POLL_MS = 3000;
-  const PREVIEW_MAX_ATTEMPTS = 5;
   const ICON = 24;
   const LONG_PRESS_MS = 480;
   /** Match parent PointerSensor drag distance so long-press cancels before drag starts. */
@@ -34,9 +32,11 @@
     onDownload,
     onCopy,
     onDelete,
+    thumbnailUrl,
   }: {
     entry: FileView;
     rootId: string;
+    thumbnailUrl?: string;
     name: string;
     columns: string;
     selected: boolean;
@@ -227,55 +227,33 @@
   $effect(() => {
     const fileId = entry.file.id;
     const hasPreview = entry.metadata?.preview != null;
-    const thumbnailable = hasListThumbnail(entry);
 
     previewUrl = null;
 
-    if (entry.file.kind !== "file" || (!hasPreview && !thumbnailable)) {
+    if (
+      entry.file.kind !== "file" ||
+      !hasPreview ||
+      !hasListThumbnail(entry)
+    ) {
       return;
     }
 
     let cancelled = false;
     let objectUrl: string | null = null;
-    let attempts = 0;
-    let interval: ReturnType<typeof setInterval> | undefined;
 
-    function stop() {
-      if (interval !== undefined) {
-        clearInterval(interval);
-        interval = undefined;
-      }
-    }
-
-    function load() {
-      attempts += 1;
-
-      session.client
-        .preview(rootId, fileId)
-        .then((blob) => {
-          if (cancelled) {
-            return;
-          }
-          stop();
-          objectUrl = URL.createObjectURL(blob);
-          previewUrl = objectUrl;
-        })
-        .catch(() => {
-          if (cancelled || attempts >= PREVIEW_MAX_ATTEMPTS) {
-            stop();
-          }
-        });
-    }
-
-    load();
-
-    if (!hasPreview) {
-      interval = setInterval(load, PREVIEW_POLL_MS);
-    }
+    session.client
+      .preview(rootId, fileId)
+      .then((blob) => {
+        if (cancelled) {
+          return;
+        }
+        objectUrl = URL.createObjectURL(blob);
+        previewUrl = objectUrl;
+      })
+      .catch(() => {});
 
     return () => {
       cancelled = true;
-      stop();
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl);
       }
@@ -329,9 +307,9 @@
         title="Preview"
         onclick={onIconClick}
       >
-        {#if showThumbnail && previewUrl}
+        {#if showThumbnail && (thumbnailUrl ?? previewUrl)}
           <img
-            src={previewUrl}
+            src={thumbnailUrl ?? previewUrl}
             alt=""
             width="48"
             height="48"
