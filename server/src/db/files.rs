@@ -68,20 +68,20 @@ pub(crate) async fn list_descendants_in(
         r#"
         WITH RECURSIVE tree AS (
             SELECT
-                id,
-                root_id,
-                "type" AS kind,
-                name,
-                parent,
-                format AS file_type,
-                hash,
-                size_bytes,
-                preview,
-                created_at,
-                updated_at,
+                f.id,
+                f.root_id,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.metadata,
+                f.created_at,
+                f.updated_at,
                 TRUE AS query_root
-            FROM {relation}
-            WHERE root_id =
+            FROM {relation} f
+            WHERE f.root_id =
         "#
     ));
 
@@ -89,29 +89,29 @@ pub(crate) async fn list_descendants_in(
 
     // `parent = $n` and `parent IS NULL` can each use an index.
     if let Some(parent) = parent {
-        query.push("parent = ").push_bind(parent);
+        query.push("f.parent = ").push_bind(parent);
     } else {
-        query.push("parent IS NULL");
+        query.push("f.parent IS NULL");
     }
 
     query.push(format!(
         r#"
             UNION
             SELECT
-                f.id,
-                f.root_id,
-                f."type",
-                f.name,
-                f.parent,
-                f.format,
-                f.hash,
-                f.size_bytes,
-                f.preview,
-                f.created_at,
-                f.updated_at,
+                child.id,
+                child.root_id,
+                child."type",
+                child.name,
+                child.parent,
+                child.format,
+                child.hash,
+                child.size_bytes,
+                child.metadata,
+                child.created_at,
+                child.updated_at,
                 FALSE AS query_root
-            FROM {relation} f
-            JOIN tree t ON f.parent = t.id
+            FROM {relation} child
+            JOIN tree t ON child.parent = t.id
         )
         SELECT
             id,
@@ -122,7 +122,7 @@ pub(crate) async fn list_descendants_in(
             file_type,
             hash,
             size_bytes,
-            preview,
+            metadata,
             created_at,
             updated_at,
             query_root

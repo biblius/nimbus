@@ -228,7 +228,7 @@ impl TrashFileService {
             name: String::new(),
             kind: FileKind::Directory,
             file_type: None,
-            preview: None,
+            metadata: None,
             children: FileTree::from_entries(files),
         })
     }

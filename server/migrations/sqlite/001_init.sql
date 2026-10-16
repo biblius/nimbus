@@ -49,7 +49,8 @@ CREATE TABLE files (
   format TEXT,
   hash TEXT,
   size_bytes INTEGER NOT NULL,
-  preview TEXT,
+  -- Optional generated artifacts (preview hashes, etc.). Null until processing.
+  metadata TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -62,9 +63,13 @@ CREATE INDEX files_parent_idx ON files (parent);
 
 CREATE INDEX files_hash_idx ON files (hash);
 
-CREATE INDEX files_preview_idx ON files (preview)
+CREATE INDEX files_preview_64_idx ON files (json_extract(metadata, '$.preview64'))
 WHERE
-  preview IS NOT NULL;
+  json_extract(metadata, '$.preview64') IS NOT NULL;
+
+CREATE INDEX files_preview_256_idx ON files (json_extract(metadata, '$.preview256'))
+WHERE
+  json_extract(metadata, '$.preview256') IS NOT NULL;
 
 -- Rows leave `files` when trashed. A directly trashed row has `parent` NULL.
 -- Descendants keep their parent.
@@ -79,7 +84,7 @@ CREATE TABLE trashed_files (
   format TEXT,
   hash TEXT,
   size_bytes INTEGER NOT NULL,
-  preview TEXT,
+  metadata TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   trashed_at TEXT NOT NULL
@@ -93,9 +98,13 @@ CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
 
-CREATE INDEX trashed_files_preview_idx ON trashed_files (preview)
+CREATE INDEX trashed_files_preview_64_idx ON trashed_files (json_extract(metadata, '$.preview64'))
 WHERE
-  preview IS NOT NULL;
+  json_extract(metadata, '$.preview64') IS NOT NULL;
+
+CREATE INDEX trashed_files_preview_256_idx ON trashed_files (json_extract(metadata, '$.preview256'))
+WHERE
+  json_extract(metadata, '$.preview256') IS NOT NULL;
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 

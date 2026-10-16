@@ -27,7 +27,8 @@
 
   const hasChildren = $derived(node.children.length > 0);
   const showThumbnail = $derived(
-    treeHasThumbnail(node.kind, node.fileType) && node.preview != null,
+    treeHasThumbnail(node.kind, node.fileType) &&
+      node.metadata?.preview64 != null,
   );
 
   let previewUrl = $state<string | null>(null);
@@ -35,7 +36,7 @@
   $effect(() => {
     const fileId = node.id;
     const rootId = root.id;
-    const preview = node.preview;
+    const preview = node.metadata?.preview64;
     const thumbnailable = treeHasThumbnail(node.kind, node.fileType);
 
     previewUrl = null;
@@ -48,7 +49,7 @@
     let objectUrl: string | null = null;
 
     session.client
-      .preview(rootId, fileId)
+      .preview(rootId, fileId, 64)
       .then((blob) => {
         if (cancelled) {
           return;

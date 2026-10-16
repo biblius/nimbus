@@ -233,7 +233,8 @@
 
   $effect(() => {
     const fileId = entry.file.id;
-    const hasPreview = entry.metadata?.preview != null;
+    // Both small and large tiles display well above 64 CSS px; use the 256 icon.
+    const hasPreview = entry.metadata?.preview256 != null;
 
     previewUrl = null;
 
@@ -249,7 +250,7 @@
     let objectUrl: string | null = null;
 
     session.client
-      .preview(rootId, fileId)
+      .preview(rootId, fileId, 256)
       .then((blob) => {
         if (cancelled) {
           return;

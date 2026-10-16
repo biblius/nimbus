@@ -12,7 +12,9 @@ use crate::{
     error::AppError,
     file::{
         format::{FileType, TextFormat},
-        model::{CopyFile, FileContentPreview, MoveFiles, RootView, TrashFiles},
+        model::{
+            CopyFile, FileContentPreview, MoveFiles, PreviewSize, RootView, TrashFiles,
+        },
         tree::FileTree,
     },
     user::model::User,
@@ -280,7 +282,7 @@ impl LiveFileService {
                 file_type: None,
                 hash: None,
                 size_bytes: 0,
-                preview: None,
+                metadata: None,
                 created_at: now,
                 updated_at: now,
             })
@@ -296,7 +298,7 @@ impl LiveFileService {
             file_type: Some(file.file_type.clone()),
             hash: Some(file.hash.clone()),
             size_bytes: file.size,
-            preview: None,
+            metadata: None,
             created_at: now,
             updated_at: now,
         }));
@@ -448,11 +450,16 @@ impl LiveFileService {
 
         Ok((file, path, mime))
     }
-    /// Serve the generated preview image for a file, when one exists.
+    /// Serve a generated preview image for a file, when one exists.
     ///
     /// Works for both live and trashed files so trash trees can show thumbnails.
-    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
-    pub async fn preview(&self, user: &User, id: Uuid) -> Result<FileContentPreview, AppError> {
+    #[instrument(skip(self, user), fields(user_id = %user.id, ?size), err(Debug))]
+    pub async fn preview(
+        &self,
+        user: &User,
+        id: Uuid,
+        size: PreviewSize,
+    ) -> Result<FileContentPreview, AppError> {
         let file = self.readable_any(user, id).await?;
 
         if file.kind != FileKind::File {
@@ -461,10 +468,16 @@ impl LiveFileService {
             ));
         }
 
-        let hash = file
-            .preview
-            .as_deref()
+        let meta = file
+            .metadata
+            .as_ref()
             .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
+
+        let hash = match size {
+            PreviewSize::Icon => meta.preview_64.as_deref(),
+            PreviewSize::Tile => meta.preview_256.as_deref(),
+        }
+        .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
 
         let path = self.storage.preview_path(hash);
 
@@ -599,7 +612,7 @@ impl LiveFileService {
                 file_type: entry.file_type,
                 hash: entry.hash,
                 size_bytes: entry.size_bytes,
-                preview: entry.preview,
+                metadata: entry.metadata,
                 created_at: now,
                 updated_at: entry.updated_at,
             });
@@ -638,7 +651,7 @@ impl LiveFileService {
             name: String::new(),
             kind: FileKind::Directory,
             file_type: None,
-            preview: None,
+            metadata: None,
             children: FileTree::from_entries(files),
         })
     }

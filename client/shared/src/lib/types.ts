@@ -266,8 +266,8 @@ export type FileTree = {
   kind: "file" | "directory";
   /** Detected format for files; null for directories. */
   fileType?: FileType | null;
-  /** Content hash of the generated preview blob, when one exists. */
-  preview?: string | null;
+  /** Joined preview hashes from `file_metadata`, when present. */
+  metadata?: FileMetadata | null;
   children: FileTree[];
 };
 
@@ -281,15 +281,18 @@ export type FileEntry = {
   fileType: FileType | null;
   hash: string | null;
   sizeBytes: number;
-  preview: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-/** Preview fields mirrored from `files.preview` for listings. */
+/** Preview hashes from `file_metadata` for listings and trees. */
 export type FileMetadata = {
-  preview: string | null;
+  preview64: string | null;
+  preview256: string | null;
 };
+
+/** Supported square preview edge lengths. */
+export type PreviewSize = 64 | 256;
 
 /** Directory listing row: file entry with optional joined metadata. */
 export type FileView = {

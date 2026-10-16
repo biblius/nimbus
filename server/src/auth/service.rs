@@ -404,7 +404,7 @@ impl AuthenticationService {
             .store(OneShotToken::OneTimePassword, token, &encoded)
             .await?;
 
-        let qr = thotp::qr::generate_code_svg(&uri, None, None, thotp::qr::EcLevel::M).map_err(
+        let qr = thotp::qr::generate_code_svg(&uri, None, None, thotp::qr::EcLevel::L).map_err(
             |error| {
                 tracing::error!(%error, "error generating TOTP QR code");
                 AppError::Internal
@@ -550,10 +550,8 @@ impl AuthenticationService {
         let (token, remember, permanent) = if let Some(token) = data.token {
             // Bridge restart: prove the ceremony exists, keep the original prefs.
             // Do NOT type-infer this get as Uuid - the payload is PasskeyLoginCeremony.
-            let existing: PasskeyLoginCeremony = self
-                .tokens
-                .get(OneShotToken::Passkey, token)
-                .await?;
+            let existing: PasskeyLoginCeremony =
+                self.tokens.get(OneShotToken::Passkey, token).await?;
 
             (token, existing.remember, existing.permanent)
         } else {

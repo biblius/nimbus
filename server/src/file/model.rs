@@ -4,12 +4,16 @@ use super::format::FileType;
 use crate::{db::Db, error::AppError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError, prelude::FromRow};
+use sqlx::{
+    Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError, prelude::FromRow,
+    types::Json,
+};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validify::{Validate, Validify};
 
 /// Application native model. `parent` is null for entries that sit directly in a root.
+/// Corresponds to the `files` / `trashed_files` SQL rows.
 #[derive(Debug, Clone, Serialize, ToSchema, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct FileEntry {
@@ -22,20 +26,48 @@ pub struct FileEntry {
     pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
-    /// Content hash of the generated preview blob, when one exists.
-    pub preview: Option<String>,
+    /// Generated artifacts (preview hashes, etc.). Omitted from JSON when null.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<FileMetadata>)]
+    pub metadata: Option<Json<FileMetadata>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-/// Preview fields exposed on directory listings (sourced from `files.preview`).
-#[derive(Debug, Clone, Serialize, ToSchema)]
+/// Generated preview hashes stored in the `metadata` JSONB column.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct FileMetadata {
-    pub preview: Option<String>,
+    /// Content hash of the 64×64 WebP preview blob.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_64: Option<String>,
+    /// Content hash of the 256×256 WebP preview blob.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_256: Option<String>,
 }
 
-/// A file entry with optional joined metadata for client listings.
+/// Square preview edge length requested by clients.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewSize {
+    /// List / small-tile icon.
+    Icon = 64,
+    /// Large-tile thumbnail.
+    Tile = 256,
+}
+
+impl PreviewSize {
+    pub fn from_px(px: u32) -> Result<Self, AppError> {
+        match px {
+            64 => Ok(Self::Icon),
+            256 => Ok(Self::Tile),
+            _ => Err(AppError::Unprocessable(
+                "Preview size must be 64 or 256".into(),
+            )),
+        }
+    }
+}
+
+/// A file entry with metadata lifted out for client listings.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FileView {
@@ -43,9 +75,13 @@ pub struct FileView {
     pub metadata: Option<FileMetadata>,
 }
 
-impl FileView {
-    pub fn new(file: FileEntry, metadata: Option<FileMetadata>) -> Self {
-        Self { file, metadata }
+impl From<FileEntry> for FileView {
+    fn from(mut entry: FileEntry) -> Self {
+        let metadata = entry.metadata.take().map(|json| json.0);
+        Self {
+            file: entry,
+            metadata,
+        }
     }
 }
 

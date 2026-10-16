@@ -8,12 +8,12 @@ use crate::{
     error::AppError,
     file::{
         format::FileType,
-        model::{FileEntry, FileKind, FileRef},
+        model::{FileEntry, FileKind, FileMetadata, FileRef},
         tree::FileEntryTree,
     },
 };
 use chrono::{DateTime, Utc};
-use sqlx::{Executor, QueryBuilder};
+use sqlx::{Executor, QueryBuilder, types::Json};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -52,7 +52,7 @@ impl TrashRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
-                preview,
+                metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at
             FROM trashed_files
@@ -121,7 +121,7 @@ impl TrashRepository {
                 format AS file_type,
                 hash,
                 size_bytes,
-                preview,
+                metadata,
                 created_at,
                 updated_at
             "#,
@@ -154,7 +154,7 @@ impl TrashRepository {
                 format,
                 hash,
                 size_bytes,
-                preview,
+                metadata,
                 created_at,
                 updated_at,
                 trashed_at
@@ -179,7 +179,7 @@ impl TrashRepository {
                 .push_bind(file.file_type.clone())
                 .push_bind(&file.hash)
                 .push_bind(file.size_bytes)
-                .push_bind(&file.preview)
+                .push_bind(&file.metadata)
                 .push_bind(file.created_at)
                 .push_bind(now)
                 .push_bind(now);
@@ -242,7 +242,7 @@ impl TrashRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
-                preview,
+                metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at
             "#,

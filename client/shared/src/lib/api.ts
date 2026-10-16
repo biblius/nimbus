@@ -648,9 +648,13 @@ export class NimbusClient {
     URL.revokeObjectURL(url);
   }
 
-  /** Fetch a file's preview image as a blob. */
-  async preview(rootId: string, id: string): Promise<Blob> {
-    const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview`;
+  /** Fetch a file's preview image as a blob (`64` list icon or `256` large tile). */
+  async preview(
+    rootId: string,
+    id: string,
+    size: 64 | 256 = 64,
+  ): Promise<Blob> {
+    const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview?size=${size}`;
     const response = await fetch(`${this.root}${path}`, {
       credentials: "include",
     });

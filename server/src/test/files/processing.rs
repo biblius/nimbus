@@ -4,6 +4,7 @@ mod processing {
     use super::super::user;
     use crate::{
         db::FileRepository,
+        file::model::PreviewSize,
         test::{self, TestState},
     };
     use image::{GenericImageView, ImageFormat};
@@ -33,7 +34,7 @@ mod processing {
         }
     }
 
-    async fn await_preview(state: &TestState, file_id: Uuid) -> String {
+    async fn await_previews(state: &TestState, file_id: Uuid) -> (String, String) {
         let files = FileRepository::new(state.pool.clone());
 
         wait_until(std::time::Duration::from_secs(5), || {
@@ -41,19 +42,28 @@ mod processing {
             async move {
                 matches!(
                     files.get_live(file_id).await,
-                    Ok(Some(row)) if row.preview.is_some()
+                    Ok(Some(row))
+                        if row.metadata.as_ref().is_some_and(|meta| {
+                            meta.preview_64.is_some() && meta.preview_256.is_some()
+                        })
                 )
             }
         })
         .await;
 
-        files
+        let meta = files
             .get_live(file_id)
             .await
             .unwrap()
             .expect("file row")
-            .preview
-            .expect("preview hash")
+            .metadata
+            .expect("metadata")
+            .0;
+
+        (
+            meta.preview_64.expect("preview_64 hash"),
+            meta.preview_256.expect("preview_256 hash"),
+        )
     }
 
     fn png_bytes(r: u8, g: u8, b: u8) -> Vec<u8> {
@@ -99,8 +109,21 @@ mod processing {
         output.stdout
     }
 
+    fn assert_webp_size(path: &std::path::Path, expected: (u32, u32)) {
+        assert!(path.is_file(), "preview blob missing at {}", path.display());
+
+        let reader = image::ImageReader::open(path)
+            .unwrap()
+            .with_guessed_format()
+            .unwrap();
+        assert_eq!(reader.format(), Some(ImageFormat::WebP));
+
+        let img = reader.decode().expect("preview must be readable");
+        assert_eq!(img.dimensions(), expected);
+    }
+
     #[test]
-    async fn image_upload_creates_64x64_webp_preview(state: TestState) {
+    async fn image_upload_creates_64_and_256_webp_previews(state: TestState) {
         let _ada = user(state, "ada-preview").await;
         let session = test::login(state, "ada-preview", "temporary").await;
         let root = test::private_root(state, &session.user).await;
@@ -109,24 +132,19 @@ mod processing {
         let png = png_bytes(220, 40, 40);
         let entry = test::upload(state, &session.user, root, "photo.png", &png).await;
 
-        let preview_hash = await_preview(state, entry.id).await;
-        let path = test::preview_path(state.storage_dir(), &preview_hash);
+        let (icon_hash, tile_hash) = await_previews(state, entry.id).await;
+        assert_ne!(icon_hash, tile_hash);
 
-        assert!(path.is_file(), "preview blob missing at {}", path.display());
-        assert_eq!(test::preview_count(state.storage_dir()), before + 1);
+        let icon_path = test::preview_path(state.storage_dir(), &icon_hash);
+        let tile_path = test::preview_path(state.storage_dir(), &tile_hash);
 
-        let reader = image::ImageReader::open(&path)
-            .unwrap()
-            .with_guessed_format()
-            .unwrap();
-        assert_eq!(reader.format(), Some(ImageFormat::WebP));
-
-        let img = reader.decode().expect("preview must be readable");
-        assert_eq!(img.dimensions(), (64, 64));
+        assert_webp_size(&icon_path, (64, 64));
+        assert_webp_size(&tile_path, (256, 256));
+        assert_eq!(test::preview_count(state.storage_dir()), before + 2);
     }
 
     #[test]
-    async fn identical_images_share_one_preview_blob(state: TestState) {
+    async fn identical_images_share_preview_blobs(state: TestState) {
         let _ada = user(state, "ada-preview-dedup").await;
         let session = test::login(state, "ada-preview-dedup", "temporary").await;
         let root = test::private_root(state, &session.user).await;
@@ -138,14 +156,15 @@ mod processing {
         let first = test::upload(state, &session.user, root, "a.png", &png).await;
         let second = test::upload(state, &session.user, root, "b.png", &png).await;
 
-        let first_preview = await_preview(state, first.id).await;
-        let second_preview = await_preview(state, second.id).await;
+        let (first_icon, first_tile) = await_previews(state, first.id).await;
+        let (second_icon, second_tile) = await_previews(state, second.id).await;
 
-        assert_eq!(first_preview, second_preview);
+        assert_eq!(first_icon, second_icon);
+        assert_eq!(first_tile, second_tile);
         assert_eq!(first.hash, second.hash);
         assert_eq!(
             test::preview_count(state.storage_dir()),
-            before_previews + 1
+            before_previews + 2
         );
         assert_eq!(test::blob_count(state.storage_dir()), before_blobs + 1);
     }
@@ -168,11 +187,12 @@ mod processing {
         )
         .await;
 
-        let red_preview = await_preview(state, red.id).await;
-        let green_preview = await_preview(state, green.id).await;
+        let (red_icon, red_tile) = await_previews(state, red.id).await;
+        let (green_icon, green_tile) = await_previews(state, green.id).await;
 
-        assert_ne!(red_preview, green_preview);
-        assert_eq!(test::preview_count(state.storage_dir()), before + 2);
+        assert_ne!(red_icon, green_icon);
+        assert_ne!(red_tile, green_tile);
+        assert_eq!(test::preview_count(state.storage_dir()), before + 4);
     }
 
     #[test]
@@ -192,12 +212,12 @@ mod processing {
             .await
             .unwrap()
             .expect("file row");
-        assert!(file.preview.is_none());
+        assert!(file.metadata.is_none());
         assert_eq!(test::preview_count(state.storage_dir()), before);
     }
 
     #[test]
-    async fn video_upload_creates_64x64_webp_preview(state: TestState) {
+    async fn video_upload_creates_64_and_256_webp_previews(state: TestState) {
         let _ada = user(state, "ada-preview-video").await;
         let session = test::login(state, "ada-preview-video", "temporary").await;
         let root = test::private_root(state, &session.user).await;
@@ -206,20 +226,36 @@ mod processing {
         let mp4 = mp4_bytes();
         let entry = test::upload(state, &session.user, root, "clip.mp4", &mp4).await;
 
-        let preview_hash = await_preview(state, entry.id).await;
-        let path = test::preview_path(state.storage_dir(), &preview_hash);
+        let (icon_hash, tile_hash) = await_previews(state, entry.id).await;
+        assert_ne!(icon_hash, tile_hash);
 
-        assert!(path.is_file(), "preview blob missing at {}", path.display());
-        assert_eq!(test::preview_count(state.storage_dir()), before + 1);
+        assert_webp_size(
+            &test::preview_path(state.storage_dir(), &icon_hash),
+            (64, 64),
+        );
+        assert_webp_size(
+            &test::preview_path(state.storage_dir(), &tile_hash),
+            (256, 256),
+        );
+        assert_eq!(test::preview_count(state.storage_dir()), before + 2);
 
-        let reader = image::ImageReader::open(&path)
-            .unwrap()
-            .with_guessed_format()
+        let icon = state
+            .services
+            .files
+            .preview(&session.user, entry.id, PreviewSize::Icon)
+            .await
             .unwrap();
-        assert_eq!(reader.format(), Some(ImageFormat::WebP));
+        assert_eq!(icon.mime, "image/webp");
+        assert!(icon.len > 0);
 
-        let img = reader.decode().expect("preview must be readable");
-        assert_eq!(img.dimensions(), (64, 64));
+        let tile = state
+            .services
+            .files
+            .preview(&session.user, entry.id, PreviewSize::Tile)
+            .await
+            .unwrap();
+        assert_eq!(tile.mime, "image/webp");
+        assert!(tile.len > 0);
     }
 
     #[test]
@@ -230,7 +266,7 @@ mod processing {
 
         let png = png_bytes(10, 20, 30);
         let uploaded = test::upload(state, &session.user, root, "listed.png", &png).await;
-        let preview_hash = await_preview(state, uploaded.id).await;
+        let (icon_hash, tile_hash) = await_previews(state, uploaded.id).await;
 
         let listed = state
             .services
@@ -245,11 +281,8 @@ mod processing {
             .expect("uploaded file in listing");
 
         assert_eq!(view.file.name, "listed.png");
-        assert_eq!(
-            view.metadata
-                .as_ref()
-                .and_then(|meta| meta.preview.as_deref()),
-            Some(preview_hash.as_str())
-        );
+        let meta = view.metadata.as_ref().expect("joined metadata");
+        assert_eq!(meta.preview_64.as_deref(), Some(icon_hash.as_str()));
+        assert_eq!(meta.preview_256.as_deref(), Some(tile_hash.as_str()));
     }
 }

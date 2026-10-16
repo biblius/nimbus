@@ -253,9 +253,25 @@ impl DeletionQueue {
                 }
             }
 
-            // Delete preview
+            // GC unreferenced preview blobs (metadata left with the deleted row).
 
-            if let Some(preview_hash) = file.preview {
+            let preview_hashes = file
+                .metadata
+                .as_ref()
+                .map(|meta| {
+                    [
+                        meta.preview_64.clone(),
+                        meta.preview_256.clone(),
+                    ]
+                })
+                .into_iter()
+                .flatten()
+                .flatten()
+                .collect::<Vec<_>>();
+
+            let mut preview_failed = false;
+
+            for preview_hash in preview_hashes {
                 let remaining = match self.repository.files.count_preview(&preview_hash).await {
                     Ok(count) => count,
                     Err(e) => {
@@ -264,7 +280,8 @@ impl DeletionQueue {
                         self.fail_deletion(entry, format!("Could not count preview hash: {e}"))
                             .await;
 
-                        continue;
+                        preview_failed = true;
+                        break;
                     }
                 };
 
@@ -288,10 +305,15 @@ impl DeletionQueue {
                             )
                             .await;
 
-                            continue;
+                            preview_failed = true;
+                            break;
                         }
                     }
                 }
+            }
+
+            if preview_failed {
+                continue;
             }
 
             self.unqueue(entry).await;

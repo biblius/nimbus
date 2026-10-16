@@ -60,8 +60,8 @@ CREATE TABLE files (
   hash TEXT,
   -- Always null for directories
   size_bytes BIGINT NOT NULL,
-  -- Content hash of the generated preview blob; null until processing finishes (or for non-previewable files)
-  preview TEXT,
+  -- Optional generated artifacts (preview hashes, etc.). Null until processing.
+  metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
@@ -74,9 +74,13 @@ CREATE INDEX files_parent_idx ON files (parent);
 
 CREATE INDEX files_hash_idx ON files (hash);
 
-CREATE INDEX files_preview_idx ON files (preview)
+CREATE INDEX files_preview_64_idx ON files ((metadata ->> 'preview64'))
 WHERE
-  preview IS NOT NULL;
+  metadata ->> 'preview64' IS NOT NULL;
+
+CREATE INDEX files_preview_256_idx ON files ((metadata ->> 'preview256'))
+WHERE
+  metadata ->> 'preview256' IS NOT NULL;
 
 -- Used for soft deletion. Files end up here from `files`.
 -- A file that is directly deleted from `files` has its parent set to null
@@ -94,7 +98,7 @@ CREATE TABLE trashed_files (
   format TEXT,
   hash TEXT,
   size_bytes BIGINT NOT NULL,
-  preview TEXT,
+  metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   trashed_at TIMESTAMPTZ NOT NULL
@@ -108,9 +112,13 @@ CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
 
-CREATE INDEX trashed_files_preview_idx ON trashed_files (preview)
+CREATE INDEX trashed_files_preview_64_idx ON trashed_files ((metadata ->> 'preview64'))
 WHERE
-  preview IS NOT NULL;
+  metadata ->> 'preview64' IS NOT NULL;
+
+CREATE INDEX trashed_files_preview_256_idx ON trashed_files ((metadata ->> 'preview256'))
+WHERE
+  metadata ->> 'preview256' IS NOT NULL;
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 

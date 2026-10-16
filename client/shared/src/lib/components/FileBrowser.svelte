@@ -363,13 +363,19 @@
     previewPolling = true;
 
     const rootId = root.id;
+    // Tiles (small or large) need 256; list icons stay at 64.
+    const previewSize = tiles ? 256 : 64;
     const jobs = previewQueue.slice();
 
     try {
       await Promise.all(
         jobs.map(async (job) => {
           try {
-            const blob = await session.client.preview(rootId, job.id);
+            const blob = await session.client.preview(
+              rootId,
+              job.id,
+              previewSize,
+            );
 
             const prev = previewThumbs[job.id];
 
@@ -404,6 +410,22 @@
       }
     }
   }
+
+  // Swap cached thumbs when switching between list (64) and tiles (256).
+  let seenTiles: boolean | undefined;
+  $effect(() => {
+    const next = tiles;
+    if (seenTiles !== undefined && seenTiles !== next) {
+      for (const url of Object.values(previewThumbs)) {
+        URL.revokeObjectURL(url);
+      }
+      previewThumbs = {};
+      for (const entry of entries) {
+        enqueuePreview(entry.file);
+      }
+    }
+    seenTiles = next;
+  });
 
   onDestroy(clearPreviewThumbs);
 

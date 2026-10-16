@@ -10,58 +10,14 @@ use crate::{
         tree::FileEntryTree,
     },
 };
-use chrono::{DateTime, Utc};
-use sqlx::{Executor, FromRow, QueryBuilder};
+use chrono::Utc;
+use sqlx::{Executor, QueryBuilder, types::Json};
 use tracing::instrument;
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct FileRepository {
     pool: DbPool,
-}
-
-/// Directory listing row (includes `preview` from `files`).
-#[derive(Debug, FromRow)]
-struct FileViewRow {
-    id: Uuid,
-    root_id: Uuid,
-    created_by: Option<Uuid>,
-    kind: FileKind,
-    name: String,
-    parent: Option<Uuid>,
-    file_type: Option<FileType>,
-    hash: Option<String>,
-    size_bytes: i64,
-    preview: Option<String>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-}
-
-impl From<FileViewRow> for FileView {
-    fn from(row: FileViewRow) -> Self {
-        let preview = row.preview.clone();
-        let metadata = preview.as_ref().map(|hash| FileMetadata {
-            preview: Some(hash.clone()),
-        });
-
-        FileView::new(
-            FileEntry {
-                id: row.id,
-                root_id: row.root_id,
-                created_by: row.created_by,
-                kind: row.kind,
-                name: row.name,
-                parent: row.parent,
-                file_type: row.file_type,
-                hash: row.hash,
-                size_bytes: row.size_bytes,
-                preview,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-            },
-            metadata,
-        )
-    }
 }
 
 impl FileRepository {
@@ -327,7 +283,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
-                preview,
+                metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at
             FROM files
@@ -363,7 +319,7 @@ impl FileRepository {
                 format,
                 hash,
                 size_bytes,
-                preview,
+                metadata,
                 created_at,
                 updated_at
             )
@@ -378,7 +334,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
-                preview,
+                metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at
             "#,
@@ -420,7 +376,7 @@ impl FileRepository {
                 format,
                 hash,
                 size_bytes,
-                preview,
+                metadata,
                 created_at,
                 updated_at
             )
@@ -437,7 +393,7 @@ impl FileRepository {
                 .push_bind(file.file_type.clone())
                 .push_bind(&file.hash)
                 .push_bind(file.size_bytes)
-                .push_bind(&file.preview)
+                .push_bind(&file.metadata)
                 .push_bind(file.created_at)
                 .push_bind(file.updated_at);
         });
@@ -481,7 +437,7 @@ impl FileRepository {
                 f.format AS file_type,
                 f.hash,
                 f.size_bytes,
-                f.preview,
+                f.metadata,
                 f.created_at,
                 f.updated_at
             FROM files f
@@ -504,7 +460,7 @@ impl FileRepository {
         );
 
         let rows = query
-            .build_query_as::<FileViewRow>()
+            .build_query_as::<FileEntry>()
             .fetch_all(executor)
             .await
             .map_err(AppError::from)?;
@@ -535,19 +491,24 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
-    /// Store the content hash of a generated preview on a live file row.
-    #[instrument(skip(self), fields(file_id = %file_id), err(Debug))]
-    pub async fn set_preview(&self, file_id: Uuid, preview: &str) -> Result<(), AppError> {
+    /// Store generated preview metadata on a live file row.
+    #[instrument(skip(self, metadata), fields(file_id = %file_id), err(Debug))]
+    pub async fn set_metadata(
+        &self,
+        file_id: Uuid,
+        metadata: &FileMetadata,
+    ) -> Result<(), AppError> {
         let now = Utc::now();
+        let metadata = Json(metadata.clone());
 
         let result = sqlx::query!(
             r#"
             UPDATE files
-            SET preview = $2, updated_at = $3
+            SET metadata = $2, updated_at = $3
             WHERE id = $1
             "#,
             file_id,
-            preview,
+            metadata as Json<FileMetadata>,
             now
         )
         .execute(&self.pool)
@@ -593,7 +554,7 @@ impl FileRepository {
                 format AS file_type,
                 hash,
                 size_bytes,
-                preview,
+                metadata,
                 created_at,
                 updated_at
             "#,
@@ -646,8 +607,10 @@ impl FileRepository {
         sqlx::query_scalar!(
             r#"
             SELECT (
-                (SELECT COUNT(*) FROM files WHERE preview = $1) +
-                (SELECT COUNT(*) FROM trashed_files WHERE preview = $1)
+                (SELECT COUNT(*) FROM files WHERE metadata ->> 'preview64' = $1) +
+                (SELECT COUNT(*) FROM files WHERE metadata ->> 'preview256' = $1) +
+                (SELECT COUNT(*) FROM trashed_files WHERE metadata ->> 'preview64' = $1) +
+                (SELECT COUNT(*) FROM trashed_files WHERE metadata ->> 'preview256' = $1)
             ) AS "count!"
             "#,
             preview
@@ -677,7 +640,7 @@ impl FileRepository {
                     format,
                     hash,
                     size_bytes,
-                    preview,
+                    metadata,
                     created_at,
                     updated_at
                 FROM files
@@ -694,7 +657,7 @@ impl FileRepository {
                     child.format,
                     child.hash,
                     child.size_bytes,
-                    child.preview,
+                    child.metadata,
                     child.created_at,
                     child.updated_at
                 FROM files child
@@ -710,7 +673,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes AS "size_bytes!",
-                preview,
+                metadata AS "metadata: Json<FileMetadata>",
                 created_at AS "created_at!",
                 updated_at AS "updated_at!"
             FROM tree

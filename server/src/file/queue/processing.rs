@@ -1,7 +1,11 @@
 use crate::{
     db::files::FileRepository,
     error::AppError,
-    file::{format::FileType, model::FileEntry, storage::Storage},
+    file::{
+        format::FileType,
+        model::{FileEntry, FileMetadata},
+        storage::Storage,
+    },
 };
 use image::{DynamicImage, imageops::FilterType};
 use sha2::{Digest, Sha256};
@@ -9,8 +13,10 @@ use std::{io::Cursor, path::Path, process::Command};
 use tokio::sync::mpsc;
 use tracing::instrument;
 
-/// Nextcloud's smallest square preview size used for list/icon views.
-const PREVIEW_SIZE: u32 = 64;
+/// List / small-tile icon size.
+const PREVIEW_ICON: u32 = 64;
+/// Large-tile thumbnail size.
+const PREVIEW_TILE: u32 = 256;
 
 /// A committed file entry ready for background processing.
 #[derive(Debug)]
@@ -19,6 +25,12 @@ pub struct ProcessingRequest {
 }
 
 pub type ProcessingQueueHandle = mpsc::Sender<ProcessingRequest>;
+
+/// Encoded WebP previews at both supported sizes.
+struct PreviewPair {
+    icon: Vec<u8>,
+    tile: Vec<u8>,
+}
 
 /// Background worker that derives artifacts (previews, etc.) from uploaded files.
 pub struct ProcessingQueue {
@@ -76,7 +88,7 @@ impl ProcessingQueue {
         }
     }
 
-    /// Resize an image to a 64×64 WebP icon and store it content-addressed under the preview dir.
+    /// Resize an image to 64×64 and 256×256 WebP icons and store them content-addressed.
     #[instrument(skip(self, file), fields(file_id = %file.id), err(Debug))]
     async fn process_image(&self, file: FileEntry) -> Result<(), AppError> {
         let hash = file.hash.as_deref().ok_or_else(|| {
@@ -86,17 +98,17 @@ impl ProcessingQueue {
 
         let source_path = self.storage.path(hash);
 
-        let webp = tokio::task::spawn_blocking(move || encode_preview_webp(&source_path))
+        let pair = tokio::task::spawn_blocking(move || encode_preview_pair(&source_path))
             .await
             .map_err(|e| {
                 tracing::error!(error=%e, "preview encoding task failed");
                 AppError::Internal
             })??;
 
-        self.store_preview(file.id, &webp).await
+        self.store_previews(file.id, &pair).await
     }
 
-    /// Extract one video frame with system `ffmpeg`, then store the same 64×64 WebP preview.
+    /// Extract one video frame with system `ffmpeg`, then store both WebP sizes.
     #[instrument(skip(self, file), fields(file_id = %file.id), err(Debug))]
     async fn process_video(&self, file: FileEntry) -> Result<(), AppError> {
         let hash = file.hash.as_deref().ok_or_else(|| {
@@ -106,34 +118,45 @@ impl ProcessingQueue {
 
         let source_path = self.storage.path(hash);
 
-        let webp = tokio::task::spawn_blocking(move || encode_video_preview_webp(&source_path))
+        let pair = tokio::task::spawn_blocking(move || encode_video_preview_pair(&source_path))
             .await
             .map_err(|e| {
                 tracing::error!(error=%e, "video preview encoding task failed");
                 AppError::Internal
             })??;
 
-        self.store_preview(file.id, &webp).await
+        self.store_previews(file.id, &pair).await
     }
 
-    async fn store_preview(&self, file_id: uuid::Uuid, webp: &[u8]) -> Result<(), AppError> {
-        let preview_hash = hex::encode(Sha256::digest(webp));
+    async fn store_previews(&self, file_id: uuid::Uuid, pair: &PreviewPair) -> Result<(), AppError> {
+        let icon_hash = hex::encode(Sha256::digest(&pair.icon));
+        let tile_hash = hex::encode(Sha256::digest(&pair.tile));
 
-        self.storage.persist_preview(&preview_hash, webp).await?;
-        self.files.set_preview(file_id, &preview_hash).await?;
+        self.storage.persist_preview(&icon_hash, &pair.icon).await?;
+        self.storage.persist_preview(&tile_hash, &pair.tile).await?;
+        self.files
+            .set_metadata(
+                file_id,
+                &FileMetadata {
+                    preview_64: Some(icon_hash.clone()),
+                    preview_256: Some(tile_hash.clone()),
+                },
+            )
+            .await?;
 
         tracing::info!(
             file=%file_id,
-            preview=%preview_hash,
-            "stored file preview"
+            preview_64=%icon_hash,
+            preview_256=%tile_hash,
+            "stored file previews"
         );
 
         Ok(())
     }
 }
 
-/// Decode `path`, crop/resize to [`PREVIEW_SIZE`], and encode as WebP.
-fn encode_preview_webp(path: &Path) -> Result<Vec<u8>, AppError> {
+/// Decode `path` and encode both preview sizes as WebP.
+fn encode_preview_pair(path: &Path) -> Result<PreviewPair, AppError> {
     // Blobs are stored by content hash with no extension; sniff magic bytes.
     let img = image::ImageReader::open(path)
         .map_err(|e| {
@@ -151,15 +174,15 @@ fn encode_preview_webp(path: &Path) -> Result<Vec<u8>, AppError> {
             AppError::Internal
         })?;
 
-    resize_to_preview_webp(&img)
+    resize_to_preview_pair(&img)
 }
 
-/// Pull one still frame from a video blob, then crop/resize to the shared WebP icon.
+/// Pull one still frame from a video blob, then crop/resize to both WebP sizes.
 ///
 /// Asks system `ffmpeg` for a single PNG frame from `path`.
 ///
 /// Tries seek `1` first; if that fails (clip shorter than 1 second), retries at the start.
-fn encode_video_preview_webp(path: &Path) -> Result<Vec<u8>, AppError> {
+fn encode_video_preview_pair(path: &Path) -> Result<PreviewPair, AppError> {
     // Prefer a frame one second in so the thumbnail is
     // less likely to be a black/fade-in first frame.
     let png = match run_ffmpeg_frame(path, "1") {
@@ -178,17 +201,24 @@ fn encode_video_preview_webp(path: &Path) -> Result<Vec<u8>, AppError> {
         tracing::error!(error=%e, path=%path.display(), "failed to decode ffmpeg frame");
         AppError::Internal
     })?;
-    resize_to_preview_webp(&img)
+    resize_to_preview_pair(&img)
 }
 
-fn resize_to_preview_webp(img: &DynamicImage) -> Result<Vec<u8>, AppError> {
-    let icon = img.resize_to_fill(PREVIEW_SIZE, PREVIEW_SIZE, FilterType::Triangle);
+fn resize_to_preview_pair(img: &DynamicImage) -> Result<PreviewPair, AppError> {
+    Ok(PreviewPair {
+        icon: encode_webp_square(img, PREVIEW_ICON)?,
+        tile: encode_webp_square(img, PREVIEW_TILE)?,
+    })
+}
+
+fn encode_webp_square(img: &DynamicImage, size: u32) -> Result<Vec<u8>, AppError> {
+    let icon = img.resize_to_fill(size, size, FilterType::Triangle);
 
     let mut buf = Vec::new();
 
     icon.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::WebP)
         .map_err(|e| {
-            tracing::error!(error=%e, "failed to encode webp preview");
+            tracing::error!(error=%e, size, "failed to encode webp preview");
             AppError::Internal
         })?;
 

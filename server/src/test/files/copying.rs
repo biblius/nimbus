@@ -67,7 +67,7 @@ mod copying {
         assert_eq!(copied.file.size_bytes, source.size_bytes);
         assert_eq!(copied.file.file_type, source.file_type);
         assert_eq!(copied.file.created_by, source.created_by);
-        assert_eq!(copied.file.preview, source.preview);
+        assert_eq!(copied.metadata, None);
         assert!(copied.file.created_at >= source.created_at);
 
         let original = state

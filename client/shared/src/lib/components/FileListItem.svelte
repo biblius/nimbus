@@ -239,7 +239,7 @@
 
   $effect(() => {
     const fileId = entry.file.id;
-    const hasPreview = entry.metadata?.preview != null;
+    const hasPreview = entry.metadata?.preview64 != null;
 
     previewUrl = null;
 
@@ -255,7 +255,7 @@
     let objectUrl: string | null = null;
 
     session.client
-      .preview(rootId, fileId)
+      .preview(rootId, fileId, 64)
       .then((blob) => {
         if (cancelled) {
           return;

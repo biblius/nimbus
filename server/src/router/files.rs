@@ -3,8 +3,8 @@ use crate::{
     error::AppError,
     file::{
         model::{
-            CopyFile, CreateDirectory, CreateTextFile, FileEntry, FileView, MoveFiles, RestoreFile,
-            RootView, TrashFiles,
+            CopyFile, CreateDirectory, CreateTextFile, FileEntry, FileView, MoveFiles, PreviewSize,
+            RestoreFile, RootView, TrashFiles,
         },
         queue::DeletionResult,
         tree::FileTree,
@@ -34,6 +34,12 @@ use uuid::Uuid;
 #[derive(Deserialize)]
 pub struct ParentQuery {
     parent: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
+pub struct PreviewQuery {
+    /// Square edge length in pixels: `64` (default) or `256`.
+    size: Option<u32>,
 }
 
 #[utoipa::path(
@@ -722,7 +728,8 @@ pub(crate) async fn download_chunk(
     path = "/roots/{root_id}/files/{id}/preview",
     params(
         ("root_id" = Uuid, Path, description = "Root id"),
-        ("id" = Uuid, Path, description = "File id")
+        ("id" = Uuid, Path, description = "File id"),
+        ("size" = Option<u32>, Query, description = "Preview edge length: 64 (default) or 256")
     ),
     responses((status = 200, description = "Preview image bytes"))
 )]
@@ -730,8 +737,14 @@ pub(crate) async fn preview(
     State(state): State<AppState>,
     session: Session,
     Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<PreviewQuery>,
 ) -> Result<Response, AppError> {
-    let preview = state.services.files.preview(&session.user, file_id).await?;
+    let size = PreviewSize::from_px(query.size.unwrap_or(64))?;
+    let preview = state
+        .services
+        .files
+        .preview(&session.user, file_id, size)
+        .await?;
 
     Response::builder()
         .header(header::CONTENT_TYPE, preview.mime)

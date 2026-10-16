@@ -274,7 +274,7 @@ mod deletion {
         buf
     }
 
-    async fn await_preview(state: &TestState, file_id: Uuid) -> String {
+    async fn await_previews(state: &TestState, file_id: Uuid) -> (String, String) {
         let files = FileRepository::new(state.pool.clone());
 
         wait_until(std::time::Duration::from_secs(5), || {
@@ -282,31 +282,42 @@ mod deletion {
             async move {
                 matches!(
                     files.get_live(file_id).await,
-                    Ok(Some(row)) if row.preview.is_some()
+                    Ok(Some(row))
+                        if row.metadata.as_ref().is_some_and(|meta| {
+                            meta.preview_64.is_some() && meta.preview_256.is_some()
+                        })
                 )
             }
         })
         .await;
 
-        files
+        let meta = files
             .get_live(file_id)
             .await
             .unwrap()
             .expect("file row")
-            .preview
-            .expect("preview hash")
+            .metadata
+            .expect("metadata")
+            .0;
+
+        (
+            meta.preview_64.expect("preview_64 hash"),
+            meta.preview_256.expect("preview_256 hash"),
+        )
     }
 
     #[test]
-    async fn hard_delete_removes_preview_blob(state: TestState) {
+    async fn hard_delete_removes_preview_blobs(state: TestState) {
         let _ada = user(state, "ada-del-preview").await;
         let session = test::login(state, "ada-del-preview", "temporary").await;
         let root = test::private_root(state, &session.user).await;
 
         let file = test::upload(state, &session.user, root, "shot.png", &png_bytes()).await;
-        let preview_hash = await_preview(state, file.id).await;
-        let preview_path = test::preview_path(state.storage_dir(), &preview_hash);
-        assert!(preview_path.is_file());
+        let (icon_hash, tile_hash) = await_previews(state, file.id).await;
+        let icon_path = test::preview_path(state.storage_dir(), &icon_hash);
+        let tile_path = test::preview_path(state.storage_dir(), &tile_hash);
+        assert!(icon_path.is_file());
+        assert!(tile_path.is_file());
 
         let previews_before = test::preview_count(state.storage_dir());
 
@@ -336,10 +347,11 @@ mod deletion {
         })
         .await;
 
-        assert!(!preview_path.exists(), "preview blob should be removed");
+        assert!(!icon_path.exists(), "64px preview blob should be removed");
+        assert!(!tile_path.exists(), "256px preview blob should be removed");
         assert_eq!(
             test::preview_count(state.storage_dir()),
-            previews_before - 1
+            previews_before - 2
         );
     }
 
@@ -353,9 +365,10 @@ mod deletion {
         let first = test::upload(state, &session.user, root, "a.png", &png).await;
         let second = test::upload(state, &session.user, root, "b.png", &png).await;
 
-        let preview_hash = await_preview(state, first.id).await;
-        assert_eq!(await_preview(state, second.id).await, preview_hash);
-        let preview_path = test::preview_path(state.storage_dir(), &preview_hash);
+        let (icon_hash, tile_hash) = await_previews(state, first.id).await;
+        assert_eq!(await_previews(state, second.id).await, (icon_hash.clone(), tile_hash.clone()));
+        let icon_path = test::preview_path(state.storage_dir(), &icon_hash);
+        let tile_path = test::preview_path(state.storage_dir(), &tile_hash);
 
         state
             .services
@@ -390,8 +403,8 @@ mod deletion {
         .await;
 
         assert!(
-            preview_path.is_file(),
-            "shared preview must remain while second file exists"
+            icon_path.is_file() && tile_path.is_file(),
+            "shared previews must remain while second file exists"
         );
 
         state
@@ -427,8 +440,8 @@ mod deletion {
         .await;
 
         assert!(
-            !preview_path.exists(),
-            "preview removed with last reference"
+            !icon_path.exists() && !tile_path.exists(),
+            "previews removed with last reference"
         );
     }
 

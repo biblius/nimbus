@@ -186,12 +186,15 @@
 
     try {
       const setup = await session.client.startOtpSetup();
+
       if (qrUrl) {
         URL.revokeObjectURL(qrUrl);
       }
+
       qrUrl = URL.createObjectURL(
         new Blob([setup.qrSvg], { type: "image/svg+xml" }),
       );
+
       otpToken = setup.token;
       otpCode = "";
       otpPanel = "setup";
@@ -431,12 +434,12 @@
                   Scan with your authenticator, then enter the 6-digit code.
                 </p>
                 <div
-                  class="flex size-44 items-center justify-center rounded-md border bg-white p-3"
+                  class="flex size-64 items-center justify-center rounded-md border bg-white p-3"
                 >
                   <img
                     src={qrUrl}
                     alt="Two-factor authentication QR code"
-                    class="size-full object-contain"
+                    class="size-full object-contain [image-rendering:pixelated]"
                   />
                 </div>
                 <form

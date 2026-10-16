@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
-use crate::file::{format::FileType, model::FileKind};
+use crate::file::{
+    format::FileType,
+    model::{FileKind, FileMetadata},
+};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::FromRow;
+use sqlx::{FromRow, types::Json};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -15,8 +18,8 @@ pub struct FileTree {
     pub kind: FileKind,
     /// Detected format for files; null for directories.
     pub file_type: Option<FileType>,
-    /// Content hash of the generated preview blob, when one exists.
-    pub preview: Option<String>,
+    /// Preview hashes from the row's `metadata` column, when present.
+    pub metadata: Option<FileMetadata>,
     /// OpenAPI cannot expand this field; the value is the same `FileTree` shape.
     #[schema(no_recursion)]
     pub children: Vec<FileTree>,
@@ -72,7 +75,7 @@ impl From<FileEntryTree> for FileTree {
             name: value.name,
             kind: value.kind,
             file_type: value.file_type,
-            preview: value.preview,
+            metadata: value.metadata.map(|json| json.0),
             children: vec![],
         }
     }
@@ -88,7 +91,7 @@ pub struct FileEntryTree {
     pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
-    pub preview: Option<String>,
+    pub metadata: Option<Json<FileMetadata>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub query_root: bool,
@@ -118,7 +121,7 @@ mod tests {
             file_type: None,
             hash: None,
             size_bytes: 0,
-            preview: None,
+            metadata: None,
             created_at: now,
             updated_at: now,
             query_root,

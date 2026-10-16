@@ -674,7 +674,8 @@ mod trash {
             async move {
                 matches!(
                     files.get_live(file.id).await,
-                    Ok(Some(row)) if row.preview.is_some()
+                    Ok(Some(row))
+                        if row.metadata.as_ref().is_some_and(|meta| meta.preview_64.is_some())
                 )
             }
         })
@@ -685,8 +686,11 @@ mod trash {
             .await
             .unwrap()
             .expect("live row")
-            .preview
-            .expect("preview hash");
+            .metadata
+            .expect("metadata")
+            .0
+            .preview_64
+            .expect("preview_64 hash");
 
         state
             .services
@@ -706,13 +710,22 @@ mod trash {
             .iter()
             .find(|entry| entry.id == file.id)
             .expect("trashed image in tree");
-        assert_eq!(node.preview.as_deref(), Some(preview_hash.as_str()));
+        assert_eq!(
+            node.metadata
+                .as_ref()
+                .and_then(|meta| meta.preview_64.as_deref()),
+            Some(preview_hash.as_str())
+        );
         assert!(node.file_type.is_some());
 
         let preview = state
             .services
             .files
-            .preview(&session.user, file.id)
+            .preview(
+                &session.user,
+                file.id,
+                crate::file::model::PreviewSize::Icon,
+            )
             .await
             .unwrap();
         assert_eq!(preview.mime, "image/webp");
