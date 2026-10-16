@@ -7,7 +7,9 @@
   import type { FileTree, Root } from "../types";
   import { cn } from "../utils";
   import DeletionBanner from "./DeletionBanner.svelte";
-  import FolderPicker from "./FolderPicker.svelte";
+  import DestinationPicker, {
+    type DestinationRequest,
+  } from "./DestinationPicker.svelte";
   import TrashTreeItem from "./TrashTreeItem.svelte";
   import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
@@ -19,12 +21,7 @@
   let loading = $state<Record<string, boolean>>({});
   let expanded = $state<Record<string, boolean>>({});
 
-  let picker = $state<
-    | { kind: "item"; root: Root; node: FileTree }
-    | { kind: "all"; root: Root }
-    | null
-  >(null);
-  let selectedTree = $state<FileTree | null>(null);
+  let destination = $state<DestinationRequest | null>(null);
   let deleteTarget = $state<{ root: Root; node: FileTree } | null>(null);
   let deleting = $state(false);
 
@@ -32,14 +29,6 @@
     deleteTarget?.node.kind === "directory"
       ? "This folder and everything inside it will be permanently deleted. This cannot be undone."
       : "This file will be permanently deleted. This cannot be undone.",
-  );
-
-  const pickerTitle = $derived(
-    picker?.kind === "all"
-      ? "Restore all"
-      : picker?.kind === "item"
-        ? `Restore ${picker.node.name}`
-        : "",
   );
 
   onMount(() => {
@@ -80,57 +69,40 @@
     expanded[id] = !expanded[id];
   }
 
-  async function loadPicker(
-    next: { kind: "item"; root: Root; node: FileTree } | { kind: "all"; root: Root },
-  ) {
-    picker = next;
-    selectedTree = null;
-
-    try {
-      selectedTree = await session.client.tree(next.root.id);
-    } catch {
-      picker = null;
-      toastError("Could not load folders");
-    }
+  function openPicker(root: Root, node: FileTree) {
+    destination = {
+      roots: [root],
+      title: `Restore ${node.name}`,
+      description: "Choose a folder",
+      confirmLabel: "Restore",
+      onConfirm: async (_r, parent) => {
+        try {
+          await session.client.restore(root.id, node.id, parent);
+          destination = null;
+          await reload(root.id);
+        } catch {
+          toastError("Could not restore this item");
+        }
+      },
+    };
   }
 
-  async function openPicker(root: Root, node: FileTree) {
-    await loadPicker({ kind: "item", root, node });
-  }
-
-  async function openRestoreAll(root: Root) {
-    await loadPicker({ kind: "all", root });
-  }
-
-  function closePicker() {
-    picker = null;
-    selectedTree = null;
-  }
-
-  async function confirmPlace(parent: string | null) {
-    if (!picker) {
-      return;
-    }
-
-    const rootId = picker.root.id;
-
-    try {
-      if (picker.kind === "all") {
-        await session.client.restoreAll(rootId, parent);
-      } else {
-        await session.client.restore(rootId, picker.node.id, parent);
-      }
-    } catch {
-      toastError(
-        picker.kind === "all"
-          ? "Could not restore trash"
-          : "Could not restore this item",
-      );
-      return;
-    }
-
-    closePicker();
-    await reload(rootId);
+  function openRestoreAll(root: Root) {
+    destination = {
+      roots: [root],
+      title: "Restore all",
+      description: "Choose a folder",
+      confirmLabel: "Restore",
+      onConfirm: async (_r, parent) => {
+        try {
+          await session.client.restoreAll(root.id, parent);
+          destination = null;
+          await reload(root.id);
+        } catch {
+          toastError("Could not restore trash");
+        }
+      },
+    };
   }
 
   async function confirmDelete() {
@@ -267,17 +239,10 @@
   </div>
 </div>
 
-{#if selectedTree != null}
-  <FolderPicker
-    enabled={picker !== null}
-    tree={selectedTree}
-    rootName={picker?.root.name ?? ""}
-    title={pickerTitle}
-    description="Choose a folder"
-    onCancel={closePicker}
-    onConfirm={confirmPlace}
-  />
-{/if}
+<DestinationPicker
+  request={destination}
+  onCancel={() => (destination = null)}
+/>
 
 <ConfirmDialog
   open={deleteTarget !== null}

@@ -4,7 +4,7 @@ use crate::{
     file::{
         model::{
             CopyFile, CreateDirectory, CreateTextFile, FileEntry, FileView, MoveFiles, PreviewSize,
-            RestoreFile, RootView, TrashFiles,
+            RenameFile, RestoreFile, RootView, TrashFiles,
         },
         queue::DeletionResult,
         tree::FileTree,
@@ -755,6 +755,30 @@ pub(crate) async fn preview(
             tracing::error!(%error, "building preview response");
             AppError::Internal
         })
+}
+
+#[utoipa::path(
+    patch,
+    path = "/roots/{root_id}/files/{id}",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("id" = Uuid, Path, description = "File id")
+    ),
+    request_body = RenameFile,
+    responses((status = 204, description = "File renamed"))
+)]
+pub(crate) async fn rename_file(
+    Path((root_id, id)): Path<(Uuid, Uuid)>,
+    State(state): State<AppState>,
+    session: Session,
+    Json(input): Json<RenameFile>,
+) -> Result<StatusCode, AppError> {
+    state
+        .services
+        .files
+        .rename(&session.user, root_id, id, input)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(

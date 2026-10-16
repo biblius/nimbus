@@ -3,6 +3,7 @@ mod deletion;
 mod moving;
 mod overwrite;
 mod processing;
+mod renaming;
 mod roots;
 mod trash;
 mod tree;

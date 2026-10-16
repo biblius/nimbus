@@ -17,21 +17,17 @@
   import { ApiError, ValidationError } from "../api";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
-  import {
-    type FileEntry,
-    type FileTree,
-    type FileView,
-    type Root,
-  } from "../types";
+  import { type FileEntry, type FileView, type Root } from "../types";
   import { kv, type FilesViewMode } from "../storage";
   import { hasListThumbnail, isPreviewable } from "../fileKind";
+  import DestinationPicker, {
+    type DestinationRequest,
+  } from "./DestinationPicker.svelte";
   import FileListItem from "./FileListItem.svelte";
   import FileTileItem from "./FileTileItem.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
   import FileViewModeMenu from "./FileViewModeMenu.svelte";
-  import FolderPicker from "./FolderPicker.svelte";
   import ParentDropItem, { PARENT_DROPPABLE_ID } from "./ParentDropItem.svelte";
-  import RootPicker from "./RootPicker.svelte";
   import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
   import Input from "./ui/input/input.svelte";
@@ -111,10 +107,7 @@
   let deleting = $state(false);
   let pendingDelete = $state<string[]>([]);
   let previewFileId = $state<string | null>(null);
-  let pendingCopy = $state<FileView | null>(null);
-  let copyBusy = $state(false);
-  let copyPicker = $state<{ root: Root; entry: FileView } | null>(null);
-  let copyTree = $state<FileTree | null>(null);
+  let destination = $state<DestinationRequest | null>(null);
   let viewMode = $state<FilesViewMode>(kv.filesViewMode.get());
 
   const previewEntries = $derived(entries.filter(isPreviewable));
@@ -981,7 +974,7 @@
     clearSelection();
   }
 
-  function askDelete(ids: string[]) {
+  function startDelete(ids: string[]) {
     pendingDelete = ids.slice();
     deleteOpen = true;
   }
@@ -1121,7 +1114,7 @@
     }
   }
 
-  function askCopy(entry: FileView) {
+  function startCopy(entry: FileView) {
     const destinations = roots.filter((item) => item.id !== root.id);
 
     if (destinations.length === 0) {
@@ -1129,77 +1122,84 @@
       return;
     }
 
-    if (destinations.length === 1) {
-      void openCopyPicker(destinations[0], entry);
-      return;
-    }
-
-    pendingCopy = entry;
+    destination = {
+      roots: destinations,
+      title: `Copy ${label(entry)}`,
+      description: `Pick a destination for ${label(entry)} copy.`,
+      confirmLabel: "Copy",
+      onConfirm: async (targetRoot, parent) => {
+        try {
+          await session.client.copy(
+            root.id,
+            entry.file.id,
+            targetRoot.id,
+            parent,
+          );
+          destination = null;
+        } catch (cause) {
+          toastError(
+            cause instanceof TypeError
+              ? "The server could not be reached"
+              : "Could not copy that item",
+          );
+        }
+      },
+    };
   }
 
-  function resetCopy() {
-    pendingCopy = null;
-    copyBusy = false;
-    copyPicker = null;
-    copyTree = null;
+  function startMove(entry: FileView) {
+    destination = {
+      roots: [root],
+      title: `Move ${label(entry)}`,
+      description: `Pick a destination for ${label(entry)}.`,
+      confirmLabel: "Move",
+      onConfirm: async (_targetRoot, parent) => {
+        const rootId = root.id;
+        const currentParent = location.id;
+
+        try {
+          await session.client.move(rootId, [entry.file.id], parent);
+
+          if (root.id !== rootId || location.id !== currentParent) {
+            destination = null;
+            return;
+          }
+
+          if (parent !== currentParent) {
+            const gone = new Set([entry.file.id]);
+            entries = entries.filter((item) => !gone.has(item.file.id));
+            selected = selected.filter((id) => !gone.has(id));
+          }
+
+          destination = null;
+        } catch (cause) {
+          toastError(
+            cause instanceof TypeError
+              ? "The server could not be reached"
+              : "Could not move that item",
+          );
+        }
+      },
+    };
   }
 
-  /** Match TrashBrowser.openPicker: set picker, clear tree, then load. */
-  async function openCopyPicker(targetRoot: Root, entry: FileView) {
-    copyPicker = { root: targetRoot, entry };
-    copyTree = null;
-
+  async function renameEntry(entry: FileView, name: string) {
     try {
-      copyTree = await session.client.tree(targetRoot.id);
-    } catch {
-      copyPicker = null;
-      toastError("Could not load folders");
-    }
-  }
-
-  async function pickCopyRoot(targetRootId: string) {
-    const target = roots.find((item) => item.id === targetRootId);
-    const entry = pendingCopy;
-
-    if (!entry || !target) {
-      return;
-    }
-
-    // Load first so FolderPicker can mount as soon as RootPicker closes.
-    copyBusy = true;
-
-    try {
-      const tree = await session.client.tree(targetRootId);
-      copyPicker = { root: target, entry };
-      copyTree = tree;
-      pendingCopy = null;
-    } catch {
-      toastError("Could not load folders");
-      resetCopy();
-    } finally {
-      copyBusy = false;
-    }
-  }
-
-  async function confirmCopy(parent: string | null) {
-    if (!copyPicker) {
-      return;
-    }
-
-    try {
-      await session.client.copy(
-        root.id,
-        copyPicker.entry.file.id,
-        copyPicker.root.id,
-        parent,
+      await session.client.rename(root.id, entry.file.id, name);
+      entries = entries.map((item) =>
+        item.file.id === entry.file.id
+          ? { ...item, file: { ...item.file, name } }
+          : item,
       );
-      resetCopy();
     } catch (cause) {
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not copy that item",
+          : cause instanceof ValidationError
+            ? cause.field("name")?.message || "That name is not allowed"
+            : "Could not rename that item",
       );
+      throw cause;
     }
   }
 </script>
@@ -1358,7 +1358,7 @@
           size="sm"
           class="text-destructive hover:bg-destructive/10 hover:text-destructive"
           aria-label="Delete selected"
-          onclick={() => askDelete(selected)}
+          onclick={() => startDelete(selected)}
         >
           <Trash size={15} />
           <span class="hidden sm:inline">Delete ({selected.length})</span>
@@ -1562,8 +1562,8 @@
                   onOpen={() => openDirectory(entry)}
                   onPreview={() => (previewFileId = entry.file.id)}
                   onDownload={() => download(entry)}
-                  onCopy={() => askCopy(entry)}
-                  onDelete={() => askDelete([entry.file.id])}
+                  onCopy={() => startCopy(entry)}
+                  onDelete={() => startDelete([entry.file.id])}
                 />
               {:else}
                 <FileListItem
@@ -1581,8 +1581,10 @@
                   onOpen={() => openDirectory(entry)}
                   onPreview={() => (previewFileId = entry.file.id)}
                   onDownload={() => download(entry)}
-                  onCopy={() => askCopy(entry)}
-                  onDelete={() => askDelete([entry.file.id])}
+                  onCopy={() => startCopy(entry)}
+                  onMove={() => startMove(entry)}
+                  onRename={(name) => renameEntry(entry, name)}
+                  onDelete={() => startDelete([entry.file.id])}
                 />
               {/if}
             {/each}
@@ -1667,33 +1669,12 @@
     }}
     onConfirm={confirmDelete}
   />
-
-  {#if pendingCopy}
-    <RootPicker
-      open={true}
-      roots={roots.filter((item) => item.id !== root.id)}
-      title="Copy to…"
-      description={`Choose a root for “${label(pendingCopy)}”.`}
-      confirmLabel="Continue"
-      busy={copyBusy}
-      onCancel={resetCopy}
-      onConfirm={pickCopyRoot}
-    />
-  {/if}
 </div>
 
-{#if copyTree != null}
-  <FolderPicker
-    enabled={copyPicker !== null}
-    tree={copyTree}
-    rootName={copyPicker?.root.name ?? ""}
-    title={copyPicker ? `Copy ${label(copyPicker.entry)}` : ""}
-    description="Choose a folder"
-    confirmLabel="Copy"
-    onCancel={resetCopy}
-    onConfirm={confirmCopy}
-  />
-{/if}
+<DestinationPicker
+  request={destination}
+  onCancel={() => (destination = null)}
+/>
 
 {#snippet columnHeader(
   column: SortColumn,

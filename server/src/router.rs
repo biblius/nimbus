@@ -126,7 +126,12 @@ pub fn router(state: AppState) -> Router {
             "/roots/{root_id}/files/{file_id}/ancestors",
             get(files::ancestors),
         )
-        .route("/roots/{root_id}/files/{id}", get(files::metadata))
+        .route(
+            "/roots/{root_id}/files/{id}",
+            get(files::metadata)
+                .patch(files::rename_file)
+                .delete(files::delete_file),
+        )
         .route(
             "/roots/{root_id}/files/{id}/blob/download",
             get(files::download),
@@ -151,7 +156,6 @@ pub fn router(state: AppState) -> Router {
         .route("/roots/{root_id}/move", post(files::move_files))
         .route("/roots/{root_id}/copy", post(files::copy_file))
         .route("/roots/{root_id}/files", delete(files::delete_files))
-        .route("/roots/{root_id}/files/{id}", delete(files::delete_file))
         .route_layer(axum_middleware::from_fn_with_state(
             state.clone(),
             middleware::session_check,

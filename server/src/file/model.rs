@@ -226,6 +226,15 @@ pub struct CopyFile {
     pub parent: Option<Uuid>,
 }
 
+/// New display name for a live file or directory.
+#[derive(Debug, Deserialize, Validify, ToSchema)]
+pub struct RenameFile {
+    #[modify(trim)]
+    #[validate(length(min = 1, message = "File name cannot be empty"))]
+    #[validate(length(max = 255, message = "File name too long"))]
+    pub name: String,
+}
+
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 pub struct CreateDirectory {
     /// Used internally, clients do not send this.

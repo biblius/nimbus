@@ -13,7 +13,7 @@ use crate::{
     file::{
         format::{FileType, TextFormat},
         model::{
-            CopyFile, FileContentPreview, MoveFiles, PreviewSize, RootView, TrashFiles,
+            CopyFile, FileContentPreview, MoveFiles, PreviewSize, RenameFile, RootView, TrashFiles,
         },
         tree::FileTree,
     },
@@ -504,6 +504,33 @@ impl LiveFileService {
         super::accessible(&self.folders, user, root_id).await?;
 
         self.trash.trash(root_id, user.id, &input.ids).await
+    }
+    /// Change the display name of a live file or directory.
+    #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
+    pub async fn rename(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        id: Uuid,
+        mut input: RenameFile,
+    ) -> Result<(), AppError> {
+        input.validify()?;
+
+        let file = self.readable(user, id).await?;
+
+        let name = FileEntry::valid_name(&input.name)?;
+
+        if file.root_id != root_id {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        if file.name == name {
+            return Ok(());
+        }
+
+        self.live.update_name(id, name).await?;
+
+        Ok(())
     }
     /// Change the parent of live files. Trashed files are rejected.
     #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]

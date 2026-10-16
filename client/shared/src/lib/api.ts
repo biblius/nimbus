@@ -572,6 +572,16 @@ export class NimbusClient {
     });
   }
 
+  rename(rootId: string, id: string, name: string): Promise<void> {
+    return this.request<void>(
+      `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      },
+    );
+  }
+
   copy(
     rootId: string,
     id: string,

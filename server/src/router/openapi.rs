@@ -9,7 +9,7 @@ use crate::{
     file::{
         model::{
             CopyFile, CreateDirectory, CreateTextFile, FileEntry, FileMetadata, FileView,
-            MoveFiles, RestoreFile, Root, RootView, TrashFiles,
+            MoveFiles, RenameFile, RestoreFile, Root, RootView, TrashFiles,
         },
         tree::FileTree,
     },
@@ -74,6 +74,7 @@ use crate::{
         files::download_chunk,
         files::overwrite,
         files::preview,
+        files::rename_file,
         files::delete_file,
         files::delete_files,
         files::move_files,
@@ -113,6 +114,7 @@ use crate::{
         TrashFiles,
         MoveFiles,
         CopyFile,
+        RenameFile,
         RestoreFile,
         SetQuota,
         UpdateUser,

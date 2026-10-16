@@ -568,6 +568,40 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+    /// Update only the display name of a live file or directory.
+    #[instrument(skip(self, name), fields(file_id = %id, name = %name), err(Debug))]
+    pub async fn update_name(&self, id: Uuid, name: &str) -> Result<FileEntry, AppError> {
+        let now = Utc::now();
+
+        sqlx::query_as::<_, FileEntry>(
+            r#"
+            UPDATE files
+            SET
+                name = $2,
+                updated_at = $3
+            WHERE id = $1
+            RETURNING
+                id,
+                root_id,
+                created_by,
+                "type" AS kind,
+                name,
+                parent,
+                format AS file_type,
+                hash,
+                size_bytes,
+                metadata,
+                created_at,
+                updated_at
+            "#,
+        )
+        .bind(id)
+        .bind(name)
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))
+    }
     #[instrument(skip(self), err(Debug))]
     pub async fn count_hash(&self, hash: &str) -> Result<i64, AppError> {
         self.count_hash_with(&self.pool, hash).await

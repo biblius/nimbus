@@ -1,14 +1,26 @@
 <script lang="ts">
-  import { Download, Eye, Folder, Share2, Trash } from "@lucide/svelte";
+  import {
+    ChevronRight,
+    Download,
+    Eye,
+    Folder,
+    FolderInput,
+    Pencil,
+    Share2,
+    Trash,
+  } from "@lucide/svelte";
   import { createDraggable, createDroppable } from "@dnd-kit/svelte";
-  import { onDestroy, untrack } from "svelte";
-  import { hasListThumbnail, isAudioFile, isPreviewable } from "../fileKind";
+  import { onDestroy, tick, untrack } from "svelte";
+  import { hasListThumbnail, isPreviewable } from "../fileKind";
   import { formatBytes, formatDatetime } from "../format";
   import { session } from "../session.svelte";
   import type { FileView } from "../types";
   import { cn } from "../utils";
   import Button from "./ui/button/button.svelte";
+  import Input from "./ui/input/input.svelte";
+  import ContextMenu from "./ui/menu/context-menu.svelte";
   import MenuItem from "./ui/menu/menu-item.svelte";
+  import MenuSeparator from "./ui/menu/menu-separator.svelte";
   import Menu from "./ui/menu/menu.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
 
@@ -31,6 +43,8 @@
     onPreview,
     onDownload,
     onCopy,
+    onMove,
+    onRename,
     onDelete,
     thumbnailUrl,
   }: {
@@ -53,6 +67,8 @@
     onPreview: () => void;
     onDownload: () => void;
     onCopy: () => void;
+    onMove: () => void;
+    onRename: (name: string) => void | Promise<void>;
     onDelete: () => void;
   } = $props();
 
@@ -80,13 +96,24 @@
   });
 
   const previewable = $derived(isPreviewable(entry));
-  const audioFile = $derived(isAudioFile(entry));
   const showThumbnail = $derived(hasListThumbnail(entry));
 
   let longPressTimer: ReturnType<typeof setTimeout> | undefined;
   let longPressOrigin: { x: number; y: number } | null = null;
   let suppressClick = false;
   let longPressFired = false;
+
+  let menuOpen = $state(false);
+  let menuX = $state(0);
+  let menuY = $state(0);
+  let shareOpen = $state(false);
+  let shareCloseTimer: ReturnType<typeof setTimeout> | undefined;
+
+  let renaming = $state(false);
+  let renameValue = $state("");
+  let renameError = $state("");
+  let renameSaving = $state(false);
+  let renameInput = $state<HTMLInputElement | undefined>();
 
   function clearLongPressTimer() {
     if (longPressTimer !== undefined) {
@@ -96,7 +123,33 @@
     longPressOrigin = null;
   }
 
-  onDestroy(clearLongPressTimer);
+  function clearShareCloseTimer() {
+    if (shareCloseTimer !== undefined) {
+      clearTimeout(shareCloseTimer);
+      shareCloseTimer = undefined;
+    }
+  }
+
+  function scheduleShareClose() {
+    clearShareCloseTimer();
+    shareCloseTimer = setTimeout(() => {
+      shareCloseTimer = undefined;
+      shareOpen = false;
+    }, 120);
+  }
+
+  // Reset flyout when the context menu closes (not derivable from menuOpen alone).
+  $effect(() => {
+    if (!menuOpen) {
+      clearShareCloseTimer();
+      shareOpen = false;
+    }
+  });
+
+  onDestroy(() => {
+    clearLongPressTimer();
+    clearShareCloseTimer();
+  });
 
   function isActionTarget(target: EventTarget | null) {
     return (
@@ -105,7 +158,7 @@
   }
 
   function onRowPointerDown(event: PointerEvent) {
-    if (event.button !== 0 || isActionTarget(event.target)) {
+    if (event.button !== 0 || isActionTarget(event.target) || renaming) {
       return;
     }
 
@@ -153,7 +206,7 @@
   }
 
   function onRowClick(event: MouseEvent) {
-    if (consumeSuppressedClick(event)) {
+    if (consumeSuppressedClick(event) || renaming) {
       return;
     }
 
@@ -203,7 +256,7 @@
   function onNameClick(event: MouseEvent) {
     event.stopPropagation();
 
-    if (consumeSuppressedClick(event)) {
+    if (consumeSuppressedClick(event) || renaming) {
       return;
     }
 
@@ -211,6 +264,10 @@
   }
 
   function onRowDoubleClick(event: MouseEvent) {
+    if (renaming) {
+      return;
+    }
+
     if (
       event.target instanceof Element &&
       event.target.closest("[data-no-open]")
@@ -232,6 +289,71 @@
     if (longPressFired) {
       event.preventDefault();
       longPressFired = false;
+      return;
+    }
+
+    if (renaming) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    shareOpen = false;
+    menuX = event.clientX;
+    menuY = event.clientY;
+    menuOpen = true;
+  }
+
+  async function beginRename() {
+    menuOpen = false;
+    shareOpen = false;
+    renameValue = file.name;
+    renameError = "";
+    renaming = true;
+    await tick();
+    renameInput?.focus();
+    renameInput?.select();
+  }
+
+  async function commitRename() {
+    if (renameSaving) {
+      return;
+    }
+
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      renameError = "Name is required";
+      return;
+    }
+
+    renameSaving = true;
+    renameError = "";
+
+    try {
+      await onRename(trimmed);
+      renaming = false;
+    } catch {
+      // Parent toasts; keep the input open for another try.
+    } finally {
+      renameSaving = false;
+    }
+  }
+
+  function cancelRename() {
+    renaming = false;
+    renameError = "";
+    renameSaving = false;
+  }
+
+  function onRenameKeydown(event: KeyboardEvent) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      void commitRename();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      cancelRename();
     }
   }
 
@@ -367,16 +489,41 @@
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      {@attach draggable.attachHandle}
+      {@attach renaming ? undefined : draggable.attachHandle}
       class={cn(
         "flex min-w-0 flex-1 items-center outline-none focus:outline-none focus-visible:outline-none",
         nameAreaClass,
+        renaming && "flex-col items-stretch justify-center gap-0.5",
       )}
       data-no-select
-      title={name}
+      data-no-drag={renaming ? "" : undefined}
+      data-no-open={renaming ? "" : undefined}
+      title={renaming ? undefined : name}
       onclick={onNameClick}
     >
-      <span class={cn("truncate font-medium", textClass)}>{name}</span>
+      {#if renaming}
+        <Input
+          bind:ref={renameInput}
+          bind:value={renameValue}
+          class={cn("h-8 min-w-0 px-2", textClass)}
+          aria-label="Rename {file.name}"
+          aria-invalid={renameError ? true : undefined}
+          autocomplete="off"
+          spellcheck="false"
+          disabled={renameSaving}
+          data-no-drag
+          data-no-select
+          data-no-open
+          oninput={() => (renameError = "")}
+          onkeydown={onRenameKeydown}
+          onclick={(event) => event.stopPropagation()}
+        />
+        {#if renameError}
+          <p class="text-xs text-destructive">{renameError}</p>
+        {/if}
+      {:else}
+        <span class={cn("truncate font-medium", textClass)}>{name}</span>
+      {/if}
     </div>
   </div>
 
@@ -443,3 +590,57 @@
     </Button>
   </div>
 </li>
+
+<ContextMenu bind:open={menuOpen} x={menuX} y={menuY} class="w-44">
+  {#if file.kind === "file"}
+    <MenuItem onclick={onDownload}>
+      <Download size={16} />
+      Download
+    </MenuItem>
+  {/if}
+  <MenuItem onclick={() => void beginRename()}>
+    <Pencil size={16} />
+    Rename
+  </MenuItem>
+  <MenuItem onclick={onMove}>
+    <FolderInput size={16} />
+    Move to…
+  </MenuItem>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="relative"
+    onpointerenter={() => {
+      clearShareCloseTimer();
+      shareOpen = true;
+    }}
+    onpointerleave={() => {
+      scheduleShareClose();
+    }}
+  >
+    <MenuItem closeOnSelect={false}>
+      <Share2 size={16} />
+      Share
+      <ChevronRight size={14} class="ml-auto" />
+    </MenuItem>
+    {#if shareOpen}
+      <div
+        role="menu"
+        class="absolute top-0 left-full z-50 ml-0.5 w-44 rounded-xl border bg-card p-1 shadow-lg"
+      >
+        <MenuItem onclick={onCopy}>
+          <Share2 size={16} />
+          Copy to…
+        </MenuItem>
+        <MenuItem disabled>Public link</MenuItem>
+      </div>
+    {/if}
+  </div>
+  <MenuSeparator />
+  <MenuItem
+    class="text-destructive hover:text-destructive [&_svg]:text-destructive"
+    onclick={onDelete}
+  >
+    <Trash size={16} />
+    Delete
+  </MenuItem>
+</ContextMenu>
