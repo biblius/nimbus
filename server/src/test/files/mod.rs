@@ -50,7 +50,7 @@ macro_rules! count {
 }
 pub(super) use count;
 
-pub(super) async fn user(state: &TestState, username: &str) -> crate::user::model::UserViewFull {
+pub(super) async fn user(state: &TestState, username: &str) -> crate::user::model::UserView {
     state
         .services
         .users

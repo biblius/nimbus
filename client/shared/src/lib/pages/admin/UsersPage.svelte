@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Pencil, Trash, UserRound } from "@lucide/svelte";
   import { ApiError } from "../../api";
-  import type { UserData, UserViewFull } from "../../types";
+  import type { UserData, UserView } from "../../types";
   import Button from "../../components/ui/button/button.svelte";
   import PaginatedList from "../../components/ui/paginated-list/paginated-list.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
@@ -35,8 +35,8 @@
 
   let sort = $state<StoredSort>(kv.usersSort.get());
   let creating = $state(false);
-  let editingUser = $state<UserViewFull | null>(null);
-  let deleteUser = $state<UserViewFull | null>(null);
+  let editingUser = $state<UserView | null>(null);
+  let deleteUser = $state<UserView | null>(null);
   let deleting = $state(false);
   let listRevision = $state(0);
 
@@ -54,7 +54,7 @@
     creating = !creating;
   }
 
-  function startEdit(user: UserViewFull) {
+  function startEdit(user: UserView) {
     creating = false;
     editingUser = user;
   }

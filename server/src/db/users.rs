@@ -8,7 +8,7 @@ use crate::{
     db::{Db, DbPool},
     error::AppError,
     model::{List, PaginationSort, ToSearchColumn},
-    user::model::{CreateUser, Role, User, UserSearch, UserSort, UserView, UserViewFull},
+    user::model::{CreateUser, Role, User, UserSearch, UserSort, UserView},
 };
 use sqlx::types::Json;
 use webauthn_rs::prelude::{CredentialID, Passkey};
@@ -144,7 +144,7 @@ impl UserRepository {
     pub async fn list_paginated(
         &self,
         pagination: PaginationSort<UserSort, UserSearch>,
-    ) -> Result<List<UserViewFull>, AppError> {
+    ) -> Result<List<UserView>, AppError> {
         let (limit, offset) = pagination.limit_offset();
         let (sort_by, sort_dir) = pagination.sort();
 
@@ -192,7 +192,7 @@ impl UserRepository {
             .push_bind(offset);
 
         let items = listed
-            .build_query_as::<UserViewFull>()
+            .build_query_as::<UserView>()
             .fetch_all(&self.pool)
             .await
             .map_err(AppError::from)?;
@@ -265,7 +265,7 @@ impl UserRepository {
         let now = Utc::now();
 
         let user = sqlx::query_as!(
-            UserView,
+            User,
             r#"
             UPDATE users
             SET
@@ -278,9 +278,12 @@ impl UserRepository {
             RETURNING
                 id,
                 username,
+                password AS "password!",
                 email,
                 role AS "role: Role",
-                created_at
+                otp_secret,
+                created_at,
+                updated_at
             "#,
             username,
             email,
@@ -292,7 +295,8 @@ impl UserRepository {
         .fetch_optional(&self.pool)
         .await?;
 
-        user.ok_or_else(|| AppError::ResourceMissing("User does not exist".into()))
+        user.map(UserView::from)
+            .ok_or_else(|| AppError::ResourceMissing("User does not exist".into()))
     }
 
     #[instrument(skip(self, password), fields(user_id = %id), err(Debug))]

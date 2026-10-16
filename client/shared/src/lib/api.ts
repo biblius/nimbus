@@ -19,7 +19,6 @@ import type {
   UserData,
   UserPasskeyView,
   UserView,
-  UserViewFull,
 } from "./types";
 import type {
   AuthenticatePublicKeyCredentialJSON,
@@ -160,12 +159,12 @@ export class NimbusClient {
     });
   }
 
-  me(): Promise<UserViewFull> {
-    return this.request<UserViewFull>("/auth/me");
+  me(): Promise<UserView> {
+    return this.request<UserView>("/auth/me");
   }
 
-  updateMe(input: SelfUserData): Promise<UserViewFull> {
-    return this.request<UserViewFull>("/auth/me", {
+  updateMe(input: SelfUserData): Promise<UserView> {
+    return this.request<UserView>("/auth/me", {
       method: "PATCH",
       body: JSON.stringify(input),
     });
@@ -663,14 +662,14 @@ export class NimbusClient {
     return response.blob();
   }
 
-  listUsers(query: ListQuery): Promise<Page<UserViewFull>> {
-    return this.request<Page<UserViewFull>>(
+  listUsers(query: ListQuery): Promise<Page<UserView>> {
+    return this.request<Page<UserView>>(
       `/admin/users?${this.listParams(query)}`,
     );
   }
 
-  createUser(input: CreateUserInput): Promise<UserViewFull> {
-    return this.request<UserViewFull>("/admin/users", {
+  createUser(input: CreateUserInput): Promise<UserView> {
+    return this.request<UserView>("/admin/users", {
       method: "POST",
       body: JSON.stringify(input),
     });

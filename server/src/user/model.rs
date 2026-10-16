@@ -39,7 +39,7 @@ impl User {
 /// The view of the currently logged in user.
 #[derive(Debug, Clone, Serialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
-pub struct UserViewFull {
+pub struct UserView {
     pub id: Uuid,
     pub username: String,
     pub email: Option<String>,
@@ -49,7 +49,7 @@ pub struct UserViewFull {
     pub updated_at: DateTime<Utc>,
 }
 
-impl From<User> for UserViewFull {
+impl From<User> for UserView {
     fn from(value: User) -> Self {
         Self {
             id: value.id,
@@ -59,29 +59,6 @@ impl From<User> for UserViewFull {
             otp_enabled: value.otp_secret.is_some(),
             created_at: value.created_at,
             updated_at: value.updated_at,
-        }
-    }
-}
-
-/// The view for users that are not the current one.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UserView {
-    pub id: Uuid,
-    pub username: String,
-    pub email: Option<String>,
-    pub role: Role,
-    pub created_at: DateTime<Utc>,
-}
-
-impl From<User> for UserView {
-    fn from(value: User) -> Self {
-        Self {
-            id: value.id,
-            username: value.username,
-            email: value.email,
-            role: value.role,
-            created_at: value.created_at,
         }
     }
 }

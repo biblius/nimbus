@@ -3,7 +3,7 @@
   import { ApiError, ValidationError } from "../../api";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
-  import type { Root, RootData, UserViewFull } from "../../types";
+  import type { Root, RootData, UserView } from "../../types";
   import Button from "../ui/button/button.svelte";
   import Checkbox from "../ui/checkbox/checkbox.svelte";
   import Field from "../ui/field/field.svelte";
@@ -153,7 +153,7 @@
               sort: { column: "username", direction: "asc" },
             })}
         >
-          {#snippet children(users: UserViewFull[])}
+          {#snippet children(users: UserView[])}
             {#if users.length === 0}
               <p class="px-3 py-6 text-center text-sm text-muted-foreground">
                 No users to assign.

@@ -3,7 +3,7 @@ use crate::{
     db::{
         Transactor,
         deletion::DeletionRepository,
-        files::{FileTable, FileRepository, TrashRepository},
+        files::{FileRepository, FileTable, TrashRepository},
         sessions::SessionRepository,
         user_folders::UserFolderRepository,
         users::UserRepository,
@@ -17,7 +17,7 @@ use crate::{
     model::{List, PaginationSort},
     user::model::{
         CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateSelf, UpdateUser,
-        User, UserSearch, UserSort, UserView, UserViewFull,
+        User, UserSearch, UserSort, UserView,
     },
 };
 use std::collections::HashSet;
@@ -81,7 +81,7 @@ impl UserService {
     }
 
     #[instrument(skip(self, input), fields(username = %input.username), err(Debug))]
-    pub async fn create_user(&self, mut input: CreateUser) -> Result<UserViewFull, AppError> {
+    pub async fn create_user(&self, mut input: CreateUser) -> Result<UserView, AppError> {
         input.validify()?;
 
         if self.users.exists(&input.username).await? {
@@ -119,7 +119,7 @@ impl UserService {
     pub async fn list_users(
         &self,
         pagination: PaginationSort<UserSort, UserSearch>,
-    ) -> Result<List<UserViewFull>, AppError> {
+    ) -> Result<List<UserView>, AppError> {
         pagination.validate()?;
         self.users.list_paginated(pagination).await
     }
@@ -189,7 +189,7 @@ impl UserService {
         user_id: Uuid,
         session_id: Uuid,
         mut input: UpdateSelf,
-    ) -> Result<UserViewFull, AppError> {
+    ) -> Result<UserView, AppError> {
         input.validify()?;
 
         let user = self.users.get_by_id(user_id).await?;

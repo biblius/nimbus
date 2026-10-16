@@ -82,7 +82,7 @@ mod users_service {
         }
     }
 
-    fn usernames(listed: &crate::model::List<crate::user::model::UserViewFull>) -> Vec<&str> {
+    fn usernames(listed: &crate::model::List<crate::user::model::UserView>) -> Vec<&str> {
         listed
             .items
             .iter()

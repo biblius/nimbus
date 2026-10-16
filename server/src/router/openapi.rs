@@ -16,7 +16,7 @@ use crate::{
     router::{auth, files, folders, users},
     user::model::{
         CreateSharedFolder, CreateUser, Member, Role, SetQuota, UpdateRoot, UpdateSelf, UpdateUser,
-        UserView, UserViewFull,
+        UserView,
     },
 };
 
@@ -96,7 +96,7 @@ use crate::{
         PasswordChange,
         SessionView,
         ActiveSessionView,
-        UserViewFull,
+        UserView,
         Role,
         CreateUser,
         CreateSharedFolder,

@@ -5,7 +5,7 @@ use crate::{
     model::{List, PaginationSort},
     router::sse,
     state::AppState,
-    user::model::{CreateUser, UpdateUser, UserSearch, UserSort, UserView, UserViewFull},
+    user::model::{CreateUser, UpdateUser, UserSearch, UserSort, UserView},
 };
 use axum::{
     Json,
@@ -21,13 +21,13 @@ use uuid::Uuid;
     post,
     path = "/admin/users",
     request_body = CreateUser,
-    responses((status = 201, description = "User and private folder created", body = UserViewFull))
+    responses((status = 201, description = "User and private folder created", body = UserView))
 )]
 pub(crate) async fn create_user(
     _session: Session,
     State(state): State<AppState>,
     Json(input): Json<CreateUser>,
-) -> Result<(StatusCode, Json<UserViewFull>), AppError> {
+) -> Result<(StatusCode, Json<UserView>), AppError> {
     let user = state.services.users.create_user(input).await?;
     Ok((StatusCode::CREATED, Json(user)))
 }
@@ -35,13 +35,13 @@ pub(crate) async fn create_user(
 #[utoipa::path(
     get,
     path = "/admin/users",
-    responses((status = 200, description = "Active users", body = List<UserViewFull>))
+    responses((status = 200, description = "Active users", body = List<UserView>))
 )]
 pub(crate) async fn list_users(
     _session: Session,
     State(state): State<AppState>,
     Query(pagination): Query<PaginationSort<UserSort, UserSearch>>,
-) -> Result<Json<List<UserViewFull>>, AppError> {
+) -> Result<Json<List<UserView>>, AppError> {
     Ok(Json(state.services.users.list_users(pagination).await?))
 }
 

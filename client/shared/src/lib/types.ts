@@ -8,7 +8,7 @@ export type SessionView = {
   updatedAt: string;
   expiresAt: string | null;
   firstLogin: boolean;
-  user: UserViewFull;
+  user: UserView;
 };
 
 /** Live session row from `GET /auth/sessions` (no nested user). */
@@ -22,17 +22,14 @@ export type ActiveSessionView = {
   current: boolean;
 };
 
-export type UserViewFull = UserView & {
-  otpEnabled: boolean;
-  updatedAt: string;
-};
-
 export type UserView = {
   id: string;
   username: string;
   email: string | null;
   role: Role;
+  otpEnabled: boolean;
   createdAt: string;
+  updatedAt: string;
 };
 
 /**

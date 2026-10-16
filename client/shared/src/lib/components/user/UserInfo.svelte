@@ -1,8 +1,8 @@
 <script lang="ts">
   import { formatDatetime } from "../../format";
-  import { type UserViewFull } from "../../types";
+  import { type UserView } from "../../types";
 
-  let { user }: { user: UserViewFull } = $props();
+  let { user }: { user: UserView } = $props();
 </script>
 
 <dl
