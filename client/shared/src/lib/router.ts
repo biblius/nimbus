@@ -2,6 +2,7 @@ import { createRouter } from "sv-router";
 
 export const { navigate, route, isActive } = createRouter({
   "/login": () => import("./pages/LoginPage.svelte"),
+  "/login/passkey": () => import("./pages/PasskeyBridgePage.svelte"),
   "/reset-password": () => import("./pages/ResetPasswordPage.svelte"),
   "/reset-password/:token": () =>
     import("./pages/ResetPasswordTokenPage.svelte"),

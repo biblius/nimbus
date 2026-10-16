@@ -15,6 +15,8 @@ export const session = $state<{
   endpoint: string | null;
   /** Native only: persist a new server URL and rebuild the API client. */
   configureEndpoint: ((url: string) => Promise<void>) | null;
+  /** Native only: open a URL in the system browser. */
+  openExternalUrl: ((url: string) => Promise<void>) | null;
 }>({
   /**
    * The Nimbus server API.
@@ -37,6 +39,8 @@ export const session = $state<{
   endpoint: null,
 
   configureEndpoint: null,
+
+  openExternalUrl: null,
 });
 
 /** Clear local session state and send the user to the login page. */

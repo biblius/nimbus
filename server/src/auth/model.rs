@@ -1,4 +1,3 @@
-use super::session::SessionView;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
@@ -12,10 +11,10 @@ use webauthn_rs::prelude::{
 
 /// Successful password check: either a real session, or 2FA still required.
 #[derive(Debug, Serialize, ToSchema)]
-#[serde(tag = "status", rename_all = "camelCase")]
+#[serde(tag = "status", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum LoginResult {
     /// A successful session has been established.
-    Session { session: SessionView },
+    Session { session_id: Uuid },
 
     /// Additional authentication step required.
     TwoFactorRequired {
@@ -24,6 +23,9 @@ pub enum LoginResult {
 
         /// Represents which 2FA methods are available.
         available: Vec<TFAType>,
+
+        /// Web app origin for native passkey browser handoff.
+        frontend_url: String,
     },
 }
 
@@ -200,4 +202,11 @@ pub struct PasskeyLoginChallenge {
 pub struct FinishPasskeyLogin {
     pub token: Uuid,
     pub credential: PublicKeyCredential,
+}
+
+/// Exchange a native passkey pickup token for a real session.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FinishNativeLogin {
+    pub token: Uuid,
 }

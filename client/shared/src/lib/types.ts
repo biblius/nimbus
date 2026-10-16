@@ -83,8 +83,14 @@ export type PasskeyLoginChallenge = {
 export type TFAType = "otp" | "passkey";
 
 export type LoginResult =
-  | { status: "session"; session: SessionView }
-  | { status: "twoFactorRequired"; token: string; available: TFAType[] };
+  | { status: "session"; sessionId: string }
+  | {
+      status: "twoFactorRequired";
+      token: string;
+      available: TFAType[];
+      /** Web app origin for native passkey browser handoff. */
+      frontendUrl: string;
+    };
 
 export type Root = {
   id: string;

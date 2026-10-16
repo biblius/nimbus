@@ -33,19 +33,18 @@ mod auth_service {
             .await
             .unwrap();
 
-        let LoginResult::Session { session } = login else {
+        let LoginResult::Session { session_id } = login else {
             panic!("expected a session");
         };
-        assert_eq!(session.user.role, Role::Admin);
-        assert!(session.first_login);
 
         let admin = state
             .services
             .auth
-            .get_session_by_id(session.id)
+            .get_session_by_id(session_id)
             .await
             .unwrap();
         assert_eq!(admin.user.role, Role::Admin);
+        assert!(admin.first_login);
         assert!(!admin.user.password.is_empty());
     }
 

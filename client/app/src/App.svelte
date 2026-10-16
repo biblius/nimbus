@@ -29,10 +29,13 @@
       }
       await saveEndpoint(trimmed);
       session.endpoint = trimmed;
-      session.client = new NimbusClient(endpoint ?? "", {
+      session.client = new NimbusClient(trimmed, {
         onUnauthorized: clearSession,
       });
     };
+
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    session.openExternalUrl = (url) => openUrl(url);
 
     ready = true;
   });

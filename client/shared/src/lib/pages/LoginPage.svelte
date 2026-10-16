@@ -6,8 +6,9 @@
     KeyRound,
     ShieldCheck,
   } from "@lucide/svelte";
-  import { ValidationError } from "../api";
+  import { ApiError, ValidationError } from "../api";
   import { toastError } from "../toast";
+  import AuthShell from "../components/AuthShell.svelte";
   import Button from "../components/ui/button/button.svelte";
   import Card from "../components/ui/card/card.svelte";
   import Checkbox from "../components/ui/checkbox/checkbox.svelte";
@@ -25,6 +26,7 @@
   let remember = $state(false);
   let otp = $state("");
   let pendingToken = $state<string | null>(null);
+  let frontendUrl = $state<string | null>(null);
   let available = $state<TFAType[]>([]);
   let step = $state<Step>("credentials");
   let validation = $state<ValidationError | undefined>();
@@ -32,6 +34,22 @@
   let checking = $state(true);
   let draft = $state(session.endpoint ?? "");
   let serverExpanded = $state(session.endpoint == null);
+  let passkeyAbort: AbortController | null = null;
+
+  onMount(async () => {
+    if (session.native && !session.endpoint) {
+      checking = false;
+      serverExpanded = true;
+      return;
+    }
+
+    try {
+      session.user = await session.client.me();
+      navigate("/", { replace: true });
+    } catch {
+      checking = false;
+    }
+  });
 
   function normalizeEndpoint(url: string): string {
     return url.trim().replace(/\/$/, "");
@@ -44,15 +62,35 @@
     );
   }
 
+  function cancelPasskeyWait() {
+    passkeyAbort?.abort();
+    passkeyAbort = null;
+  }
+
+  function leavePasskeyStep() {
+    cancelPasskeyWait();
+    busy = false;
+    step = "methods";
+  }
+
   function setSession(user: NonNullable<typeof session.user>) {
     session.user = user;
     navigate("/files", { replace: true });
   }
 
   async function beginPasskeyLogin(token: string) {
+    cancelPasskeyWait();
+
     busy = true;
 
     step = "passkey";
+
+    // Native clients handle webauthn in the browser
+    // because the navigator API is a godsend
+    if (session.native) {
+      await startNativePasskeyLogin(token);
+      return;
+    }
 
     try {
       const challenge = await session.client.startPasskeyLogin(token);
@@ -70,7 +108,9 @@
         return;
       }
 
-      setSession(result.session.user);
+      const user = await session.client.me();
+
+      setSession(user);
     } catch (cause) {
       console.error(cause);
       if (!isWebAuthnCancelled(cause)) {
@@ -87,21 +127,77 @@
     }
   }
 
-  onMount(async () => {
-    if (session.native && !session.endpoint) {
-      checking = false;
-      serverExpanded = true;
-      return;
-    }
+  // Native only
+  async function startNativePasskeyLogin(token: string) {
+    const controller = new AbortController();
+
+    passkeyAbort = controller;
 
     try {
-      session.user = await session.client.me();
-      navigate("/", { replace: true });
-    } catch {
-      checking = false;
-    }
-  });
+      if (!session.openExternalUrl) {
+        throw new Error("External browser is not available");
+      }
 
+      if (!frontendUrl) {
+        throw new Error("Missing origin");
+      }
+
+      await session.openExternalUrl(
+        `${frontendUrl}/login/passkey?token=${encodeURIComponent(token)}`,
+      );
+
+      while (!controller.signal.aborted) {
+        try {
+          const result = await session.client.finishNativeLogin(token);
+
+          if (result.status !== "session") {
+            toastError("Passkey sign-in failed");
+            step = "methods";
+            return;
+          }
+
+          const user = await session.client.me();
+
+          setSession(user);
+
+          return;
+        } catch (cause) {
+          // 404 on `finishNativeLogin` means the token is not there yet
+          // Sleep for some time and retry
+          if (cause instanceof ApiError && cause.status === 404) {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            continue;
+          }
+
+          throw cause;
+        }
+      }
+    } catch (cause) {
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      console.error(cause);
+
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Passkey sign-in failed",
+      );
+
+      step = "methods";
+    } finally {
+      if (passkeyAbort === controller) {
+        passkeyAbort = null;
+      }
+
+      if (!controller.signal.aborted) {
+        busy = false;
+      }
+    }
+  }
+
+  // Native only
   async function saveServer() {
     if (!session.configureEndpoint) {
       return;
@@ -141,6 +237,7 @@
     busy = true;
 
     try {
+      // Native only
       if (session.native && session.configureEndpoint) {
         const normalized = normalizeEndpoint(draft);
 
@@ -161,8 +258,11 @@
         permanent: session.native,
       });
 
+      console.log(result);
+
       if (result.status === "twoFactorRequired") {
         pendingToken = result.token;
+        frontendUrl = result.frontendUrl;
         available = result.available;
         otp = "";
         validation = undefined;
@@ -175,7 +275,13 @@
         return;
       }
 
-      setSession(result.session.user);
+      if (result.status !== "session") {
+        toastError("Sign-in failed");
+        return;
+      }
+
+      const user = await session.client.me();
+      setSession(user);
     } catch (cause) {
       if (cause instanceof ValidationError) {
         validation = cause;
@@ -211,7 +317,8 @@
         return;
       }
 
-      setSession(result.session.user);
+      const user = await session.client.me();
+      setSession(user);
     } catch (cause) {
       if (cause instanceof ValidationError) {
         validation = cause;
@@ -228,6 +335,7 @@
   }
 
   function backToCredentials() {
+    cancelPasskeyWait();
     pendingToken = null;
     available = [];
     otp = "";
@@ -236,11 +344,11 @@
   }
 </script>
 
-{#if checking}
-  <p class="p-8 text-sm text-muted-foreground">Loading…</p>
-{:else}
-  <main class="flex min-h-screen items-center justify-center p-6">
-    <Card class="w-full max-w-md p-6">
+<AuthShell>
+  {#if checking}
+    <p class="p-8 text-sm text-muted-foreground">Loading…</p>
+  {:else}
+    <Card class="auth-panel w-full max-w-md p-6">
       {#if step === "credentials"}
         <form class="space-y-4" onsubmit={submitCredentials}>
           <div>
@@ -335,7 +443,11 @@
             </p>
             <h1 class="text-2xl font-semibold tracking-tight">Passkey</h1>
             <p class="text-sm text-muted-foreground">
-              Confirm with your device or password manager to continue.
+              {#if session.native}
+                Complete the passkey in the browser window that just opened.
+              {:else}
+                Confirm with your device or password manager to continue.
+              {/if}
             </p>
           </div>
 
@@ -350,7 +462,11 @@
             <div class="min-w-0">
               <p class="text-sm font-medium">Waiting for your passkey…</p>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                Complete the browser prompt, or choose another method.
+                {#if session.native}
+                  Finish verification in the browser, or choose another method.
+                {:else}
+                  Complete the browser prompt, or choose another method.
+                {/if}
               </p>
             </div>
           </div>
@@ -359,8 +475,7 @@
             type="button"
             variant="outline"
             class="w-full"
-            disabled={busy}
-            onclick={() => (step = "methods")}
+            onclick={leavePasskeyStep}
           >
             Use another method
           </Button>
@@ -492,5 +607,5 @@
         </form>
       {/if}
     </Card>
-  </main>
-{/if}
+  {/if}
+</AuthShell>

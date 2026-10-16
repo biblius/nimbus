@@ -18,9 +18,10 @@ use uuid::Uuid;
 use crate::{
     auth::{
         model::{
-            DisableOtp, FinishPasskeyLogin, FinishPasskeySetup, LoginCredentials, LoginResult,
-            OTP_TOKEN_HEADER, Otp, PasskeyLoginChallenge, PasskeySetupChallenge, PasswordChange,
-            PasswordReset, PasswordResetRequest, StartPasskeyLogin, UserPasskeyView,
+            DisableOtp, FinishNativeLogin, FinishPasskeyLogin, FinishPasskeySetup,
+            LoginCredentials, LoginResult, OTP_TOKEN_HEADER, Otp, PasskeyLoginChallenge,
+            PasskeySetupChallenge, PasswordChange, PasswordReset, PasswordResetRequest,
+            StartPasskeyLogin, UserPasskeyView,
         },
         session::{ActiveSessionView, Session},
     },
@@ -54,7 +55,7 @@ pub(crate) async fn credentials_login(
         .login(credentials, Some(remote_address), user_agent)
         .await?;
 
-    Ok(login_response(result, &state.http_config))
+    login_response(result, &state).await
 }
 
 #[utoipa::path(
@@ -82,7 +83,7 @@ pub(crate) async fn otp_login(
         .login_with_otp(login, Some(remote_address), user_agent)
         .await?;
 
-    Ok(login_response(result, &state.http_config))
+    login_response(result, &state).await
 }
 
 #[utoipa::path(
@@ -404,12 +405,51 @@ pub(crate) async fn finish_passkey_login(
         .finish_passkey_login(data, Some(remote_address), user_agent)
         .await?;
 
-    Ok(login_response(result, &state.http_config))
+    login_response(result, &state).await
 }
 
-fn login_response(result: LoginResult, config: &HttpConfiguration) -> Response {
+/// Browser half of native passkey 2FA: verify the assertion, do not create a session.
+pub(crate) async fn start_native_passkey_login(
+    State(state): State<AppState>,
+    Json(data): Json<FinishPasskeyLogin>,
+) -> Result<Json<Uuid>, AppError> {
+    Ok(Json(state.services.auth.start_native_login(data).await?))
+}
+
+/// Desktop half of native passkey 2FA: exchange the pickup token for a session cookie.
+#[utoipa::path(
+    post,
+    path = "/auth/login/native",
+    request_body = FinishNativeLogin,
+    responses(
+        (status = 200, description = "Session created", body = LoginResult),
+        (status = 404, description = "Pickup not ready, used, or expired"),
+    )
+)]
+pub(crate) async fn finish_native_login(
+    State(state): State<AppState>,
+    RemoteAddress(remote_address): RemoteAddress,
+    user_agent: Option<TypedHeader<UserAgent>>,
+    Json(data): Json<FinishNativeLogin>,
+) -> Result<Response, AppError> {
+    let user_agent = user_agent.map(|TypedHeader(agent)| agent.as_str().to_owned());
+
+    let result = state
+        .services
+        .auth
+        .finish_native_login(data.token, Some(remote_address), user_agent)
+        .await?;
+
+    login_response(result, &state).await
+}
+
+async fn login_response(result: LoginResult, state: &AppState) -> Result<Response, AppError> {
+    let config = &state.http_config;
+
     let cookie = match result {
-        LoginResult::Session { ref session } => {
+        LoginResult::Session { session_id } => {
+            let session = state.services.auth.get_session_by_id(session_id).await?;
+
             let mut cookie =
                 Cookie::build((config.cookie_name.to_string(), session.id.to_string()))
                     .path("/")
@@ -434,7 +474,7 @@ fn login_response(result: LoginResult, config: &HttpConfiguration) -> Response {
             cookie
         }
         LoginResult::TwoFactorRequired { .. } => {
-            return Json(result).into_response();
+            return Ok(Json(result).into_response());
         }
     };
 
@@ -447,5 +487,5 @@ fn login_response(result: LoginResult, config: &HttpConfiguration) -> Response {
         Err(error) => tracing::error!(%error, "unable to create session cookie header"),
     }
 
-    response
+    Ok(response)
 }

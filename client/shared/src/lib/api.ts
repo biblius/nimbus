@@ -93,8 +93,10 @@ const VALIDATION_CODE = 4;
 const AUTH_CHALLENGE_PATHS = new Set([
   "/auth/login",
   "/auth/login/otp",
+  "/auth/login/native",
   "/auth/login/passkey",
   "/auth/login/passkey/confirm",
+  "/auth/login/passkey/confirm/native",
   "/auth/password",
   "/auth/otp/setup/confirm",
   "/auth/otp/disable",
@@ -115,18 +117,22 @@ export type NimbusClientOptions = {
 };
 
 export class NimbusClient {
-  readonly #root: string;
-  readonly #onUnauthorized?: () => void;
+  private readonly root: string;
+  private readonly onUnauthorized?: () => void;
 
   constructor(baseUrl: string, options: NimbusClientOptions = {}) {
-    this.#root = baseUrl.replace(/\/$/, "");
-    this.#onUnauthorized = options.onUnauthorized;
+    this.root = baseUrl.replace(/\/$/, "");
+    this.onUnauthorized = options.onUnauthorized;
   }
 
   /** Parse an error response and notify the host when the session has expired. */
-  #httpError(status: number, payload: ErrorBody | null, path: string): Error {
+  private httpError(
+    status: number,
+    payload: ErrorBody | null,
+    path: string,
+  ): Error {
     if (status === 401 && !AUTH_CHALLENGE_PATHS.has(path)) {
-      this.#onUnauthorized?.();
+      this.onUnauthorized?.();
     }
     return parseError(status, payload);
   }
@@ -191,7 +197,7 @@ export class NimbusClient {
   }
 
   async startOtpSetup(): Promise<OtpSetup> {
-    const response = await fetch(`${this.#root}/auth/otp/setup`, {
+    const response = await fetch(`${this.root}/auth/otp/setup`, {
       method: "POST",
       credentials: "include",
     });
@@ -203,7 +209,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw this.#httpError(response.status, body, "/auth/otp/setup");
+      throw this.httpError(response.status, body, "/auth/otp/setup");
     }
 
     const token = response.headers.get(OTP_TOKEN_HEADER);
@@ -269,6 +275,31 @@ export class NimbusClient {
     return this.request<LoginResult>("/auth/login/passkey/confirm", {
       method: "POST",
       body: JSON.stringify({ token, credential }),
+    });
+  }
+
+  /**
+   * Browser half of native passkey 2FA: verify the assertion without creating
+   * a session. Returns the pickup token the desktop app should exchange.
+   */
+  confirmNativePasskeyLogin(
+    token: string,
+    credential: AuthenticatePublicKeyCredentialJSON,
+  ): Promise<string> {
+    return this.request<string>("/auth/login/passkey/confirm/native", {
+      method: "POST",
+      body: JSON.stringify({ token, credential }),
+    });
+  }
+
+  /**
+   * Desktop half of native passkey 2FA: exchange the pickup token for a
+   * session cookie. Returns 404 until the browser step has completed.
+   */
+  finishNativeLogin(token: string): Promise<LoginResult> {
+    return this.request<LoginResult>("/auth/login/native", {
+      method: "POST",
+      body: JSON.stringify({ token }),
     });
   }
 
@@ -351,7 +382,7 @@ export class NimbusClient {
 
     body.set("file", file);
 
-    return this.#uploadForm<FileEntry>(
+    return this.uploadForm<FileEntry>(
       `/roots/${encodeURIComponent(rootId)}`,
       body,
       onProgress,
@@ -390,7 +421,7 @@ export class NimbusClient {
       body.append("file", file, file.webkitRelativePath || file.name);
     }
 
-    return this.#uploadForm<FileEntry[]>(
+    return this.uploadForm<FileEntry[]>(
       `/roots/${encodeURIComponent(rootId)}/upload/dir`,
       body,
       onProgress,
@@ -406,7 +437,7 @@ export class NimbusClient {
   }
 
   /** Shared XHR upload used by file and directory uploads for progress + abort. */
-  #uploadForm<T>(
+  private uploadForm<T>(
     path: string,
     body: FormData,
     onProgress: UploadProgress | undefined,
@@ -448,7 +479,7 @@ export class NimbusClient {
 
       signal?.addEventListener("abort", onAbort);
 
-      xhr.open("POST", `${this.#root}${path}`);
+      xhr.open("POST", `${this.root}${path}`);
 
       xhr.withCredentials = true;
 
@@ -477,7 +508,7 @@ export class NimbusClient {
           }
         }
 
-        fail(this.#httpError(xhr.status, payload, path));
+        fail(this.httpError(xhr.status, payload, path));
       };
 
       xhr.onerror = () => fail(new TypeError("network error"));
@@ -546,18 +577,18 @@ export class NimbusClient {
 
   /** Full-file blob URL (attachment download). */
   downloadUrl(rootId: string, id: string): string {
-    return `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/download`;
+    return `${this.root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/download`;
   }
 
   /** Range-capable blob URL for streaming media (`<video>` / `<audio>` src). */
   contentUrl(rootId: string, id: string): string {
-    return `${this.#root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/chunk`;
+    return `${this.root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/chunk`;
   }
 
   /** Fetch a file's bytes (same auth as download). */
   async content(rootId: string, id: string): Promise<Blob> {
     const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/download`;
-    const response = await fetch(`${this.#root}${path}`, {
+    const response = await fetch(`${this.root}${path}`, {
       credentials: "include",
     });
 
@@ -568,7 +599,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw this.#httpError(response.status, body, path);
+      throw this.httpError(response.status, body, path);
     }
 
     return response.blob();
@@ -604,7 +635,7 @@ export class NimbusClient {
   /** Fetch a file's preview image as a blob. */
   async preview(rootId: string, id: string): Promise<Blob> {
     const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview`;
-    const response = await fetch(`${this.#root}${path}`, {
+    const response = await fetch(`${this.root}${path}`, {
       credentials: "include",
     });
 
@@ -615,7 +646,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw this.#httpError(response.status, body, path);
+      throw this.httpError(response.status, body, path);
     }
 
     return response.blob();
@@ -716,7 +747,7 @@ export class NimbusClient {
     path: string,
     init: RequestInit,
   ): AsyncGenerator<DeletionEvent> {
-    const response = await fetch(`${this.#root}${path}`, {
+    const response = await fetch(`${this.root}${path}`, {
       ...init,
       credentials: "include",
     });
@@ -728,7 +759,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw this.#httpError(response.status, body, path);
+      throw this.httpError(response.status, body, path);
     }
 
     let failed = false;
@@ -792,7 +823,7 @@ export class NimbusClient {
       headers.set("Content-Type", "application/json");
     }
 
-    const response = await fetch(`${this.#root}${path}`, {
+    const response = await fetch(`${this.root}${path}`, {
       ...init,
       headers,
       credentials: "include",
@@ -805,7 +836,7 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw this.#httpError(response.status, body, path);
+      throw this.httpError(response.status, body, path);
     }
 
     if (response.status === 204) {

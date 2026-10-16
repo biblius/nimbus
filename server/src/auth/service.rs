@@ -42,6 +42,7 @@ pub struct AuthenticationService {
     tokens: TokenStore,
     email: EmailSender,
     webauthn: Webauthn,
+    frontend_url: String,
 }
 
 impl AuthenticationService {
@@ -50,19 +51,21 @@ impl AuthenticationService {
         tokens: TokenStore,
         email: EmailSender,
         webauthn: Webauthn,
+        frontend_url: String,
     ) -> Self {
         Self {
             repo,
             tokens,
             email,
             webauthn,
+            frontend_url: frontend_url.trim_end_matches('/').to_string(),
         }
     }
 
     /// Authenticate with username and password.
     ///
-    /// No session is created until login actually succeeds. Users with 2FA enabled
-    /// get [`LoginResult::TwoFactorRequired`].
+    /// No session is created until login actually succeeds.
+    /// Users with 2FA enabled get [`LoginResult::TwoFactorRequired`].
     #[instrument(skip(self, credentials), fields(username = %credentials.username), err(Debug))]
     pub async fn login(
         &self,
@@ -100,7 +103,7 @@ impl AuthenticationService {
 
             self.tokens
                 .store(
-                    OneShotToken::OneTimePassword,
+                    OneShotToken::PendingLogin,
                     token,
                     &PendingLogin {
                         user_id: user.id,
@@ -113,6 +116,7 @@ impl AuthenticationService {
             return Ok(LoginResult::TwoFactorRequired {
                 token: token.to_string(),
                 available,
+                frontend_url: self.frontend_url.clone(),
             });
         }
 
@@ -127,8 +131,14 @@ impl AuthenticationService {
             .await?;
 
         Ok(LoginResult::Session {
-            session: session.into(),
+            session_id: session.id,
         })
+    }
+
+    /// Expire the session under the given ID.
+    #[instrument(skip_all, err(Debug))]
+    pub async fn logout(&self, session_id: Uuid) -> Result<(), AppError> {
+        self.repo.sessions.expire(session_id).await
     }
 
     /// Finish a TOTP login using the pending-login token from [`Self::login`].
@@ -143,7 +153,7 @@ impl AuthenticationService {
 
         let pending: PendingLogin = self
             .tokens
-            .consume(OneShotToken::OneTimePassword, otp.token)
+            .consume(OneShotToken::PendingLogin, otp.token)
             .await?;
 
         let user = self
@@ -172,7 +182,7 @@ impl AuthenticationService {
             .await?;
 
         Ok(LoginResult::Session {
-            session: session.into(),
+            session_id: session.id,
         })
     }
 
@@ -189,12 +199,6 @@ impl AuthenticationService {
         let user = self.repo.users.get_by_id(record.user_id).await?;
 
         Ok(Session::from_record(record, user, false))
-    }
-
-    /// Expire the session under the given ID.
-    #[instrument(skip_all, err(Debug))]
-    pub async fn logout(&self, session_id: Uuid) -> Result<(), AppError> {
-        self.repo.sessions.expire(session_id).await
     }
 
     /// Live sessions for the signed-in user.
@@ -539,7 +543,7 @@ impl AuthenticationService {
     ) -> Result<PasskeyLoginChallenge, AppError> {
         let pending: PendingLogin = self
             .tokens
-            .get(OneShotToken::OneTimePassword, data.token)
+            .get(OneShotToken::PendingLogin, data.token)
             .await?;
 
         let rows = self.repo.users.list_passkeys(pending.user_id).await?;
@@ -572,6 +576,77 @@ impl AuthenticationService {
         remote_address: Option<String>,
         user_agent: Option<String>,
     ) -> Result<LoginResult, AppError> {
+        let pending = self.verify_passkey_login(data).await?;
+
+        let user = self.repo.users.get_by_id(pending.user_id).await?;
+
+        let session = self
+            .create_session(
+                user,
+                remote_address,
+                user_agent,
+                pending.remember,
+                pending.permanent,
+            )
+            .await?;
+
+        Ok(LoginResult::Session {
+            session_id: session.id,
+        })
+    }
+
+    /// Verify the WebAuthn assertion in the browser without creating a session.
+    ///
+    /// Stores the pending login under [`OneShotToken::NativeSession`] using the
+    /// same token id so the native app can poll [`Self::finish_native_login`].
+    #[instrument(skip(self, data), err(Debug))]
+    pub async fn start_native_login(&self, data: FinishPasskeyLogin) -> Result<Uuid, AppError> {
+        let token = data.token;
+        let pending = self.verify_passkey_login(data).await?;
+
+        self.tokens
+            .store(OneShotToken::NativeSession, token, &pending)
+            .await?;
+
+        Ok(token)
+    }
+
+    /// Exchange the token from [`Self::start_native_login`] for a real session.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn finish_native_login(
+        &self,
+        token: Uuid,
+        remote_address: Option<String>,
+        user_agent: Option<String>,
+    ) -> Result<LoginResult, AppError> {
+        let pending: PendingLogin = self
+            .tokens
+            .consume(OneShotToken::NativeSession, token)
+            .await?;
+
+        let user = self.repo.users.get_by_id(pending.user_id).await?;
+
+        let session = self
+            .create_session(
+                user,
+                remote_address,
+                user_agent,
+                pending.remember,
+                pending.permanent,
+            )
+            .await?;
+
+        Ok(LoginResult::Session {
+            session_id: session.id,
+        })
+    }
+
+    /// Verify the assertion, update credential counters, and consume the
+    /// pending-login + passkey challenge tokens. Does not create a session.
+    async fn verify_passkey_login(
+        &self,
+        data: FinishPasskeyLogin,
+    ) -> Result<PendingLogin, AppError> {
         let auth_state: PasskeyAuthentication = self
             .tokens
             .consume(OneShotToken::Passkey, data.token)
@@ -579,7 +654,7 @@ impl AuthenticationService {
 
         let pending: PendingLogin = self
             .tokens
-            .get(OneShotToken::OneTimePassword, data.token)
+            .get(OneShotToken::PendingLogin, data.token)
             .await?;
 
         let auth_result = self
@@ -597,32 +672,20 @@ impl AuthenticationService {
             {
                 continue;
             }
+            tracing::debug!(user=%pending.user_id, cred_id=?passkey.data.0.cred_id(), "updating passkey");
+
             self.repo
                 .users
                 .apply_passkey_authentication(passkey.id, passkey.data.0)
                 .await?;
         }
 
-        let _: PendingLogin = self
+        let pending: PendingLogin = self
             .tokens
-            .consume(OneShotToken::OneTimePassword, data.token)
+            .consume(OneShotToken::PendingLogin, data.token)
             .await?;
 
-        let user = self.repo.users.get_by_id(pending.user_id).await?;
-
-        let session = self
-            .create_session(
-                user,
-                remote_address,
-                user_agent,
-                pending.remember,
-                pending.permanent,
-            )
-            .await?;
-
-        Ok(LoginResult::Session {
-            session: session.into(),
-        })
+        Ok(pending)
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]

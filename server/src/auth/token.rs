@@ -72,10 +72,14 @@ impl TokenStore {
 }
 
 /// A token stored in the cache required to complete
-/// auth related operations
+/// auth related operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OneShotToken {
-    /// Used during OTP registration and pending OTP login.
+    /// Used during the initial steps in login if the user
+    /// has 2FA enabled.
+    PendingLogin,
+
+    /// Used during OTP registration.
     OneTimePassword,
 
     /// Used when requesting password resets via email.
@@ -83,14 +87,19 @@ pub enum OneShotToken {
 
     /// Used when registering and authenticating with passkeys.
     Passkey,
+
+    /// Passkey verified in the browser; desktop exchanges this for a session.
+    NativeSession,
 }
 
 impl OneShotToken {
     pub fn ttl_secs(self) -> u64 {
         match self {
-            Self::PasswordReset => 60 * 60,
+            Self::PendingLogin => 300,
+            Self::PasswordReset => 300,
             Self::OneTimePassword => 300,
             Self::Passkey => 300,
+            Self::NativeSession => 300,
         }
     }
 
@@ -102,9 +111,11 @@ impl OneShotToken {
 impl Display for OneShotToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::PendingLogin => write!(f, "login"),
             Self::PasswordReset => write!(f, "pwreset"),
             Self::OneTimePassword => write!(f, "otp"),
             Self::Passkey => write!(f, "passkey"),
+            Self::NativeSession => write!(f, "native"),
         }
     }
 }

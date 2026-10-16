@@ -103,6 +103,7 @@ impl AppState {
             tokens,
             email.clone(),
             webauthn,
+            args.frontend_url(),
         );
 
         let user_service = UserService::new(

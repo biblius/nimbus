@@ -72,10 +72,15 @@ pub fn router(state: AppState) -> Router {
     let public = Router::new()
         .route("/auth/login", post(auth::credentials_login))
         .route("/auth/login/otp", post(auth::otp_login))
+        .route("/auth/login/native", post(auth::finish_native_login))
         .route("/auth/login/passkey", post(auth::start_passkey_login))
         .route(
             "/auth/login/passkey/confirm",
             post(auth::finish_passkey_login),
+        )
+        .route(
+            "/auth/login/passkey/confirm/native",
+            post(auth::start_native_passkey_login),
         )
         .route("/auth/reset", post(auth::start_password_reset))
         .route("/auth/reset/{token}", post(auth::finish_password_reset));

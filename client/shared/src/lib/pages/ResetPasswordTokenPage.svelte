@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ShieldAlert } from "@lucide/svelte";
   import { ValidationError } from "../api";
+  import AuthShell from "../components/AuthShell.svelte";
   import Button from "../components/ui/button/button.svelte";
   import Card from "../components/ui/card/card.svelte";
   import Field from "../components/ui/field/field.svelte";
@@ -49,8 +50,8 @@
   }
 </script>
 
-<main class="flex min-h-screen items-center justify-center p-6">
-  <Card class="w-full max-w-md p-6">
+<AuthShell>
+  <Card class="auth-panel w-full max-w-md p-6">
     <div class="space-y-4">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">
@@ -125,4 +126,4 @@
       </Button>
     </div>
   </Card>
-</main>
+</AuthShell>

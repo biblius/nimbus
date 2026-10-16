@@ -213,6 +213,7 @@ async fn build_services(
         TokenStore::new(cache),
         email.clone(),
         webauthn,
+        "http://localhost:5173".into(),
     );
 
     let user_service = UserService::new(
@@ -280,13 +281,13 @@ pub async fn login(
         )
         .await
         .unwrap();
-    let LoginResult::Session { session } = login else {
+    let LoginResult::Session { session_id } = login else {
         panic!("expected a session");
     };
     state
         .services
         .auth
-        .get_session_by_id(session.id)
+        .get_session_by_id(session_id)
         .await
         .unwrap()
 }

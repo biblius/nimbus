@@ -6,7 +6,12 @@
   import { Router } from "sv-router";
   import { NimbusClient } from "@nimbus/shared/api";
 
-  session.client = new NimbusClient(import.meta.env.VITE_NIMBUS_URL, {
+  const apiUrl = import.meta.env.VITE_NIMBUS_URL;
+  if (typeof apiUrl !== "string" || !apiUrl) {
+    throw new Error("VITE_NIMBUS_URL is not set");
+  }
+
+  session.client = new NimbusClient(apiUrl, {
     onUnauthorized: clearSession,
   });
 </script>
