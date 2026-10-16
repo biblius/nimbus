@@ -99,8 +99,10 @@
 
   let entries = $state<FileView[]>([]);
   let selected = $state<string[]>([]);
+
   /** Anchor for Shift+click range selection (last plain / Ctrl click). */
   let selectionAnchor = $state<string | null>(null);
+
   /** When true, plain click/tap toggles. Entered via long-press or Shift range. */
   let selectMode = $state(false);
   let deleteOpen = $state(false);
@@ -111,21 +113,27 @@
   let viewMode = $state<FilesViewMode>(kv.filesViewMode.get());
 
   const previewEntries = $derived(entries.filter(isPreviewable));
+
   const tiles = $derived(
     viewMode === "tiles-small" || viewMode === "tiles-large",
   );
+
   const tileSize = $derived<"small" | "large">(
     viewMode === "tiles-large" ? "large" : "small",
   );
+
   const listDensity = $derived<"default" | "compact">(
     viewMode === "compact" ? "compact" : "default",
   );
+
   const tileGridClass = $derived(
     viewMode === "tiles-large"
       ? "grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1 p-2 sm:gap-2"
       : "grid grid-cols-[repeat(auto-fill,minmax(6.25rem,1fr))] gap-0.5 p-1.5 sm:gap-1 sm:p-2",
   );
+
   const storedSort = kv.filesSort.get();
+
   let sort = $state<{ column: SortColumn; direction: SortDirection }>({
     column: storedSort.column as SortColumn,
     direction: storedSort.direction,
@@ -166,6 +174,10 @@
 
   /// Queued and in-flight uploads. Aborting one cancels that file only.
   const uploadControllers = new Map<number, AbortController>();
+
+  /** Desktop OS file drag overlay; depth avoids flicker across child elements. */
+  let fileDragActive = $state(false);
+  let fileDragDepth = 0;
 
   let uploadMenuOpen = $state(false);
   let newMenuOpen = $state(false);
@@ -593,19 +605,7 @@
     }
   }
 
-  async function upload(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-
-    const files: File[] = [];
-
-    if (input.files) {
-      for (const file of input.files) {
-        files.push(file);
-      }
-    }
-
-    input.value = "";
-
+  async function uploadFiles(files: File[]) {
     if (files.length === 0) {
       return;
     }
@@ -672,7 +672,7 @@
     await Promise.all(workers);
   }
 
-  async function uploadFolder(event: Event) {
+  async function upload(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
 
     const files: File[] = [];
@@ -685,6 +685,10 @@
 
     input.value = "";
 
+    await uploadFiles(files);
+  }
+
+  async function uploadFolderFiles(files: File[]) {
     if (files.length === 0) {
       return;
     }
@@ -696,13 +700,13 @@
 
     uploadControllers.set(id, controller);
 
-    const folderName =
-      files[0]?.webkitRelativePath.split("/")[0] || files[0]?.name || "Folder";
+    const path = files[0]?.webkitRelativePath || files[0]?.name || "Folder";
+    const name = path.split("/")[0] || "Folder";
     const total = files.reduce((sum, file) => sum + file.size, 0);
 
     pending.push({
       id,
-      name: folderName,
+      name,
       loaded: 0,
       total,
       error: "",
@@ -733,6 +737,188 @@
     } catch (cause) {
       uploadFailure(item, cause);
     }
+  }
+
+  async function uploadFolder(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+
+    const files: File[] = [];
+
+    if (input.files) {
+      for (const file of input.files) {
+        files.push(file);
+      }
+    }
+
+    input.value = "";
+
+    await uploadFolderFiles(files);
+  }
+
+  function isExternalFileDrag(event: DragEvent) {
+    return Boolean(event.dataTransfer?.types.includes("Files"));
+  }
+
+  function supportsExternalFileDrop() {
+    return window.matchMedia("(pointer: fine)").matches;
+  }
+
+  function onWindowDragEnter(event: DragEvent) {
+    if (!supportsExternalFileDrop() || !isExternalFileDrag(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    fileDragDepth += 1;
+    fileDragActive = true;
+  }
+
+  function onWindowDragLeave(event: DragEvent) {
+    if (!supportsExternalFileDrop() || !isExternalFileDrag(event)) {
+      return;
+    }
+
+    fileDragDepth = Math.max(0, fileDragDepth - 1);
+
+    if (fileDragDepth === 0) {
+      fileDragActive = false;
+    }
+  }
+
+  function onWindowDragOver(event: DragEvent) {
+    if (!supportsExternalFileDrop() || !isExternalFileDrag(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "copy";
+    }
+  }
+
+  async function onWindowDrop(event: DragEvent) {
+    if (!supportsExternalFileDrop() || !isExternalFileDrag(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    fileDragDepth = 0;
+    fileDragActive = false;
+
+    const batch = await collectDropped(event.dataTransfer);
+    const uploads = [uploadFiles(batch.files)];
+
+    for (const files of batch.directories) {
+      uploads.push(uploadFolderFiles(files));
+    }
+
+    await Promise.all(uploads);
+  }
+
+  /**
+   * Directory members are `File`s whose `name` is the relative path so
+   * `uploadDir` can recreate the tree via `webkitRelativePath || name`.
+   */
+  async function collectDropped(dataTransfer: DataTransfer | null) {
+    const files: File[] = [];
+    const directories: File[][] = [];
+
+    if (!dataTransfer) {
+      return { files, directories };
+    }
+
+    const items = dataTransfer.items;
+
+    if (
+      items &&
+      items.length > 0 &&
+      typeof items[0].webkitGetAsEntry === "function"
+    ) {
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry();
+        if (!entry) {
+          continue;
+        }
+
+        if (entry.isFile) {
+          files.push(await readFileEntry(entry as FileSystemFileEntry));
+        } else if (entry.isDirectory) {
+          const dirFiles = await readDirectoryEntry(
+            entry as FileSystemDirectoryEntry,
+            entry.name,
+          );
+          if (dirFiles.length > 0) {
+            directories.push(dirFiles);
+          }
+        }
+      }
+
+      return { files, directories };
+    }
+
+    for (let i = 0; i < dataTransfer.files.length; i++) {
+      files.push(dataTransfer.files[i]);
+    }
+
+    return { files, directories };
+  }
+
+  function readFileEntry(entry: FileSystemFileEntry) {
+    return new Promise<File>((resolve, reject) => {
+      entry.file(resolve, reject);
+    });
+  }
+
+  function readAllEntries(reader: FileSystemDirectoryReader) {
+    return new Promise<FileSystemEntry[]>((resolve, reject) => {
+      const all: FileSystemEntry[] = [];
+
+      const readBatch = () => {
+        reader.readEntries((batch) => {
+          if (batch.length === 0) {
+            resolve(all);
+            return;
+          }
+          for (const entry of batch) {
+            all.push(entry);
+          }
+          readBatch();
+        }, reject);
+      };
+
+      readBatch();
+    });
+  }
+
+  async function readDirectoryEntry(
+    entry: FileSystemDirectoryEntry,
+    prefix: string,
+  ) {
+    const children = await readAllEntries(entry.createReader());
+    const files: File[] = [];
+
+    for (const child of children) {
+      if (child.isFile) {
+        const file = await readFileEntry(child as FileSystemFileEntry);
+
+        files.push(new File([file], `${prefix}/${file.name}`));
+      } else if (child.isDirectory) {
+        const nested = await readDirectoryEntry(
+          child as FileSystemDirectoryEntry,
+          `${prefix}/${child.name}`,
+        );
+
+        for (const file of nested) {
+          files.push(file);
+        }
+      }
+    }
+
+    return files;
   }
 
   function removeUpload(id: number) {
@@ -1204,9 +1390,25 @@
   }
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window
+  onkeydown={onWindowKeydown}
+  ondragenter={onWindowDragEnter}
+  ondragleave={onWindowDragLeave}
+  ondragover={onWindowDragOver}
+  ondrop={onWindowDrop}
+/>
 
-<div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+<div class="relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+  {#if fileDragActive}
+    <div
+      class="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-border bg-card/90"
+      aria-hidden="true"
+    >
+      <p class="text-sm font-medium text-muted-foreground">
+        Drop files or folders to upload
+      </p>
+    </div>
+  {/if}
   <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
     <nav
       class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm"
@@ -1464,7 +1666,7 @@
           <Folder class="size-10 text-muted-foreground opacity-40" />
           <p class="text-sm font-medium">This folder is empty</p>
           <p class="max-w-sm text-sm text-muted-foreground">
-            Upload files or create a folder to get started.
+            Upload or drop files here, or create a folder to get started.
           </p>
         </div>
       {:else}
