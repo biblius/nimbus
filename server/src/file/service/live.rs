@@ -252,7 +252,7 @@ impl LiveFileService {
         &self,
         user: &User,
         root_id: Uuid,
-        _parent: Option<Uuid>,
+        parent: Option<Uuid>,
         dirs: Vec<CreateDirectory>,
         mut files: Vec<(TempFile, Option<Uuid>)>,
     ) -> Result<Vec<FileEntry>, AppError> {
@@ -271,6 +271,17 @@ impl LiveFileService {
             }
         }
 
+        // Directory uploads land under one parent; inherit that parent's share flag for the whole tree.
+        let shared = match parent {
+            Some(id) => self
+                .live
+                .get_live(id)
+                .await?
+                .map(|entry| entry.shared)
+                .unwrap_or(false),
+            None => false,
+        };
+
         let now = Utc::now();
 
         let mut entries: Vec<_> = dirs
@@ -285,7 +296,7 @@ impl LiveFileService {
                 file_type: None,
                 hash: None,
                 size_bytes: 0,
-                shared: false,
+                shared,
                 metadata: None,
                 created_at: now,
                 updated_at: now,
@@ -302,7 +313,7 @@ impl LiveFileService {
             file_type: Some(file.file_type.clone()),
             hash: Some(file.hash.clone()),
             size_bytes: file.size,
-            shared: false,
+            shared,
             metadata: None,
             created_at: now,
             updated_at: now,

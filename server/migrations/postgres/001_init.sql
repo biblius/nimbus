@@ -93,13 +93,13 @@ CREATE INDEX files_shared_idx ON files (shared)
 WHERE
   shared;
 
-CREATE INDEX files_preview_64_idx ON files ((metadata - > > 'preview64'))
+CREATE INDEX files_preview_64_idx ON files ((metadata->> 'preview64'))
 WHERE
-  metadata - > > 'preview64' IS NOT NULL;
+  metadata->> 'preview64' IS NOT NULL;
 
-CREATE INDEX files_preview_256_idx ON files ((metadata - > > 'preview256'))
+CREATE INDEX files_preview_256_idx ON files ((metadata->> 'preview256'))
 WHERE
-  metadata - > > 'preview256' IS NOT NULL;
+  metadata->> 'preview256' IS NOT NULL;
 
 -- Used for soft deletion. Files end up here from `files`.
 -- A file that is directly deleted from `files` has its parent set to null
@@ -129,13 +129,13 @@ CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
 
-CREATE INDEX trashed_files_preview_64_idx ON trashed_files ((metadata - > > 'preview64'))
+CREATE INDEX trashed_files_preview_64_idx ON trashed_files ((metadata->> 'preview64'))
 WHERE
-  metadata - > > 'preview64' IS NOT NULL;
+  metadata->> 'preview64' IS NOT NULL;
 
-CREATE INDEX trashed_files_preview_256_idx ON trashed_files ((metadata - > > 'preview256'))
+CREATE INDEX trashed_files_preview_256_idx ON trashed_files ((metadata->> 'preview256'))
 WHERE
-  metadata - > > 'preview256' IS NOT NULL;
+  metadata->> 'preview256' IS NOT NULL;
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 

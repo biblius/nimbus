@@ -164,6 +164,68 @@ mod sharing {
     }
 
     #[test]
+    async fn upload_into_shared_parent_inherits_shared(state: TestState) {
+        let _ada = user(state, "ada-share-inherit").await;
+        let session = test::login(state, "ada-share-inherit", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let dir = state
+            .services
+            .files
+            .create_directory(
+                &session.user,
+                root,
+                CreateDirectory {
+                    name: "public".into(),
+                    parent: None,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        state
+            .services
+            .files
+            .share_file(&session.user, root, dir.id)
+            .await
+            .unwrap();
+
+        let nested = state
+            .services
+            .files
+            .create_directory(
+                &session.user,
+                root,
+                CreateDirectory {
+                    name: "nested".into(),
+                    parent: Some(dir.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert!(nested.shared);
+
+        let file = upload_in(
+            state,
+            &session.user,
+            root,
+            Some(dir.id),
+            "new.txt",
+            b"fresh",
+        )
+        .await;
+        assert!(file.shared);
+
+        let shared = state.services.share.get(file.id).await.unwrap();
+        assert_eq!(shared.file.name, "new.txt");
+
+        let nested_shared = state.services.share.get(nested.id).await.unwrap();
+        assert_eq!(nested_shared.file.kind, FileKind::Directory);
+    }
+
+    #[test]
     async fn foreign_user_cannot_share_private_file(state: TestState) {
         let _ada = user(state, "ada-owner-share").await;
         let owner = test::login(state, "ada-owner-share", "temporary").await;

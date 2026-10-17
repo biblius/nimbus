@@ -325,7 +325,11 @@ impl FileRepository {
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE, NULL, $10, $11)
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                COALESCE((SELECT p.shared FROM files p WHERE p.id = $6), FALSE),
+                NULL, $10, $11
+            )
             RETURNING
                 id,
                 root_id,
