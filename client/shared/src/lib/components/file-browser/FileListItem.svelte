@@ -15,7 +15,7 @@
   import { formatBytes, formatDatetime } from "../../format";
   import { session } from "../../session.svelte";
   import type { FileView } from "../../types";
-  import { cn } from "../../utils";
+  import { cn, hasFinePointerHover } from "../../utils";
   import Button from "../ui/button/button.svelte";
   import Input from "../ui/input/input.svelte";
   import ContextMenu from "../ui/menu/context-menu.svelte";
@@ -158,7 +158,14 @@
   }
 
   function onRowPointerDown(event: PointerEvent) {
-    if (event.button !== 0 || isActionTarget(event.target) || renaming) {
+    // button 0 = primary (left click / touch); ignore right/middle.
+    if (
+      event.button !== 0 ||
+      isActionTarget(event.target) ||
+      renaming ||
+      !onLongSelect ||
+      hasFinePointerHover()
+    ) {
       return;
     }
 
@@ -171,7 +178,7 @@
       longPressOrigin = null;
       longPressFired = true;
       suppressClick = true;
-      onLongSelect?.();
+      onLongSelect();
     }, LONG_PRESS_MS);
   }
 

@@ -91,7 +91,7 @@
 
   /**
    * When true, plain click/tap toggles.
-   * Entered via long-press or Shift range.
+   * Entered via long-press (touch) or Ctrl/Shift selection (desktop).
    */
   let selectMode = $state(false);
 
@@ -473,12 +473,27 @@
     showDirectory(parent);
   }
 
+  /** Select the editable stem; keep `.txt` unselected for text drafts. */
+  function selectDraftName(input: HTMLInputElement) {
+    input.focus();
+
+    if (draftKind === "text") {
+      const dot = input.value.lastIndexOf(".");
+
+      if (dot > 0) {
+        input.setSelectionRange(0, dot);
+        return;
+      }
+    }
+
+    input.select();
+  }
+
   function focusDraft(node: HTMLInputElement) {
     nameInput = node;
 
     queueMicrotask(() => {
-      node.focus();
-      node.select();
+      selectDraftName(node);
     });
 
     return () => {
@@ -490,8 +505,9 @@
 
   async function beginDraft(kind: "directory" | "text") {
     if (drafting) {
-      nameInput?.focus();
-      nameInput?.select();
+      if (nameInput) {
+        selectDraftName(nameInput);
+      }
       return;
     }
 
@@ -548,13 +564,24 @@
     return `Could not create the ${noun}`;
   }
 
+  /** Append `.txt` when the name has no extension; leave user-provided ones alone. */
+  function ensureTextExtension(name: string) {
+    const dot = name.lastIndexOf(".");
+
+    if (dot > 0 && dot < name.length - 1) {
+      return name;
+    }
+
+    return `${name.replace(/\.+$/, "")}.txt`;
+  }
+
   async function commitDirectory() {
     if (!draftKind || directorySaving) {
       return;
     }
 
     const kind = draftKind;
-    const name = directoryName.trim();
+    let name = directoryName.trim();
 
     if (!name) {
       directoryError =
@@ -563,6 +590,11 @@
           : "Directory name cannot be empty";
       nameInput?.focus();
       return;
+    }
+
+    if (kind === "text") {
+      name = ensureTextExtension(name);
+      directoryName = name;
     }
 
     const rootId = root.id;
@@ -993,22 +1025,40 @@
         aria-hidden="true"
         onchange={(event) => uploads.fromFolderInput(event)}
       />
-      <!-- 
-           Native OS file pickers (at least linux) include both files
-           and directories when requesting with webkitdirectory
-           so there is no need for selection
-      -->
-      {#if session.native}
+      {#if selectMode}
         <Button
           type="button"
           variant="outline"
           size="sm"
-          aria-label="Upload"
-          onclick={() => folderInput?.click()}
+          aria-label="Clear selection"
+          onclick={clearSelection}
         >
-          <Upload size={15} />
-          <span class="hidden sm:inline">Upload</span>
+          <X size={15} />
+          <span class="hidden sm:inline">Clear</span>
         </Button>
+        {#if selected.length > 0}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Move selected"
+            onclick={() => startMove(selected)}
+          >
+            <FolderInput size={15} />
+            <span class="hidden sm:inline">Move ({selected.length})</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            class="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            aria-label="Delete selected"
+            onclick={() => startDelete(selected)}
+          >
+            <Trash size={15} />
+            <span class="hidden sm:inline">Delete ({selected.length})</span>
+          </Button>
+        {/if}
       {:else}
         <Menu bind:open={uploadMenuOpen}>
           {#snippet trigger(props, open)}
@@ -1039,70 +1089,35 @@
             Folder
           </MenuItem>
         </Menu>
-      {/if}
-      <Menu bind:open={newMenuOpen}>
-        {#snippet trigger(props, open)}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label="New"
-            {...props}
-          >
-            <Plus size={15} />
-            <span class="hidden sm:inline">New</span>
-            <ChevronDown
-              size={14}
-              class={[
-                "text-muted-foreground transition-transform",
-                open && "rotate-180",
-              ]}
-            />
-          </Button>
-        {/snippet}
-        <MenuItem onclick={() => beginDraft("text")}>
-          <FileIcon size={15} />
-          Text file
-        </MenuItem>
-        <MenuItem onclick={() => beginDraft("directory")}>
-          <Folder size={15} />
-          Directory
-        </MenuItem>
-      </Menu>
-      {#if selectMode}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-label="Clear selection"
-          onclick={clearSelection}
-        >
-          <X size={15} />
-          <span class="hidden sm:inline">Clear</span>
-        </Button>
-      {/if}
-      {#if selectMode && selected.length > 0}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-label="Move selected"
-          onclick={() => startMove(selected)}
-        >
-          <FolderInput size={15} />
-          <span class="hidden sm:inline">Move ({selected.length})</span>
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          class="text-destructive hover:bg-destructive/10 hover:text-destructive"
-          aria-label="Delete selected"
-          onclick={() => startDelete(selected)}
-        >
-          <Trash size={15} />
-          <span class="hidden sm:inline">Delete ({selected.length})</span>
-        </Button>
+        <Menu bind:open={newMenuOpen}>
+          {#snippet trigger(props, open)}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="New"
+              {...props}
+            >
+              <Plus size={15} />
+              <span class="hidden sm:inline">New</span>
+              <ChevronDown
+                size={14}
+                class={[
+                  "text-muted-foreground transition-transform",
+                  open && "rotate-180",
+                ]}
+              />
+            </Button>
+          {/snippet}
+          <MenuItem onclick={() => beginDraft("text")}>
+            <FileIcon size={15} />
+            Text file
+          </MenuItem>
+          <MenuItem onclick={() => beginDraft("directory")}>
+            <Folder size={15} />
+            Directory
+          </MenuItem>
+        </Menu>
       {/if}
     </div>
   </div>
