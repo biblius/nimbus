@@ -459,23 +459,6 @@ impl UserRepository {
         Ok(())
     }
 
-    /// Whether the user has at least one registered passkey.
-    #[instrument(skip(self), fields(user_id = %user_id), err(Debug))]
-    pub async fn is_passkey_enabled(&self, user_id: Uuid) -> Result<bool, AppError> {
-        let exists = sqlx::query_scalar!(
-            r#"
-            SELECT EXISTS(
-                SELECT 1 FROM user_passkeys WHERE user_id = $1
-            ) AS "exists!"
-            "#,
-            user_id
-        )
-        .fetch_one(&self.pool)
-        .await?;
-
-        Ok(exists)
-    }
-
     #[instrument(skip(self), fields(user_id = %user_id), err(Debug))]
     pub async fn list_passkeys(&self, user_id: Uuid) -> Result<Vec<UserPasskey>, AppError> {
         sqlx::query_as!(

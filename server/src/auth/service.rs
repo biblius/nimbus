@@ -195,7 +195,7 @@ impl AuthenticationService {
 
         let user = self.repo.users.get_by_id(record.user_id).await?;
 
-        Ok(Session::from_record(record, user, false))
+        Ok(Session::from_record(record, user))
     }
 
     /// Live sessions for the signed-in user.
@@ -728,8 +728,6 @@ impl AuthenticationService {
         remember: bool,
         permanent: bool,
     ) -> Result<Session, AppError> {
-        let first_login = self.repo.sessions.count_for_user(user.id).await? == 0;
-
         let now = Utc::now();
 
         let expires_at = if permanent {
@@ -753,7 +751,7 @@ impl AuthenticationService {
             })
             .await?;
 
-        Ok(Session::from_record(record, user, first_login))
+        Ok(Session::from_record(record, user))
     }
 
     #[instrument(skip_all, fields(user_id = %user.id), err(Debug))]

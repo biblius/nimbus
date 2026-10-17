@@ -25,6 +25,7 @@ use tokio_util::compat::TokioAsyncReadCompatExt;
 use uuid::Uuid;
 
 /// HTTP download payload: a file on disk, or a zip streamed as it is built.
+#[derive(Debug)]
 pub enum DownloadBody {
     File { path: PathBuf, mime: &'static str },
     Zip { reader: DuplexStream },

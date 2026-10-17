@@ -3,11 +3,28 @@
 mod auth_service {
     use crate::{
         auth::model::{LoginResult, PasswordChange},
+        db::DbPool,
         error::AppError,
         test::TestState,
         user::model::{CreateUser, Role, UpdateUser},
     };
     use suitest::before_all;
+    use uuid::Uuid;
+
+    /// Whether the user has at least one registered passkey.
+    async fn is_passkey_enabled(pool: &DbPool, user_id: Uuid) -> bool {
+        sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM user_passkeys WHERE user_id = $1
+            ) AS "exists!"
+            "#,
+            user_id
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
 
     #[before_all]
     async fn setup() -> TestState {
@@ -44,7 +61,6 @@ mod auth_service {
             .await
             .unwrap();
         assert_eq!(admin.user.role, Role::Admin);
-        assert!(admin.first_login);
         assert!(!admin.user.password.is_empty());
     }
 
@@ -230,7 +246,7 @@ mod auth_service {
         .await
         .unwrap();
 
-        assert!(users.is_passkey_enabled(user.id).await.unwrap());
+        assert!(is_passkey_enabled(&state.pool, user.id).await);
         assert!(
             users
                 .get_by_id(user.id)
@@ -264,7 +280,7 @@ mod auth_service {
 
         let reset_user = users.get_by_id(user.id).await.unwrap();
         assert!(reset_user.otp_secret.is_none());
-        assert!(!users.is_passkey_enabled(user.id).await.unwrap());
+        assert!(!is_passkey_enabled(&state.pool, user.id).await);
         assert!(
             sessions
                 .list_live_for_user(user.id)

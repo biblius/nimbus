@@ -22,7 +22,7 @@ use crate::{
 };
 use chrono::Utc;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     path::PathBuf,
 };
 use tracing::instrument;

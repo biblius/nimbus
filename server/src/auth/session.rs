@@ -27,12 +27,11 @@ pub struct Session {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
-    pub first_login: bool,
     pub user: User,
 }
 
 impl Session {
-    pub fn from_record(record: SessionRecord, user: User, first_login: bool) -> Self {
+    pub fn from_record(record: SessionRecord, user: User) -> Self {
         Self {
             id: record.id,
             remote_address: record.remote_address,
@@ -40,7 +39,6 @@ impl Session {
             created_at: record.created_at,
             updated_at: record.updated_at,
             expires_at: record.expires_at,
-            first_login,
             user,
         }
     }
@@ -61,7 +59,6 @@ pub struct SessionView {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
-    pub first_login: bool,
     pub user: UserView,
 }
 
@@ -74,7 +71,6 @@ impl From<Session> for SessionView {
             created_at: session.created_at,
             updated_at: session.updated_at,
             expires_at: session.expires_at,
-            first_login: session.first_login,
             user: session.user.into(),
         }
     }

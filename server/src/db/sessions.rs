@@ -28,21 +28,6 @@ impl SessionRepository {
         Self { pool }
     }
 
-    #[instrument(skip(self), err(Debug))]
-    pub async fn count_for_user(&self, user_id: Uuid) -> Result<i64, AppError> {
-        sqlx::query_scalar!(
-            r#"
-            SELECT COUNT(*) AS "count!"
-            FROM sessions
-            WHERE user_id = $1
-            "#,
-            user_id
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(AppError::from)
-    }
-
     #[instrument(skip(self, session), fields(user_id = %session.user_id), err(Debug))]
     pub async fn insert(&self, session: NewSession) -> Result<SessionRecord, AppError> {
         sqlx::query_as!(
