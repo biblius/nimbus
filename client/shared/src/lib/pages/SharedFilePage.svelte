@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download } from "@lucide/svelte";
+  import { CircleAlert, Download, Link2Off } from "@lucide/svelte";
   import { ApiError } from "../api";
   import SharedFileBrowser from "../components/file-browser/SharedFileBrowser.svelte";
   import SharedFilePreview from "../components/file-browser/SharedFilePreview.svelte";
@@ -17,6 +17,15 @@
 
   const fileId = $derived(route.params.file_id);
   const parentId = $derived(route.params.parent_id ?? null);
+  const pageTitle = $derived(
+    entry
+      ? `${entry.file.name} · Nimbus`
+      : status === "not-found"
+        ? "Link unavailable · Nimbus"
+        : status === "error"
+          ? "Couldn't load share · Nimbus"
+          : "Nimbus",
+  );
 
   // Only reload the share root when the shared file id changes. Navigating
   // between directories in the same share keeps the loaded root.
@@ -69,7 +78,7 @@
 </script>
 
 <svelte:head>
-  <title>{entry ? `${entry.file.name} · Nimbus` : "Nimbus"}</title>
+  <title>{pageTitle}</title>
 </svelte:head>
 
 {#if status === "ready" && entry && entry.file.kind === "file" && isPreviewable(entry)}
@@ -105,15 +114,47 @@
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4 sm:p-6">
       <div class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
         {#if status === "loading"}
-          <p class="text-sm text-muted-foreground">Loading…</p>
+          <div
+            class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center"
+          >
+            <p class="text-sm text-muted-foreground">Loading…</p>
+          </div>
         {:else if status === "not-found"}
-          <p class="text-sm text-muted-foreground">
-            This shared link does not exist or is no longer shared.
-          </p>
+          <div
+            class="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center"
+          >
+            <div
+              class="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground"
+              aria-hidden="true"
+            >
+              <Link2Off size={22} />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <p class="text-sm font-medium">Link unavailable</p>
+              <p class="max-w-sm text-sm text-muted-foreground">
+                This share may have been removed, or the link is no longer
+                valid.
+              </p>
+            </div>
+          </div>
         {:else if status === "error"}
-          <p class="text-sm text-destructive">
-            Could not load this shared link.
-          </p>
+          <div
+            class="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center"
+          >
+            <div
+              class="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground"
+              aria-hidden="true"
+            >
+              <CircleAlert size={22} />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <p class="text-sm font-medium">Couldn't load share</p>
+              <p class="max-w-sm text-sm text-muted-foreground">
+                Something went wrong while opening this link. Try again in a
+                moment.
+              </p>
+            </div>
+          </div>
         {:else if entry && entry.file.kind === "directory"}
           <SharedFileBrowser shareRoot={entry} {parentId} />
         {:else if entry}
