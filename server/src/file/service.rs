@@ -10,6 +10,7 @@ use crate::{
     db::user_folders::UserFolderRepository,
     error::AppError,
     file::{
+        format::FileType,
         model::FileKind,
         storage::Storage,
         tree::{FileEntryTree, FileTree},
@@ -154,7 +155,27 @@ async fn zip_tree(
         FileKind::File => {
             let source = blob_paths.get(&node.id).ok_or(AppError::Internal)?;
 
-            let entry = ZipEntryBuilder::new(path.into(), Compression::Deflate);
+            let compression = match node.file_type {
+                // Usually already compressed
+                Some(
+                    FileType::Image(_)
+                    | FileType::Video(_)
+                    | FileType::Audio(_)
+                    | FileType::Archive(_)
+                    | FileType::Book(_), // epub is zip-based
+                ) => Compression::Stored,
+                // Deflate usually wins on size
+                Some(
+                    FileType::Text(_)
+                    | FileType::Doc(_)
+                    | FileType::Font(_)
+                    | FileType::App(_)
+                    | FileType::Other(_),
+                )
+                | None => Compression::Deflate,
+            };
+
+            let entry = ZipEntryBuilder::new(path.into(), compression);
 
             let mut entry_writer = zip.write_entry_stream(entry).await.map_err(|error| {
                 tracing::error!(%error, "failed to start zip file entry");
