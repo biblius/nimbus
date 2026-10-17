@@ -4,6 +4,7 @@
     ChevronDown,
     File as FileIcon,
     Folder,
+    FolderInput,
     Plus,
     Trash,
     Upload,
@@ -75,7 +76,8 @@
 
   /**
    * Empty on component load, but after a user clicks a list item
-   * always has at least one entry.
+   * always has at least one entry until they have deleted/moved it
+   * in which case it becomes empty again.
    * When this has length >= 2 the multiselect context for deleting
    * and moving appears.
    */
@@ -867,31 +869,49 @@
     };
   }
 
-  function startMove(entry: FileView) {
+  function startMove(ids: string[]) {
+    if (ids.length === 0) {
+      return;
+    }
+
+    const single =
+      ids.length === 1
+        ? entries.find((item) => item.file.id === ids[0])
+        : undefined;
+
+    const title = single ? `Move ${label(single)}` : `Move ${ids.length} items`;
+
+    const description = single
+      ? `Pick a destination for ${label(single)}.`
+      : `Pick a destination for ${ids.length} items.`;
+
     destination = {
       roots: [root],
-      title: `Move ${label(entry)}`,
-      description: `Pick a destination for ${label(entry)}.`,
+      title,
+      description,
       confirmLabel: "Move",
       onConfirm: async (_targetRoot, parent) => {
         const rootId = root.id;
         const currentParent = location.id;
 
         try {
-          await session.client.move(rootId, [entry.file.id], parent);
+          await session.client.move(rootId, ids, parent);
 
           if (root.id !== rootId || location.id !== currentParent) {
             destination = null;
             return;
           }
 
+          // Filter out all items now gone from this directory
           if (parent !== currentParent) {
-            const gone = new Set([entry.file.id]);
+            const gone = new Set(ids);
             entries = entries.filter((item) => !gone.has(item.file.id));
             selected = selected.filter((id) => !gone.has(id));
           }
 
           destination = null;
+
+          selectMode = false;
         } catch (cause) {
           toastError(
             cause instanceof TypeError
@@ -906,11 +926,12 @@
   async function renameEntry(entry: FileView, name: string) {
     try {
       await session.client.rename(root.id, entry.file.id, name);
-      entries = entries.map((item) =>
-        item.file.id === entry.file.id
-          ? { ...item, file: { ...item.file, name } }
-          : item,
-      );
+
+      const index = entries.findIndex((item) => item.file.id === entry.file.id);
+
+      if (index !== -1) {
+        entries[index].file.name = name;
+      }
     } catch (cause) {
       toastError(
         cause instanceof TypeError
@@ -1061,6 +1082,16 @@
         </Button>
       {/if}
       {#if selectMode && selected.length > 0}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label="Move selected"
+          onclick={() => startMove(selected)}
+        >
+          <FolderInput size={15} />
+          <span class="hidden sm:inline">Move ({selected.length})</span>
+        </Button>
         <Button
           type="button"
           variant="outline"
@@ -1271,7 +1302,7 @@
                   onPreview={() => (previewFileId = entry.file.id)}
                   onDownload={() => download(entry)}
                   onCopy={() => startCopy(entry)}
-                  onMove={() => startMove(entry)}
+                  onMove={() => startMove([entry.file.id])}
                   onRename={(name) => renameEntry(entry, name)}
                   onDelete={() => startDelete([entry.file.id])}
                 />
@@ -1342,9 +1373,11 @@
         onClose={() => (previewFileId = null)}
         onSelect={(id) => (previewFileId = id)}
         onUpdated={(entry) => {
-          entries = entries.map((item) =>
-            item.file.id === entry.id ? { file: entry, metadata: null } : item,
-          );
+          const index = entries.findIndex((item) => item.file.id === entry.id);
+
+          if (index !== -1) {
+            entries[index] = { file: entry, metadata: null };
+          }
         }}
       />
     {/await}
