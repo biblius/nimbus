@@ -5,12 +5,14 @@
   import Button from "../../components/ui/button/button.svelte";
   import PaginatedList from "../../components/ui/paginated-list/paginated-list.svelte";
   import ConfirmDialog from "../../components/ui/confirm-dialog/confirm-dialog.svelte";
-  import SortHeader from "../../components/ui/sort-header/sort-header.svelte";
+  import SortHeader, {
+    type SortState,
+  } from "../../components/ui/sort-header/sort-header.svelte";
   import UserForm from "../../components/user/UserForm.svelte";
   import { trackDeletion } from "../../deletion.svelte";
   import { formatDatetime } from "../../format";
   import { logout, session } from "../../session.svelte";
-  import { kv, type StoredSort } from "../../storage";
+  import { kv } from "../../storage";
   import { toastError } from "../../toast";
   import { cn } from "../../utils";
 
@@ -21,7 +23,7 @@
     { value: "email", label: "Email" },
   ];
 
-  const DEFAULT_SORT: StoredSort = {
+  const DEFAULT_SORT: SortState<UserSortColumn> = {
     column: "username",
     direction: "asc",
   };
@@ -33,7 +35,12 @@
     "@xl:grid-cols-[minmax(7rem,1.1fr)_minmax(0,1.25fr)_4.75rem_4.5rem_minmax(0,10.5rem)_5.5rem]",
   );
 
-  let sort = $state<StoredSort>(kv.usersSort.get());
+  const storedSort = kv.usersSort.get();
+
+  let sort = $state<SortState<UserSortColumn>>({
+    column: storedSort.column as UserSortColumn,
+    direction: storedSort.direction,
+  });
   let creating = $state(false);
   let editingUser = $state<UserView | null>(null);
   let deleteUser = $state<UserView | null>(null);
@@ -57,18 +64,6 @@
   function startEdit(user: UserView) {
     creating = false;
     editingUser = user;
-  }
-
-  function cycleSort(column: UserSortColumn) {
-    if (sort.column !== column) {
-      sort = { column, direction: "asc" };
-    } else if (sort.direction === "asc") {
-      sort = { column, direction: "desc" };
-    } else {
-      sort = { ...DEFAULT_SORT };
-    }
-
-    kv.usersSort.set(sort);
   }
 
   async function createUser(data: UserData) {
@@ -144,8 +139,10 @@
 )}
   <SortHeader
     {label}
-    direction={sort.column === column ? sort.direction : undefined}
-    onclick={() => cycleSort(column)}
+    {column}
+    bind:sort
+    defaultSort={DEFAULT_SORT}
+    onCycle={() => kv.usersSort.set(sort)}
     class={cellClass}
   />
 {/snippet}

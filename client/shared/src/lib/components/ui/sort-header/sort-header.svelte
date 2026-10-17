@@ -1,23 +1,55 @@
-<script lang="ts">
+<script lang="ts" module>
+  export type SortDirection = "asc" | "desc";
+
+  export type SortState<C extends string = string> = {
+    column: C;
+    direction: SortDirection;
+  };
+
+  /** none → asc → desc → defaultSort */
+  export function cycleSortState<C extends string>(
+    sort: SortState<C>,
+    column: C,
+    defaultSort: SortState<C>,
+  ): SortState<C> {
+    if (sort.column !== column) {
+      return { column, direction: "asc" };
+    }
+    if (sort.direction === "asc") {
+      return { column, direction: "desc" };
+    }
+    return { ...defaultSort };
+  }
+</script>
+
+<script lang="ts" generics="Column extends string = string">
   import { ArrowDown, ArrowUp } from "@lucide/svelte";
   import { cn } from "../../../utils";
 
   let {
     label,
-    direction,
-    onclick,
+    column,
+    sort = $bindable(),
+    defaultSort,
+    onCycle,
     class: className,
     buttonClass,
   }: {
     label: string;
-    /** Set when the list is sorted by this column. */
-    direction?: "asc" | "desc";
-    onclick: () => void;
+    column: Column;
+    sort: SortState<Column>;
+    defaultSort: SortState<Column>;
+    /** Called after sort is cycled (e.g. persist, reorder). */
+    onCycle?: (column: Column) => void;
     /** Classes for the header cell. */
     class?: string;
     /** Classes for the inner button, e.g. alignment. */
     buttonClass?: string;
   } = $props();
+
+  const direction = $derived(
+    sort.column === column ? sort.direction : undefined,
+  );
 
   const ariaSort = $derived(
     direction === "asc"
@@ -26,6 +58,11 @@
         ? "descending"
         : "none",
   );
+
+  function handleClick() {
+    sort = cycleSortState(sort, column, defaultSort);
+    onCycle?.(column);
+  }
 </script>
 
 <div
@@ -40,7 +77,7 @@
       direction && "text-foreground",
       buttonClass,
     )}
-    {onclick}
+    onclick={handleClick}
   >
     <span class="truncate">{label}</span>
     {#if direction === "asc"}

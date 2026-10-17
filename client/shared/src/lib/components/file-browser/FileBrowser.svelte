@@ -72,15 +72,43 @@
     "grid grid-cols-[minmax(0,1fr)_7.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_7.5rem] @2xl:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_7.5rem]";
 
   let entries = $state<FileView[]>([]);
+
+  /**
+   * Empty on component load, but after a user clicks a list item
+   * always has at least one entry.
+   * When this has length >= 2 the multiselect context for deleting
+   * and moving appears.
+   */
   let selected = $state<string[]>([]);
 
-  /** Anchor for Shift+click range selection (last plain / Ctrl click). */
+  /**
+   * Anchor for Shift+click range selection
+   * (last plain / Ctrl click).
+   */
   let selectionAnchor = $state<string | null>(null);
 
-  /** When true, plain click/tap toggles. Entered via long-press or Shift range. */
+  /**
+   * When true, plain click/tap toggles.
+   * Entered via long-press or Shift range.
+   */
   let selectMode = $state(false);
+
+  /**
+   * Controls deletion confirmation dialog.
+   */
   let deleteOpen = $state(false);
+
+  /**
+   * True when the users has confirmed deletion
+   * and the request is processing.
+   */
   let deleting = $state(false);
+
+  /**
+   * List of file IDs the user has selected.
+   * Gets set when they click on delete.
+   * Sent to the server for trashing on confirming.
+   */
   let pendingDelete = $state<string[]>([]);
   let previewFileId = $state<string | null>(null);
   let destination = $state<DestinationRequest | null>(null);
@@ -342,17 +370,8 @@
     }
   }
 
-  function cycleSort(column: SortColumn) {
-    if (sort.column !== column) {
-      sort = { column, direction: "asc" };
-    } else if (sort.direction === "asc") {
-      sort = { column, direction: "desc" };
-    } else {
-      sort = { ...DEFAULT_SORT };
-    }
-
+  function onSortCycle() {
     kv.filesSort.set(sort);
-
     order();
   }
 
@@ -607,6 +626,7 @@
     const additive = event.ctrlKey || event.metaKey;
     const range = event.shiftKey;
 
+    // User has pressed Shift + Click
     if (range && selected.length > 0) {
       let anchorId = selected[0];
 
@@ -618,6 +638,7 @@
       }
 
       const ids = entries.map((entry) => entry.file.id);
+
       const from = ids.indexOf(anchorId);
       const to = ids.indexOf(id);
 
@@ -652,6 +673,7 @@
     if (event.key !== "Escape") {
       return;
     }
+
     if (
       event.defaultPrevented ||
       uploadMenuOpen ||
@@ -662,10 +684,13 @@
     ) {
       return;
     }
+
     if (!selectMode && selected.length === 0) {
       return;
     }
+
     event.preventDefault();
+
     clearSelection();
   }
 
@@ -1079,9 +1104,30 @@
       <div
         class="{columns} h-10 shrink-0 border-b text-xs font-medium text-muted-foreground"
       >
-        {@render columnHeader("name", "Name")}
-        {@render columnHeader("size", "Size", "hidden @lg:flex", "justify-end")}
-        {@render columnHeader("created", "Created", "hidden @2xl:flex")}
+        <SortHeader
+          label="Name"
+          column="name"
+          bind:sort
+          defaultSort={DEFAULT_SORT}
+          onCycle={onSortCycle}
+        />
+        <SortHeader
+          label="Size"
+          column="size"
+          bind:sort
+          defaultSort={DEFAULT_SORT}
+          onCycle={onSortCycle}
+          class="hidden @lg:flex"
+          buttonClass="justify-end"
+        />
+        <SortHeader
+          label="Created"
+          column="created"
+          bind:sort
+          defaultSort={DEFAULT_SORT}
+          onCycle={onSortCycle}
+          class="hidden @2xl:flex"
+        />
         <div class="flex items-center justify-end">
           <FileViewModeMenu bind:mode={viewMode} />
         </div>
@@ -1322,18 +1368,3 @@
   request={destination}
   onCancel={() => (destination = null)}
 />
-
-{#snippet columnHeader(
-  column: SortColumn,
-  label: string,
-  cellClass?: string,
-  buttonClass?: string,
-)}
-  <SortHeader
-    {label}
-    direction={sort.column === column ? sort.direction : undefined}
-    onclick={() => cycleSort(column)}
-    class={cellClass}
-    {buttonClass}
-  />
-{/snippet}
