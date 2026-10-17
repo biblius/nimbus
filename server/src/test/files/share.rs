@@ -4,10 +4,25 @@ mod sharing {
     use super::super::{upload_in, user};
     use crate::{
         error::AppError,
-        file::model::{CreateDirectory, FileKind},
+        file::model::{CreateDirectory, FileKind, ShareFile, SharingMode},
         test::{self, TestState},
     };
+    use chrono::{Duration, Utc};
     use suitest::before_all;
+
+    fn share_download() -> ShareFile {
+        ShareFile {
+            sharing_mode: SharingMode::Download,
+            share_expires_at: None,
+        }
+    }
+
+    fn share_view() -> ShareFile {
+        ShareFile {
+            sharing_mode: SharingMode::View,
+            share_expires_at: None,
+        }
+    }
 
     #[before_all]
     async fn setup() -> TestState {
@@ -23,23 +38,84 @@ mod sharing {
 
         let file = upload_in(state, &session.user, root, None, "notes.txt", b"hello").await;
 
-        assert!(!file.shared);
+        assert!(file.sharing_mode.is_none());
 
         state
             .services
             .files
-            .share_file(&session.user, root, file.id)
+            .share_file(&session.user, root, file.id, share_download())
             .await
             .unwrap();
 
         let shared = state.services.share.get(file.id).await.unwrap();
-        assert!(shared.file.shared);
+        assert_eq!(shared.file.sharing_mode, Some(SharingMode::Download));
+        assert!(shared.file.share_expires_at.is_none());
         assert_eq!(shared.file.name, "notes.txt");
 
-        let (entry, path, mime) = state.services.share.content(file.id).await.unwrap();
+        let (entry, path, mime) = state.services.share.download(file.id).await.unwrap();
         assert_eq!(entry.id, file.id);
         assert!(path.exists());
         assert!(mime.starts_with("text/plain"));
+    }
+
+    #[test]
+    async fn view_share_allows_content_but_not_download(state: TestState) {
+        let _ada = user(state, "ada-share-view").await;
+        let session = test::login(state, "ada-share-view", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let file = upload_in(state, &session.user, root, None, "notes.txt", b"hello").await;
+
+        state
+            .services
+            .files
+            .share_file(&session.user, root, file.id, share_view())
+            .await
+            .unwrap();
+
+        let shared = state.services.share.get(file.id).await.unwrap();
+        assert_eq!(shared.file.sharing_mode, Some(SharingMode::View));
+
+        let (entry, _, _) = state.services.share.content(file.id).await.unwrap();
+        assert_eq!(entry.id, file.id);
+
+        let denied = state.services.share.download(file.id).await.unwrap_err();
+        assert!(matches!(denied, AppError::Forbidden(_)));
+    }
+
+    #[test]
+    async fn expired_share_is_not_publicly_readable(state: TestState) {
+        let _ada = user(state, "ada-share-expired").await;
+        let session = test::login(state, "ada-share-expired", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let file = upload_in(state, &session.user, root, None, "old.txt", b"bye").await;
+
+        state
+            .services
+            .files
+            .share_file(&session.user, root, file.id, share_download())
+            .await
+            .unwrap();
+
+        assert!(state.services.share.get(file.id).await.is_ok());
+
+        let past = Utc::now() - Duration::hours(1);
+        sqlx::query!(
+            r#"
+            UPDATE files
+            SET share_expires_at = $1
+            WHERE id = $2
+            "#,
+            past,
+            file.id
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+
+        let missing = state.services.share.get(file.id).await.unwrap_err();
+        assert!(matches!(missing, AppError::ResourceMissing(_)));
     }
 
     #[test]
@@ -56,7 +132,7 @@ mod sharing {
         state
             .services
             .files
-            .share_file(&session.user, root, file.id)
+            .share_file(&session.user, root, file.id, share_download())
             .await
             .unwrap();
 
@@ -117,15 +193,28 @@ mod sharing {
         )
         .await;
 
+        let expires_at = Utc::now() + Duration::hours(24);
+
         state
             .services
             .files
-            .share_file(&session.user, root, dir.id)
+            .share_file(
+                &session.user,
+                root,
+                dir.id,
+                ShareFile {
+                    sharing_mode: SharingMode::View,
+                    share_expires_at: Some(expires_at),
+                },
+            )
             .await
             .unwrap();
 
-        assert!(state.services.share.get(dir.id).await.unwrap().file.shared);
-        assert!(
+        let shared_dir = state.services.share.get(dir.id).await.unwrap();
+        assert_eq!(shared_dir.file.sharing_mode, Some(SharingMode::View));
+        assert!(shared_dir.file.share_expires_at.is_some());
+
+        assert_eq!(
             state
                 .services
                 .share
@@ -133,9 +222,20 @@ mod sharing {
                 .await
                 .unwrap()
                 .file
-                .shared
+                .sharing_mode,
+            Some(SharingMode::View)
         );
-        assert!(state.services.share.get(leaf.id).await.unwrap().file.shared);
+        assert_eq!(
+            state
+                .services
+                .share
+                .get(leaf.id)
+                .await
+                .unwrap()
+                .file
+                .sharing_mode,
+            Some(SharingMode::View)
+        );
 
         let children = state.services.share.list(dir.id).await.unwrap();
         assert_eq!(children.len(), 1);
@@ -184,10 +284,20 @@ mod sharing {
             .await
             .unwrap();
 
+        let expires_at = Utc::now() + Duration::days(7);
+
         state
             .services
             .files
-            .share_file(&session.user, root, dir.id)
+            .share_file(
+                &session.user,
+                root,
+                dir.id,
+                ShareFile {
+                    sharing_mode: SharingMode::Download,
+                    share_expires_at: Some(expires_at),
+                },
+            )
             .await
             .unwrap();
 
@@ -205,7 +315,8 @@ mod sharing {
             )
             .await
             .unwrap();
-        assert!(nested.shared);
+        assert_eq!(nested.sharing_mode, Some(SharingMode::Download));
+        assert!(nested.share_expires_at.is_some());
 
         let file = upload_in(
             state,
@@ -216,7 +327,8 @@ mod sharing {
             b"fresh",
         )
         .await;
-        assert!(file.shared);
+        assert_eq!(file.sharing_mode, Some(SharingMode::Download));
+        assert!(file.share_expires_at.is_some());
 
         let shared = state.services.share.get(file.id).await.unwrap();
         assert_eq!(shared.file.name, "new.txt");
@@ -239,7 +351,7 @@ mod sharing {
         let denied = state
             .services
             .files
-            .share_file(&bob.user, root, file.id)
+            .share_file(&bob.user, root, file.id, share_download())
             .await
             .unwrap_err();
 

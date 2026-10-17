@@ -33,14 +33,64 @@ pub struct FileEntry {
     pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
-    /// When true, the entry is reachable via the public share routes.
-    pub shared: bool,
+    /// Public share access level. `None` means the entry is not shared.
+    pub sharing_mode: Option<SharingMode>,
+    /// When set, public share routes treat the entry as missing after this instant.
+    pub share_expires_at: Option<DateTime<Utc>>,
     /// Generated artifacts (preview hashes, etc.). Omitted from JSON when null.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<FileMetadata>)]
     pub metadata: Option<Json<FileMetadata>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// How a publicly shared file may be accessed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SharingMode {
+    /// Preview and stream only; attachment downloads are denied.
+    View,
+    /// Preview, stream, and attachment download.
+    Download,
+}
+
+impl SharingMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::View => "view",
+            Self::Download => "download",
+        }
+    }
+}
+
+impl Type<Db> for SharingMode {
+    fn type_info() -> <Db as Database>::TypeInfo {
+        <str as Type<Db>>::type_info()
+    }
+
+    fn compatible(ty: &<Db as Database>::TypeInfo) -> bool {
+        <str as Type<Db>>::compatible(ty)
+    }
+}
+
+impl<'q> Encode<'q, Db> for SharingMode {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <Db as Database>::ArgumentBuffer,
+    ) -> Result<IsNull, BoxDynError> {
+        <&'q str as Encode<'q, Db>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+impl<'r> Decode<'r, Db> for SharingMode {
+    fn decode(value: <Db as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        match <&'r str as Decode<'r, Db>>::decode(value)? {
+            "view" => Ok(Self::View),
+            "download" => Ok(Self::Download),
+            other => Err(format!("unknown sharing mode: {other:?}").into()),
+        }
+    }
 }
 
 /// Generated preview hashes stored in the `metadata` JSONB column.
@@ -242,6 +292,15 @@ pub struct RenameFile {
     #[validate(length(min = 1, message = "File name cannot be empty"))]
     #[validate(length(max = 255, message = "File name too long"))]
     pub name: String,
+}
+
+/// Public share settings applied to a live file and its descendants.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareFile {
+    pub sharing_mode: SharingMode,
+    /// Omit or null for a share that does not expire.
+    pub share_expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize, Validify, ToSchema)]

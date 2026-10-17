@@ -72,9 +72,11 @@ CREATE TABLE files (
   hash TEXT,
   -- Always null for directories
   size_bytes BIGINT NOT NULL,
-  -- When true, the entry is reachable without authentication via the public share routes.
-  -- Sharing a directory sets this on every descendant and unsharing clears it.
-  shared BOOLEAN NOT NULL DEFAULT FALSE,
+  -- Null when not publicly shared. `view` allows preview only; `download` also allows downloads.
+  -- Sharing a directory sets this (and share_expires_at) on every descendant; unsharing clears them.
+  sharing_mode TEXT,
+  -- When set, the public share is treated as missing after this instant.
+  share_expires_at TIMESTAMPTZ,
   -- Optional generated artifacts (preview hashes, etc.). Null until processing.
   metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL,
@@ -91,9 +93,9 @@ CREATE INDEX files_parent_idx ON files (parent);
 
 CREATE INDEX files_hash_idx ON files (hash);
 
-CREATE INDEX files_shared_idx ON files (shared)
+CREATE INDEX files_sharing_mode_idx ON files (sharing_mode, share_expires_at)
 WHERE
-  shared;
+  sharing_mode IS NOT NULL;
 
 CREATE INDEX files_preview_64_idx ON files ((metadata->> 'preview64'))
 WHERE

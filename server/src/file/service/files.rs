@@ -14,7 +14,7 @@ use crate::{
         format::{FileType, TextFormat},
         model::{
             CopyFile, FileContentPreview, MAX_ANCESTOR_DEPTH, MoveFiles, PreviewSize, RenameFile,
-            RootView, TrashFiles,
+            RootView, ShareFile, TrashFiles,
         },
         tree::FileTree,
     },
@@ -259,15 +259,15 @@ impl FileService {
             }
         }
 
-        // Directory uploads land under one parent; inherit that parent's share flag for the whole tree.
-        let shared = match parent {
+        // Directory uploads land under one parent; inherit that parent's share settings.
+        let (sharing_mode, share_expires_at) = match parent {
             Some(id) => self
                 .files
                 .get_live(id)
                 .await?
-                .map(|entry| entry.shared)
-                .unwrap_or(false),
-            None => false,
+                .map(|entry| (entry.sharing_mode, entry.share_expires_at))
+                .unwrap_or((None, None)),
+            None => (None, None),
         };
 
         let now = Utc::now();
@@ -284,7 +284,8 @@ impl FileService {
                 file_type: None,
                 hash: None,
                 size_bytes: 0,
-                shared,
+                sharing_mode,
+                share_expires_at,
                 metadata: None,
                 created_at: now,
                 updated_at: now,
@@ -301,7 +302,8 @@ impl FileService {
             file_type: Some(file.file_type.clone()),
             hash: Some(file.hash.clone()),
             size_bytes: file.size,
-            shared,
+            sharing_mode,
+            share_expires_at,
             metadata: None,
             created_at: now,
             updated_at: now,
@@ -657,7 +659,8 @@ impl FileService {
                 hash: entry.hash,
                 size_bytes: entry.size_bytes,
                 // Copies are private until explicitly shared again.
-                shared: false,
+                sharing_mode: None,
+                share_expires_at: None,
                 metadata: entry.metadata,
                 created_at: now,
                 updated_at: entry.updated_at,
@@ -704,18 +707,39 @@ impl FileService {
     }
 
     /// Mark a live file (and every descendant, for directories) as publicly shared.
-    #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
-    pub async fn share_file(&self, user: &User, root_id: Uuid, id: Uuid) -> Result<(), AppError> {
+    #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id, file_id = %id, ?input.sharing_mode), err(Debug))]
+    pub async fn share_file(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        id: Uuid,
+        input: ShareFile,
+    ) -> Result<(), AppError> {
         let file = self.readable(user, id).await?;
 
         if file.root_id != root_id {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         }
 
-        self.share.set_shared_subtree(root_id, id, true).await
+        if let Some(expires_at) = input.share_expires_at {
+            if expires_at <= Utc::now() {
+                return Err(AppError::Unprocessable(
+                    "Share expiry must be in the future".into(),
+                ));
+            }
+        }
+
+        self.share
+            .set_sharing_subtree(
+                root_id,
+                id,
+                Some(input.sharing_mode),
+                input.share_expires_at,
+            )
+            .await
     }
 
-    /// Clear the public share flag on a live file and every descendant.
+    /// Clear the public share on a live file and every descendant.
     #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
     pub async fn unshare_file(&self, user: &User, root_id: Uuid, id: Uuid) -> Result<(), AppError> {
         let file = self.readable(user, id).await?;
@@ -724,7 +748,9 @@ impl FileService {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         }
 
-        self.share.set_shared_subtree(root_id, id, false).await
+        self.share
+            .set_sharing_subtree(root_id, id, None, None)
+            .await
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]

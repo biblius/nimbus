@@ -4,7 +4,7 @@ use crate::{
     file::{
         model::{
             CopyFile, CreateDirectory, CreateTextFile, FileEntry, FileView, MoveFiles, PreviewSize,
-            RenameFile, RestoreFile, RootView, TrashFiles,
+            RenameFile, RestoreFile, RootView, ShareFile, TrashFiles,
         },
         queue::DeletionResult,
         tree::FileTree,
@@ -818,7 +818,7 @@ pub(crate) async fn shared_download(
     State(state): State<AppState>,
     Path(file_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    let (entry, path, mime) = state.services.share.content(file_id).await?;
+    let (entry, path, mime) = state.services.share.download(file_id).await?;
 
     let file = File::open(path).await?;
 
@@ -886,6 +886,7 @@ pub(crate) async fn shared_preview(
 #[utoipa::path(
     post,
     path = "/roots/{root_id}/files/{id}/share",
+    request_body = ShareFile,
     params(
         ("root_id" = Uuid, Path, description = "Root id"),
         ("id" = Uuid, Path, description = "File id")
@@ -896,11 +897,12 @@ pub(crate) async fn share_file(
     Path((root_id, id)): Path<(Uuid, Uuid)>,
     State(state): State<AppState>,
     session: Session,
+    Json(input): Json<ShareFile>,
 ) -> Result<StatusCode, AppError> {
     state
         .services
         .files
-        .share_file(&session.user, root_id, id)
+        .share_file(&session.user, root_id, id, input)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

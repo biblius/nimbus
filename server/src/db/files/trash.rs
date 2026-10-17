@@ -8,7 +8,7 @@ use crate::{
     error::AppError,
     file::{
         format::FileType,
-        model::{FileEntry, FileKind, FileMetadata, FileRef},
+        model::{FileEntry, FileKind, FileMetadata, FileRef, SharingMode},
         tree::FileEntryTree,
     },
 };
@@ -54,7 +54,8 @@ impl TrashRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
-                FALSE AS "shared!",
+                NULL AS "sharing_mode: SharingMode",
+                NULL AS "share_expires_at: DateTime<Utc>",
                 metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at
@@ -126,7 +127,8 @@ impl TrashRepository {
                 format AS file_type,
                 hash,
                 size_bytes,
-                shared,
+                sharing_mode,
+                share_expires_at,
                 metadata,
                 created_at,
                 updated_at
@@ -250,7 +252,8 @@ impl TrashRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
-                FALSE AS "shared!",
+                NULL AS "sharing_mode: SharingMode",
+                NULL AS "share_expires_at: DateTime<Utc>",
                 metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at

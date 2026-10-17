@@ -2,7 +2,7 @@ use crate::{
     db::files::ShareRepository,
     error::AppError,
     file::{
-        model::{FileContentPreview, FileEntry, FileKind, FileView, PreviewSize},
+        model::{FileContentPreview, FileEntry, FileKind, FileView, PreviewSize, SharingMode},
         storage::Storage,
     },
 };
@@ -52,9 +52,33 @@ impl ShareService {
         self.share.list_shared_children(parent_id).await
     }
 
-    /// Blob path for a shared file download.
+    /// Blob path for inline/stream access of a shared file (view or download mode).
     #[instrument(skip(self), err(Debug))]
     pub async fn content(
+        &self,
+        id: Uuid,
+    ) -> Result<(FileEntry, PathBuf, &'static str), AppError> {
+        self.shared_blob(id).await
+    }
+
+    /// Blob path for an attachment download. Rejected when the share is view-only.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn download(
+        &self,
+        id: Uuid,
+    ) -> Result<(FileEntry, PathBuf, &'static str), AppError> {
+        let (file, path, mime) = self.shared_blob(id).await?;
+
+        if file.sharing_mode != Some(SharingMode::Download) {
+            return Err(AppError::Forbidden(
+                "This share does not allow downloads".into(),
+            ));
+        }
+
+        Ok((file, path, mime))
+    }
+
+    async fn shared_blob(
         &self,
         id: Uuid,
     ) -> Result<(FileEntry, PathBuf, &'static str), AppError> {

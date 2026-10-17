@@ -9,7 +9,7 @@ use crate::{
     file::{
         model::{
             CopyFile, CreateDirectory, CreateTextFile, FileEntry, FileMetadata, FileView,
-            MoveFiles, RenameFile, RestoreFile, Root, RootView, TrashFiles,
+            MoveFiles, RenameFile, RestoreFile, Root, RootView, ShareFile, SharingMode, TrashFiles,
         },
         tree::FileTree,
     },
@@ -116,6 +116,8 @@ use crate::{
         FileMetadata,
         FileView,
         FileTree,
+        SharingMode,
+        ShareFile,
         CreateDirectory,
         CreateTextFile,
         TrashFiles,

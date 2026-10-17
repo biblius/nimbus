@@ -3,18 +3,19 @@ use crate::{
     error::AppError,
     file::{
         format::FileType,
-        model::{FileEntry, FileKind, FileMetadata, FileView},
+        model::{FileEntry, FileKind, FileMetadata, FileView, SharingMode},
     },
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sqlx::{QueryBuilder, types::Json};
 use tracing::instrument;
 use uuid::Uuid;
 
-/// Queries over live files with `shared = true`.
+/// Queries over live files that currently have a public share.
 ///
-/// Every read in this repository filters on the share flag so it only ever
-/// touches publicly shared files. Share/unshare mutations also live here.
+/// Every read in this repository filters on sharing mode (and expiry) so it
+/// only ever touches publicly shared, non-expired files. Share/unshare
+/// mutations also live here.
 #[derive(Clone)]
 pub struct ShareRepository {
     pool: DbPool,
@@ -25,9 +26,11 @@ impl ShareRepository {
         Self { pool }
     }
 
-    /// A live file that is currently publicly shared.
+    /// A live file that is currently publicly shared and not expired.
     #[instrument(skip(self), err(Debug))]
     pub async fn get_shared(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
+        let now = Utc::now();
+
         sqlx::query_as!(
             FileEntry,
             r#"
@@ -41,24 +44,29 @@ impl ShareRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
-                shared,
+                sharing_mode AS "sharing_mode: SharingMode",
+                share_expires_at,
                 metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at
             FROM files
             WHERE id = $1
-              AND shared
+              AND sharing_mode IS NOT NULL
+              AND (share_expires_at IS NULL OR share_expires_at > $2)
             "#,
-            id
+            id,
+            now
         )
         .fetch_optional(&self.pool)
         .await
         .map_err(AppError::from)
     }
 
-    /// Shared children of a shared directory.
+    /// Shared children of a shared directory (non-expired only).
     #[instrument(skip(self), err(Debug))]
     pub async fn list_shared_children(&self, parent: Uuid) -> Result<Vec<FileView>, AppError> {
+        let now = Utc::now();
+
         let mut query = QueryBuilder::new(
             r#"
             SELECT
@@ -71,16 +79,19 @@ impl ShareRepository {
                 f.format AS file_type,
                 f.hash,
                 f.size_bytes,
-                f.shared,
+                f.sharing_mode,
+                f.share_expires_at,
                 f.metadata,
                 f.created_at,
                 f.updated_at
             FROM files f
-            WHERE f.shared
-              AND f.parent =
+            WHERE f.sharing_mode IS NOT NULL
+              AND (f.share_expires_at IS NULL OR f.share_expires_at > 
             "#,
         );
 
+        query.push_bind(now);
+        query.push(") AND f.parent = ");
         query.push_bind(parent);
         query.push(
             r#" ORDER BY CASE WHEN f."type" = 'd' THEN 0 ELSE 1 END, f.name, f.created_at, f.id"#,
@@ -95,13 +106,21 @@ impl ShareRepository {
         Ok(rows.into_iter().map(FileView::from).collect())
     }
 
-    /// Set `shared` on `id` and every live descendant in `root_id`.
-    #[instrument(skip(self), fields(root_id = %root_id, file_id = %id, shared), err(Debug))]
-    pub async fn set_shared_subtree(
+    /// Set share mode and expiry on `id` and every live descendant in `root_id`.
+    ///
+    /// Pass `sharing_mode: None` (and typically `share_expires_at: None`) to clear
+    /// the public share on the whole subtree.
+    #[instrument(
+        skip(self),
+        fields(root_id = %root_id, file_id = %id, ?sharing_mode, ?share_expires_at),
+        err(Debug)
+    )]
+    pub async fn set_sharing_subtree(
         &self,
         root_id: Uuid,
         id: Uuid,
-        shared: bool,
+        sharing_mode: Option<SharingMode>,
+        share_expires_at: Option<DateTime<Utc>>,
     ) -> Result<(), AppError> {
         let now = Utc::now();
 
@@ -119,13 +138,15 @@ impl ShareRepository {
             )
             UPDATE files
             SET
-                shared = $3,
-                updated_at = $4
+                sharing_mode = $3,
+                share_expires_at = $4,
+                updated_at = $5
             WHERE id IN (SELECT id FROM tree)
             "#,
             id,
             root_id,
-            shared,
+            sharing_mode as Option<SharingMode>,
+            share_expires_at,
             now
         )
         .execute(&self.pool)
