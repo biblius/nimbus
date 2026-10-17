@@ -10,8 +10,8 @@ use crate::{
     db::{self, Repository, Transactor},
     email::EmailSender,
     file::{
-        queue::{self, DeletionQueue, DeletionQueueHandle, ProcessingQueue},
-        service::{LiveFileService, ShareService, TrashFileService},
+        queue::{DeletionQueue, DeletionQueueHandle, ProcessingQueue},
+        service::{FileService, ShareService, TrashFileService},
         storage::Storage,
     },
     user::service::UserService,
@@ -29,7 +29,7 @@ pub struct AppState {
 pub struct ServiceState {
     pub auth: AuthenticationService,
     pub users: UserService,
-    pub files: LiveFileService,
+    pub files: FileService,
     pub share: ShareService,
     pub trash: TrashFileService,
 }
@@ -115,12 +115,11 @@ impl AppState {
             repository.sessions.clone(),
             email,
             transactor.clone(),
-            repository.deletions.clone(),
         );
 
         let processing = ProcessingQueue::start(storage.clone(), repository.files.clone());
 
-        let file_service = LiveFileService::new(
+        let file_service = FileService::new(
             repository.files.clone(),
             repository.share.clone(),
             repository.trash.clone(),
@@ -134,7 +133,6 @@ impl AppState {
             repository.trash.clone(),
             repository.files.clone(),
             repository.folders.clone(),
-            repository.deletions.clone(),
             transactor,
         );
 
@@ -166,19 +164,12 @@ impl AppState {
             trash: trash_service,
         };
 
-        let retention_days = args.file_retention_days();
-        let expiry_trash = repository.trash.clone();
-        let expiry_deletions = repository.deletions.clone();
         let queue = DeletionQueue::start(
             repository,
             storage,
             std::time::Duration::from_secs(args.file_deletion_interval_secs()),
+            args.file_retention_days(),
         );
-        tokio::spawn(queue::expiry::start(
-            expiry_trash,
-            expiry_deletions,
-            retention_days,
-        ));
 
         Self {
             services,

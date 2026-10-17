@@ -1,8 +1,8 @@
-mod live;
+mod files;
 mod share;
 mod trash;
 
-pub use live::LiveFileService;
+pub use files::FileService;
 pub use share::ShareService;
 pub use trash::TrashFileService;
 

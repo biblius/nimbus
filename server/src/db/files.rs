@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use crate::{
     db::{Db, DbPool},
     error::AppError,
@@ -8,32 +6,19 @@ use crate::{
 use sqlx::QueryBuilder;
 use uuid::Uuid;
 
-mod live;
+mod files;
 mod share;
 mod trash;
 
-pub use live::FileRepository;
+pub use files::FileRepository;
 pub use share::ShareRepository;
 pub use trash::TrashRepository;
 
-/// Which table a queued/deleted file lives in. Stored as text: `files` or `trash`.
-#[derive(Clone, Copy, Debug, sqlx::Type)]
-#[sqlx(type_name = "text")]
+/// Which table a hard-deleted file lives in.
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum FileTable {
-    #[sqlx(rename = "files")]
     Live,
-    #[sqlx(rename = "trash")]
     Trashed,
-}
-
-impl Display for FileTable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Queue `origin` column values (`files` | `trash`), not SQL relation names.
-        match self {
-            Self::Live => write!(f, "files"),
-            Self::Trashed => write!(f, "trash"),
-        }
-    }
 }
 
 impl FileTable {

@@ -59,7 +59,7 @@ pub struct StartArgs {
     #[arg(long)]
     file_retention_days: Option<String>,
 
-    /// How often the deletion queue sweeps pending SYSTEM rows, in seconds.
+    /// How often the deletion worker sweeps expired trash, in seconds.
     #[arg(long)]
     file_deletion_interval_secs: Option<String>,
 

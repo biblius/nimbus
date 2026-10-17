@@ -6,7 +6,10 @@ use crate::{
     error::AppError,
     file::{
         format::FileType,
-        model::{FileEntry, FileKind, FileMetadata, FileRef, FileView, Root, RootView},
+        model::{
+            FileEntry, FileKind, FileMetadata, FileRef, FileView, MAX_ANCESTOR_DEPTH, Root,
+            RootView,
+        },
         tree::FileEntryTree,
     },
 };
@@ -24,6 +27,7 @@ impl FileRepository {
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
+
     #[instrument(skip(self, executor), fields(root_id = %id, name = %name), err(Debug))]
     pub async fn insert_root<'e, E>(
         &self,
@@ -68,6 +72,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn list_private_roots(&self) -> Result<Vec<RootView>, AppError> {
         sqlx::query_as!(
@@ -89,6 +94,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn list_shared_roots(&self) -> Result<Vec<RootView>, AppError> {
         sqlx::query_as!(
@@ -110,6 +116,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     /// Private root plus every shared root this user belongs to. The private root comes first.
     #[instrument(skip(self), err(Debug))]
     pub async fn list_accessible_roots(&self, user_id: Uuid) -> Result<Vec<RootView>, AppError> {
@@ -138,6 +145,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn update_root(
         &self,
@@ -173,6 +181,7 @@ impl FileRepository {
         .await?
         .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn set_quota(&self, root_id: Uuid, quota_bytes: i64) -> Result<(), AppError> {
         let now = Utc::now();
@@ -199,6 +208,7 @@ impl FileRepository {
 
         Ok(())
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn get_root(&self, id: Uuid) -> Result<Option<Root>, AppError> {
         sqlx::query_as!(
@@ -218,6 +228,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn get_private_root(&self, user_id: Uuid) -> Result<Root, AppError> {
         sqlx::query_as!(
@@ -239,6 +250,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     /// Quota on this user's assignment. `0` is unlimited.
     #[instrument(skip(self), err(Debug))]
     pub async fn root_quota(&self, root_id: Uuid) -> Result<i64, AppError> {
@@ -257,10 +269,100 @@ impl FileRepository {
             AppError::Internal
         })
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn get_live(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
         self.get_live_with(&self.pool, id).await
     }
+
+    /// Ancestors of `id` in `root_id`, ordered root → … → `id` (inclusive).
+    ///
+    /// Empty when `id` is missing or not in `root_id`. Walks at most
+    /// [`MAX_ANCESTOR_DEPTH`] hops (defensive; the app never creates cycles).
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_ancestors(
+        &self,
+        root_id: Uuid,
+        id: Uuid,
+    ) -> Result<Vec<FileEntry>, AppError> {
+        let mut query = QueryBuilder::<Db>::new(
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT
+                    id,
+                    root_id,
+                    created_by,
+                    "type",
+                    name,
+                    parent,
+                    format,
+                    hash,
+                    size_bytes,
+                    shared,
+                    metadata,
+                    created_at,
+                    updated_at,
+                    0 AS depth
+                FROM files
+                WHERE id =
+            "#,
+        );
+        query.push_bind(id);
+        query.push(" AND root_id = ").push_bind(root_id);
+        query.push(
+            r#"
+                UNION ALL
+                SELECT
+                    p.id,
+                    p.root_id,
+                    p.created_by,
+                    p."type",
+                    p.name,
+                    p.parent,
+                    p.format,
+                    p.hash,
+                    p.size_bytes,
+                    p.shared,
+                    p.metadata,
+                    p.created_at,
+                    p.updated_at,
+                    t.depth + 1
+                FROM files p
+                JOIN tree t ON p.id = t.parent
+                 AND p.root_id = t.root_id
+                WHERE t.depth <
+            "#,
+        );
+        query.push_bind(MAX_ANCESTOR_DEPTH);
+        query.push(
+            r#"
+            )
+            SELECT
+                id,
+                root_id,
+                created_by,
+                "type" AS kind,
+                name,
+                parent,
+                format AS file_type,
+                hash,
+                size_bytes,
+                shared,
+                metadata,
+                created_at,
+                updated_at
+            FROM tree
+            ORDER BY depth DESC
+            "#,
+        );
+
+        query
+            .build_query_as::<FileEntry>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)
+    }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn get_live_with<'e, E>(
         &self,
@@ -296,10 +398,12 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     #[instrument(skip(self, node), fields(file_id = %node.id, root_id = %node.root_id, name = %node.name), err(Debug))]
     pub async fn create(&self, node: NewFile) -> Result<FileEntry, AppError> {
         self.insert(&self.pool, node).await
     }
+
     #[instrument(skip(self, executor, file), fields(file_id = %file.id, root_id = %file.root_id, name = %file.name), err(Debug))]
     pub async fn insert<'e, E>(&self, executor: E, file: NewFile) -> Result<FileEntry, AppError>
     where
@@ -361,6 +465,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     /// Insert every row in one statement. Parents and children may appear in any order.
     #[instrument(skip(self, executor, files), err(Debug))]
     pub async fn insert_many<'e, E>(&self, executor: E, files: &[FileEntry]) -> Result<(), AppError>
@@ -415,6 +520,7 @@ impl FileRepository {
 
         Ok(())
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn list_files(
         &self,
@@ -423,6 +529,7 @@ impl FileRepository {
     ) -> Result<Vec<FileView>, AppError> {
         self.list_files_with(&self.pool, root, parent).await
     }
+
     /// Live children of a directory.
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn list_files_with<'e, E>(
@@ -477,6 +584,7 @@ impl FileRepository {
 
         Ok(rows.into_iter().map(FileView::from).collect())
     }
+
     /// Descendants of a directory in `files`, down to the leaf nodes.
     pub async fn list_descendants(
         &self,
@@ -485,6 +593,7 @@ impl FileRepository {
     ) -> Result<Vec<FileEntryTree>, AppError> {
         list_descendants_in(&self.pool, FileTable::Live, root_id, parent).await
     }
+
     /// Bytes stored in a root. Directory rows are excluded.
     #[instrument(skip(self), err(Debug))]
     pub async fn root_quota_usage(&self, root_id: Uuid) -> Result<i64, AppError> {
@@ -501,6 +610,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     /// Store generated preview metadata on a live file row.
     #[instrument(skip(self, metadata), fields(file_id = %file_id), err(Debug))]
     pub async fn set_metadata(
@@ -530,6 +640,7 @@ impl FileRepository {
 
         Ok(())
     }
+
     /// Replace the content-addressed fields of an existing live file.
     #[instrument(skip(self, executor, file_type, hash), fields(file_id = %id), err(Debug))]
     pub async fn update_content<'e, E>(
@@ -579,6 +690,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     /// Update only the display name of a live file or directory.
     #[instrument(skip(self, name), fields(file_id = %id, name = %name), err(Debug))]
     pub async fn update_name(&self, id: Uuid, name: &str) -> Result<FileEntry, AppError> {
@@ -614,10 +726,12 @@ impl FileRepository {
         .await?
         .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn count_hash(&self, hash: &str) -> Result<i64, AppError> {
         self.count_hash_with(&self.pool, hash).await
     }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn count_hash_with<'e, E>(&self, executor: E, hash: &str) -> Result<i64, AppError>
     where
@@ -636,10 +750,12 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn count_preview(&self, preview: &str) -> Result<i64, AppError> {
         self.count_preview_with(&self.pool, preview).await
     }
+
     /// How many live/trashed rows still point at this preview blob.
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn count_preview_with<'e, E>(
@@ -665,6 +781,7 @@ impl FileRepository {
         .await
         .map_err(AppError::from)
     }
+
     /// Live file `id` and all of its descendants in `root_id`.
     #[instrument(skip(self), err(Debug))]
     pub async fn list_live_subtree(
@@ -740,6 +857,7 @@ impl FileRepository {
 
         Ok(rows)
     }
+
     /// Set `parent` on live rows in one root. Trashed rows are not updated.
     #[instrument(skip(self, ids), err(Debug))]
     pub async fn move_to_parent(
@@ -780,10 +898,12 @@ impl FileRepository {
 
         Ok(())
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn delete_live(&self, id: Uuid) -> Result<(), AppError> {
         self.delete_live_with(&self.pool, id).await
     }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_live_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where
@@ -795,9 +915,11 @@ impl FileRepository {
 
         Ok(())
     }
+
     pub async fn delete_root(&self, id: Uuid) -> Result<(), AppError> {
         self.delete_root_with(&self.pool, id).await
     }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_root_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where
@@ -813,6 +935,7 @@ impl FileRepository {
 
         Ok(())
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn list_file_ids(&self, root_id: Uuid) -> Result<Vec<FileRef>, AppError> {
         sqlx::query_as!(

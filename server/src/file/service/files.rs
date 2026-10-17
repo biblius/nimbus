@@ -13,7 +13,8 @@ use crate::{
     file::{
         format::{FileType, TextFormat},
         model::{
-            CopyFile, FileContentPreview, MoveFiles, PreviewSize, RenameFile, RootView, TrashFiles,
+            CopyFile, FileContentPreview, MAX_ANCESTOR_DEPTH, MoveFiles, PreviewSize, RenameFile,
+            RootView, TrashFiles,
         },
         tree::FileTree,
     },
@@ -29,8 +30,8 @@ use uuid::Uuid;
 use validify::{Validate, Validify};
 
 #[derive(Clone)]
-pub struct LiveFileService {
-    live: FileRepository,
+pub struct FileService {
+    files: FileRepository,
     share: ShareRepository,
     trash: TrashRepository,
     folders: UserFolderRepository,
@@ -39,9 +40,9 @@ pub struct LiveFileService {
     tx: Transactor,
 }
 
-impl LiveFileService {
+impl FileService {
     pub fn new(
-        live: FileRepository,
+        files: FileRepository,
         share: ShareRepository,
         trash: TrashRepository,
         folders: UserFolderRepository,
@@ -50,7 +51,7 @@ impl LiveFileService {
         tx: Transactor,
     ) -> Self {
         Self {
-            live,
+            files,
             share,
             trash,
             folders,
@@ -64,21 +65,24 @@ impl LiveFileService {
     pub async fn prepare(&self) -> Result<(), AppError> {
         self.storage.prepare().await
     }
+
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn list_accessible_roots(&self, user: &User) -> Result<Vec<RootView>, AppError> {
-        self.live.list_accessible_roots(user.id).await
+        self.files.list_accessible_roots(user.id).await
     }
+
     /// Bytes stored in a root. Directories are not counted.
     #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
     pub async fn usage(&self, user: &User, root_id: Uuid) -> Result<i64, AppError> {
         super::accessible(&self.folders, user, root_id).await?;
 
-        if self.live.get_root(root_id).await?.is_none() {
+        if self.files.get_root(root_id).await?.is_none() {
             return Err(AppError::ResourceMissing("Folder does not exist".into()));
         }
 
-        self.live.root_quota_usage(root_id).await
+        self.files.root_quota_usage(root_id).await
     }
+
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn list(
         &self,
@@ -88,8 +92,9 @@ impl LiveFileService {
     ) -> Result<Vec<FileView>, AppError> {
         super::accessible(&self.folders, user, root_id).await?;
 
-        self.live.list_files(root_id, dir_id).await
+        self.files.list_files(root_id, dir_id).await
     }
+
     /// Directories from the root down to `file_id`, including `file_id`.
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn ancestors(
@@ -100,40 +105,20 @@ impl LiveFileService {
     ) -> Result<Vec<FileEntry>, AppError> {
         super::accessible(&self.folders, user, root_id).await?;
 
-        let mut chain = Vec::new();
-        let mut current = Some(file_id);
-        let mut seen = HashSet::new();
+        let chain = self.files.list_ancestors(root_id, file_id).await?;
 
-        while let Some(id) = current {
-            if !seen.insert(id) {
-                return Err(AppError::Unprocessable(
-                    "Directory tree contains a cycle".into(),
-                ));
-            }
-
-            let entry = self
-                .live
-                .get_live(id)
-                .await?
-                .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
-
-            if entry.root_id != root_id {
-                return Err(AppError::ResourceMissing("File does not exist".into()));
-            }
-
-            current = entry.parent;
-
-            chain.push(entry);
+        if chain.is_empty() {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
         }
-
-        chain.reverse();
 
         Ok(chain)
     }
+
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn metadata(&self, user: &User, id: Uuid) -> Result<FileEntry, AppError> {
         self.readable(user, id).await
     }
+
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn create_directory(
         &self,
@@ -146,7 +131,7 @@ impl LiveFileService {
         let name = self.writable(user, root, &input.name).await?;
 
         let entry = self
-            .live
+            .files
             .create(NewFile {
                 id: Uuid::new_v4(),
                 root_id: root,
@@ -162,6 +147,7 @@ impl LiveFileService {
 
         Ok(entry)
     }
+
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn create_text_file(
         &self,
@@ -193,6 +179,7 @@ impl LiveFileService {
         let name = self.writable(user, root, &name).await?;
         self.storage.writer(name).await
     }
+
     /// Store the uploaded bytes, then insert the fully-described file row.
     #[instrument(skip(self, user, file), fields(user_id = %user.id, name = %file.name), err(Debug))]
     pub async fn finish_upload(
@@ -202,10 +189,10 @@ impl LiveFileService {
         parent: Option<Uuid>,
         mut file: TempFile,
     ) -> Result<FileEntry, AppError> {
-        let quota = self.live.root_quota(root_id).await?;
+        let quota = self.files.root_quota(root_id).await?;
 
         if quota > 0 {
-            let used = self.live.root_quota_usage(root_id).await?;
+            let used = self.files.root_quota_usage(root_id).await?;
 
             if used.saturating_add(file.size) > quota {
                 return Err(AppError::QuotaExceeded);
@@ -215,7 +202,7 @@ impl LiveFileService {
         let mut tx = self.tx.begin().await?;
 
         let entry = self
-            .live
+            .files
             .insert(
                 &mut *tx,
                 NewFile {
@@ -242,6 +229,7 @@ impl LiveFileService {
 
         Ok(entry)
     }
+
     /// Persist a directory upload: insert staged dirs and files, then move blobs into storage.
     #[instrument(
         skip(self, user, dirs, files),
@@ -260,10 +248,10 @@ impl LiveFileService {
             FileEntry::valid_name(&dir.name)?;
         }
 
-        let quota = self.live.root_quota(root_id).await?;
+        let quota = self.files.root_quota(root_id).await?;
 
         if quota > 0 {
-            let used = self.live.root_quota_usage(root_id).await?;
+            let used = self.files.root_quota_usage(root_id).await?;
             let total: i64 = files.iter().map(|(file, _)| file.size).sum();
 
             if used.saturating_add(total) > quota {
@@ -274,7 +262,7 @@ impl LiveFileService {
         // Directory uploads land under one parent; inherit that parent's share flag for the whole tree.
         let shared = match parent {
             Some(id) => self
-                .live
+                .files
                 .get_live(id)
                 .await?
                 .map(|entry| entry.shared)
@@ -321,7 +309,7 @@ impl LiveFileService {
 
         let mut tx = self.tx.begin().await?;
 
-        self.live.insert_many(&mut *tx, &entries).await?;
+        self.files.insert_many(&mut *tx, &entries).await?;
 
         for (file, _) in files.iter_mut() {
             self.storage.persist(file).await?;
@@ -337,6 +325,7 @@ impl LiveFileService {
 
         Ok(entries)
     }
+
     /// Open a writer that will replace an existing file's blob.
     #[instrument(skip(self, user), fields(user_id = %user.id, file_id = %file_id), err(Debug))]
     pub async fn start_overwrite(
@@ -365,6 +354,7 @@ impl LiveFileService {
 
         Ok((file, writer))
     }
+
     /// Persist new bytes and point the existing file row at them.
     #[instrument(skip(self, user, existing, file), fields(user_id = %user.id, file_id = %existing.id, name = %file.name), err(Debug))]
     pub async fn finish_overwrite(
@@ -387,10 +377,10 @@ impl LiveFileService {
             return Ok(existing);
         }
 
-        let quota = self.live.root_quota(existing.root_id).await?;
+        let quota = self.files.root_quota(existing.root_id).await?;
 
         if quota > 0 {
-            let used = self.live.root_quota_usage(existing.root_id).await?;
+            let used = self.files.root_quota_usage(existing.root_id).await?;
 
             if used
                 .saturating_sub(existing.size_bytes)
@@ -412,7 +402,7 @@ impl LiveFileService {
         let mut tx = self.tx.begin().await?;
 
         let entry = self
-            .live
+            .files
             .update_content(&mut *tx, existing.id, &file.hash, file.size, file_type)
             .await?;
 
@@ -420,7 +410,7 @@ impl LiveFileService {
 
         tx.commit().await?;
 
-        match self.live.count_hash(old_hash).await {
+        match self.files.count_hash(old_hash).await {
             Ok(count) => {
                 if count == 0
                     && let Err(error) = self.storage.remove(old_hash).await
@@ -435,6 +425,7 @@ impl LiveFileService {
 
         Ok(entry)
     }
+
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn content(
         &self,
@@ -466,6 +457,7 @@ impl LiveFileService {
 
         Ok((file, path, mime))
     }
+
     /// Serve a generated preview image for a file, when one exists.
     ///
     /// Works for both live and trashed files so trash trees can show thumbnails.
@@ -501,12 +493,14 @@ impl LiveFileService {
 
         Ok(preview)
     }
+
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn delete(&self, user: &User, id: Uuid) -> Result<(), AppError> {
         let file = self.readable(user, id).await?;
 
         self.trash.trash(file.root_id, user.id, &[file.id]).await
     }
+
     /// Move every listed file in `root_id` to the trash, including descendants.
     #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
     pub async fn delete_many(
@@ -521,6 +515,7 @@ impl LiveFileService {
 
         self.trash.trash(root_id, user.id, &input.ids).await
     }
+
     /// Change the display name of a live file or directory.
     #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
     pub async fn rename(
@@ -544,10 +539,11 @@ impl LiveFileService {
             return Ok(());
         }
 
-        self.live.update_name(id, name).await?;
+        self.files.update_name(id, name).await?;
 
         Ok(())
     }
+
     /// Change the parent of live files. Trashed files are rejected.
     #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
     pub async fn move_files(
@@ -569,34 +565,39 @@ impl LiveFileService {
             }
         }
 
-        let mut current = input.parent;
+        // /foo/bar: reject moving /foo into /bar (or any descendant). This is
+        // what keeps the tree acyclic; the depth/duplicate checks below are
+        // only defensive against corrupt data.
+        if let Some(parent) = input.parent {
+            let chain = self.files.list_ancestors(root_id, parent).await?;
 
-        // /foo/bar
-        // Forbids /foo from being moved to /bar to prevent cyclic references
-        while let Some(id) = current {
-            if seen.contains(&id) {
+            if chain.is_empty() {
+                return Err(AppError::ResourceMissing("Folder does not exist".into()));
+            }
+
+            if chain.len() as i64 >= MAX_ANCESTOR_DEPTH {
                 return Err(AppError::Unprocessable(
                     "Cannot move a folder into itself".into(),
                 ));
             }
 
-            let Some(dir) = self.live.get_live(id).await? else {
-                return Err(AppError::ResourceMissing("Folder does not exist".into()));
-            };
+            let mut path_seen = HashSet::with_capacity(chain.len());
+            for entry in &chain {
+                if !path_seen.insert(entry.id) || seen.contains(&entry.id) {
+                    return Err(AppError::Unprocessable(
+                        "Cannot move a folder into itself".into(),
+                    ));
+                }
 
-            if dir.root_id != root_id {
-                return Err(AppError::ResourceMissing("Folder does not exist".into()));
+                if entry.kind != FileKind::Directory {
+                    return Err(AppError::Unprocessable("Not a directory".into()));
+                }
             }
-
-            if dir.kind != FileKind::Directory {
-                return Err(AppError::Unprocessable("Not a directory".into()));
-            }
-
-            current = dir.parent;
         }
 
-        self.live.move_to_parent(root_id, input.parent, &ids).await
+        self.files.move_to_parent(root_id, input.parent, &ids).await
     }
+
     /// Copy a live file (and its descendants, if a directory) into `input.target_root_id`.
     ///
     /// Each copied row gets a new id and `created_at`; other metadata is retained.
@@ -613,7 +614,7 @@ impl LiveFileService {
 
         if let Some(parent) = input.parent {
             let entry =
-                self.live.get_live(parent).await?.ok_or_else(|| {
+                self.files.get_live(parent).await?.ok_or_else(|| {
                     AppError::Unprocessable("Target directory does not exist".into())
                 })?;
 
@@ -622,7 +623,7 @@ impl LiveFileService {
             }
         }
 
-        let subtree = self.live.list_live_subtree(root_id, input.id).await?;
+        let subtree = self.files.list_live_subtree(root_id, input.id).await?;
 
         let now = Utc::now();
 
@@ -663,10 +664,10 @@ impl LiveFileService {
             });
         }
 
-        let quota = self.live.root_quota(input.target_root_id).await?;
+        let quota = self.files.root_quota(input.target_root_id).await?;
 
         if quota > 0 {
-            let used = self.live.root_quota_usage(input.target_root_id).await?;
+            let used = self.files.root_quota_usage(input.target_root_id).await?;
 
             if used.saturating_add(bytes) > quota {
                 return Err(AppError::QuotaExceeded);
@@ -675,12 +676,13 @@ impl LiveFileService {
 
         let mut tx = self.tx.begin().await?;
 
-        self.live.insert_many(&mut *tx, &copies).await?;
+        self.files.insert_many(&mut *tx, &copies).await?;
 
         tx.commit().await?;
 
         Ok(())
     }
+
     pub async fn get_tree(
         &self,
         user: &User,
@@ -689,7 +691,7 @@ impl LiveFileService {
     ) -> Result<FileTree, AppError> {
         super::accessible(&self.folders, user, root_id).await?;
 
-        let files = self.live.list_descendants(root_id, parent).await?;
+        let files = self.files.list_descendants(root_id, parent).await?;
 
         Ok(FileTree {
             id: parent.unwrap_or(root_id),
@@ -700,6 +702,7 @@ impl LiveFileService {
             children: FileTree::from_entries(files),
         })
     }
+
     /// Mark a live file (and every descendant, for directories) as publicly shared.
     #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
     pub async fn share_file(&self, user: &User, root_id: Uuid, id: Uuid) -> Result<(), AppError> {
@@ -727,7 +730,7 @@ impl LiveFileService {
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     async fn readable(&self, user: &User, id: Uuid) -> Result<FileEntry, AppError> {
         let file = self
-            .live
+            .files
             .get_live(id)
             .await?
             .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
@@ -736,6 +739,7 @@ impl LiveFileService {
 
         Ok(file)
     }
+
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     async fn writable(&self, user: &User, root: Uuid, name: &str) -> Result<String, AppError> {
         let name = FileEntry::valid_name(name)?.to_string();
@@ -744,10 +748,11 @@ impl LiveFileService {
 
         Ok(name)
     }
+
     /// Resolve a live file, falling back to trash.
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     async fn readable_any(&self, user: &User, id: Uuid) -> Result<FileEntry, AppError> {
-        if let Some(file) = self.live.get_live(id).await? {
+        if let Some(file) = self.files.get_live(id).await? {
             super::accessible(&self.folders, user, file.root_id).await?;
             return Ok(file);
         }

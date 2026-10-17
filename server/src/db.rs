@@ -1,4 +1,3 @@
-pub(crate) mod deletion;
 pub(crate) mod files;
 pub(crate) mod sessions;
 pub(crate) mod tx;
@@ -8,7 +7,6 @@ pub(crate) mod users;
 use crate::error::AppError;
 use std::time::Duration;
 
-pub use deletion::DeletionRepository;
 pub use files::{FileRepository, ShareRepository, TrashRepository};
 pub use sessions::SessionRepository;
 pub use tx::Transactor;
@@ -24,7 +22,6 @@ pub struct Repository {
     pub files: FileRepository,
     pub share: ShareRepository,
     pub trash: TrashRepository,
-    pub deletions: DeletionRepository,
     pool: DbPool,
 }
 
@@ -37,7 +34,6 @@ impl Repository {
             files: FileRepository::new(pool.clone()),
             share: ShareRepository::new(pool.clone()),
             trash: TrashRepository::new(pool.clone()),
-            deletions: DeletionRepository::new(pool.clone()),
             pool,
         }
     }

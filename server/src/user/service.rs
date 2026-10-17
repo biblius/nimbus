@@ -2,7 +2,6 @@ use crate::{
     auth::crypto::hash_password,
     db::{
         Transactor,
-        deletion::DeletionRepository,
         files::{FileRepository, FileTable, TrashRepository},
         sessions::SessionRepository,
         user_folders::UserFolderRepository,
@@ -12,7 +11,7 @@ use crate::{
     error::AppError,
     file::{
         model::{Cleanup, FileEntry, RootAssignment, RootView},
-        queue::{DeletionQueue, DeletionQueueHandle, DeletionResult},
+        queue::{DeletionQueue, DeletionQueueHandle, DeletionResult, PendingDeletion},
     },
     model::{List, PaginationSort},
     user::model::{
@@ -35,7 +34,6 @@ pub struct UserService {
     sessions: SessionRepository,
     email: EmailSender,
     tx: Transactor,
-    deletions: DeletionRepository,
 }
 
 impl UserService {
@@ -47,7 +45,6 @@ impl UserService {
         sessions: SessionRepository,
         email: EmailSender,
         tx: Transactor,
-        deletions: DeletionRepository,
     ) -> Self {
         Self {
             users,
@@ -57,7 +54,6 @@ impl UserService {
             sessions,
             email,
             tx,
-            deletions,
         }
     }
 
@@ -259,19 +255,13 @@ impl UserService {
 
         let request_id = Uuid::new_v4();
 
-        let created_by = id.to_string();
-
-        self.deletions
-            .enqueue(request_id, &created_by, FileTable::Live, &live)
-            .await?;
-
-        self.deletions
-            .enqueue(request_id, &created_by, FileTable::Trashed, &trashed)
-            .await?;
+        let mut files = PendingDeletion::from_refs(FileTable::Live, &live);
+        files.extend(PendingDeletion::from_refs(FileTable::Trashed, &trashed));
 
         let rx = DeletionQueue::submit(
             handle,
             request_id,
+            files,
             Some(Cleanup::User {
                 user_id: user.id,
                 root_id: private_root.id,
@@ -451,22 +441,16 @@ impl UserService {
 
         let request_id = Uuid::new_v4();
 
-        self.deletions
-            .enqueue(request_id, &user.id.to_string(), FileTable::Live, &live)
-            .await?;
+        let mut files = PendingDeletion::from_refs(FileTable::Live, &live);
+        files.extend(PendingDeletion::from_refs(FileTable::Trashed, &trashed));
 
-        self.deletions
-            .enqueue(
-                request_id,
-                &user.id.to_string(),
-                FileTable::Trashed,
-                &trashed,
-            )
-            .await?;
-
-        let rx =
-            DeletionQueue::submit(handle, request_id, Some(Cleanup::Root { root_id: root.id }))
-                .await?;
+        let rx = DeletionQueue::submit(
+            handle,
+            request_id,
+            files,
+            Some(Cleanup::Root { root_id: root.id }),
+        )
+        .await?;
 
         Ok(rx)
     }

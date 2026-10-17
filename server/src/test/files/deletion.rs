@@ -3,13 +3,13 @@
 mod deletion {
     use super::super::{count, upload_in, user};
     use crate::{
-        db::{DeletionRepository, FileRepository, deletion::SYSTEM, files::FileTable},
-        file::model::{Cleanup, CreateDirectory, FileRef, TrashFiles},
-        file::queue::DeletionQueue,
+        db::{FileRepository, files::FileTable},
+        file::model::{Cleanup, CreateDirectory, TrashFiles},
+        file::queue::{DeletionQueue, PendingDeletion},
         test::{self, TestState},
         user::model::CreateSharedFolder,
     };
-    use chrono::Utc;
+    use chrono::{Duration, Utc};
     use image::ImageFormat;
     use suitest::before_all;
     use uuid::Uuid;
@@ -35,6 +35,17 @@ mod deletion {
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
+    }
+
+    /// Age a trashed row past the test retention window (30 days).
+    async fn expire_trash(state: &TestState, file_id: Uuid) {
+        let past = Utc::now() - Duration::days(31);
+        sqlx::query("UPDATE trashed_files SET trashed_at = $1 WHERE id = $2")
+            .bind(past)
+            .bind(file_id)
+            .execute(&state.pool)
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -68,7 +79,7 @@ mod deletion {
             )
             .await
             .unwrap();
-        let nested = upload_in(
+        let _nested = upload_in(
             state,
             &session.user,
             shared.id,
@@ -77,7 +88,7 @@ mod deletion {
             b"nested-shared",
         )
         .await;
-        let top = test::upload(state, &session.user, shared.id, "top.txt", b"top-shared").await;
+        let _top = test::upload(state, &session.user, shared.id, "top.txt", b"top-shared").await;
         let loose = test::upload(state, &session.user, shared.id, "loose.txt", b"loose").await;
 
         state
@@ -125,27 +136,11 @@ mod deletion {
             count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", shared.id),
             0
         );
-        assert_eq!(
-            count!(
-                state,
-                "SELECT COUNT(*) FROM file_deletion_queue WHERE file_id = $1",
-                nested.id
-            ),
-            0
-        );
-        assert_eq!(
-            count!(
-                state,
-                "SELECT COUNT(*) FROM file_deletion_queue WHERE file_id = $1",
-                top.id
-            ),
-            0
-        );
         assert!(test::blob_count(state.storage_dir()) < blobs_before);
     }
 
     #[test]
-    async fn system_sweep_hard_deletes_queued_trash(state: TestState) {
+    async fn sweep_hard_deletes_expired_trash(state: TestState) {
         let _ada = user(state, "ada-del-sweep").await;
         let session = test::login(state, "ada-del-sweep", "temporary").await;
         let root = test::private_root(state, &session.user).await;
@@ -159,15 +154,7 @@ mod deletion {
             .await
             .unwrap();
 
-        DeletionRepository::new(state.pool.clone())
-            .enqueue(
-                Uuid::new_v4(),
-                SYSTEM,
-                FileTable::Trashed,
-                &[FileRef { id: file.id }],
-            )
-            .await
-            .unwrap();
+        expire_trash(state, file.id).await;
 
         wait_until(std::time::Duration::from_secs(5), || async {
             count!(
@@ -178,14 +165,6 @@ mod deletion {
         })
         .await;
 
-        assert_eq!(
-            count!(
-                state,
-                "SELECT COUNT(*) FROM file_deletion_queue WHERE file_id = $1",
-                file.id
-            ),
-            0
-        );
         assert_eq!(test::blob_count(state.storage_dir()), blobs_before - 1);
         assert_eq!(
             count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", root),
@@ -328,15 +307,7 @@ mod deletion {
             .await
             .unwrap();
 
-        DeletionRepository::new(state.pool.clone())
-            .enqueue(
-                Uuid::new_v4(),
-                SYSTEM,
-                FileTable::Trashed,
-                &[FileRef { id: file.id }],
-            )
-            .await
-            .unwrap();
+        expire_trash(state, file.id).await;
 
         wait_until(std::time::Duration::from_secs(5), || async {
             count!(
@@ -383,15 +354,7 @@ mod deletion {
             .await
             .unwrap();
 
-        DeletionRepository::new(state.pool.clone())
-            .enqueue(
-                Uuid::new_v4(),
-                SYSTEM,
-                FileTable::Trashed,
-                &[FileRef { id: first.id }],
-            )
-            .await
-            .unwrap();
+        expire_trash(state, first.id).await;
 
         wait_until(std::time::Duration::from_secs(5), || async {
             count!(
@@ -420,15 +383,7 @@ mod deletion {
             .await
             .unwrap();
 
-        DeletionRepository::new(state.pool.clone())
-            .enqueue(
-                Uuid::new_v4(),
-                SYSTEM,
-                FileTable::Trashed,
-                &[FileRef { id: second.id }],
-            )
-            .await
-            .unwrap();
+        expire_trash(state, second.id).await;
 
         wait_until(std::time::Duration::from_secs(5), || async {
             count!(
@@ -446,7 +401,7 @@ mod deletion {
     }
 
     #[test]
-    async fn requeue_clears_error_and_finishes_root_cleanup(state: TestState) {
+    async fn delete_root_hard_deletes_trashed_files(state: TestState) {
         let ada = user(state, "ada-del-requeue").await;
         let session = test::login(state, "ada-del-requeue", "temporary").await;
         let admin = test::login(state, "admin", "admin").await;
@@ -470,21 +425,6 @@ mod deletion {
             .await
             .unwrap();
 
-        let stale_id = Uuid::new_v4();
-        sqlx::query(
-            r#"
-            INSERT INTO file_deletion_queue (id, file_id, origin, created_by, created_at, error)
-            VALUES ($1, $2, 'trash', $3, $4, 'previous failure')
-            "#,
-        )
-        .bind(stale_id)
-        .bind(file.id)
-        .bind(SYSTEM)
-        .bind(Utc::now())
-        .execute(&state.pool)
-        .await
-        .unwrap();
-
         let rx = state
             .services
             .users
@@ -503,14 +443,6 @@ mod deletion {
         );
         assert_eq!(
             count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", shared.id),
-            0
-        );
-        assert_eq!(
-            count!(
-                state,
-                "SELECT COUNT(*) FROM file_deletion_queue WHERE file_id = $1",
-                file.id
-            ),
             0
         );
     }
@@ -606,25 +538,15 @@ mod deletion {
         )
         .await;
 
-        // Queue only the directory. The child stays under the root and blocks cleanup.
+        // Submit only the directory. The child stays under the root and blocks cleanup.
         let request_id = Uuid::new_v4();
-        sqlx::query(
-            r#"
-            INSERT INTO file_deletion_queue (id, file_id, origin, created_by, created_at, error)
-            VALUES ($1, $2, 'files', $3, $4, NULL)
-            "#,
-        )
-        .bind(request_id)
-        .bind(parent.id)
-        .bind(ada.id.to_string())
-        .bind(Utc::now())
-        .execute(&state.pool)
-        .await
-        .unwrap();
-
         let rx = DeletionQueue::submit(
             state.queue.clone(),
             request_id,
+            vec![PendingDeletion {
+                file_id: parent.id,
+                origin: FileTable::Live,
+            }],
             Some(Cleanup::User {
                 user_id: ada.id,
                 root_id: root,

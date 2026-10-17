@@ -81,7 +81,9 @@ CREATE TABLE files (
   updated_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX files_root_id_idx ON files (root_id);
+CREATE INDEX files_root_id_parent_idx ON files (root_id, parent);
+
+CREATE INDEX files_root_id_id_idx ON files (root_id, id);
 
 CREATE INDEX files_created_by_idx ON files (created_by);
 
@@ -123,7 +125,9 @@ CREATE TABLE trashed_files (
   trashed_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX trashed_files_root_id_idx ON trashed_files (root_id);
+CREATE INDEX trashed_files_root_id_parent_idx ON trashed_files (root_id, parent);
+
+CREATE INDEX trashed_files_root_id_id_idx ON trashed_files (root_id, id);
 
 CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
@@ -147,31 +151,3 @@ CREATE TABLE user_folders (
 );
 
 CREATE INDEX user_folders_user_idx ON user_folders (user_id);
-
--- Deletion worker queue.
-CREATE TABLE file_deletion_queue (
-  -- Used for live updates, see queue worker.
-  id UUID NOT NULL,
-  -- Points to either `files` or `trashed_files` depending on the `origin` column.
-  -- ID uniqueness is guaranteed across both tables, since the only way
-  -- files can end up in the trash is if they existed in files,
-  -- but there are split seconds where the same file from trash and live
-  -- can coexist here.
-  file_id UUID NOT NULL,
-  origin TEXT NOT NULL,
-  -- `A user id, or SYSTEM when the expiry worker queued the row.
-  created_by TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL,
-  -- A row with `error` set indicates a failure to delete the file and is not retried unless the error is set to NULL.
-  error TEXT
-);
-
-CREATE UNIQUE INDEX file_deletion_queue_file_idx ON file_deletion_queue (origin, file_id);
-
-CREATE INDEX file_deletion_queue_request_idx ON file_deletion_queue (id)
-WHERE
-  error IS NULL;
-
-CREATE INDEX file_deletion_queue_pending_idx ON file_deletion_queue (created_by)
-WHERE
-  error IS NULL;

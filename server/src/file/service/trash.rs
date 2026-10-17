@@ -1,14 +1,13 @@
 use crate::{
     db::{
-        deletion::DeletionRepository,
-        files::{FileTable, FileRepository, TrashRepository},
+        files::{FileRepository, FileTable, TrashRepository},
         tx::Transactor,
         user_folders::UserFolderRepository,
     },
     error::AppError,
     file::{
         model::{FileKind, RestoreFile},
-        queue::{DeletionQueue, DeletionQueueHandle, DeletionResult},
+        queue::{DeletionQueue, DeletionQueueHandle, DeletionResult, PendingDeletion},
         tree::FileTree,
     },
     user::model::User,
@@ -20,25 +19,22 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct TrashFileService {
     trash: TrashRepository,
-    live: FileRepository,
+    files: FileRepository,
     folders: UserFolderRepository,
-    deletions: DeletionRepository,
     tx: Transactor,
 }
 
 impl TrashFileService {
     pub fn new(
         trash: TrashRepository,
-        live: FileRepository,
+        files: FileRepository,
         folders: UserFolderRepository,
-        deletions: DeletionRepository,
         tx: Transactor,
     ) -> Self {
         Self {
             trash,
-            live,
+            files,
             folders,
-            deletions,
             tx,
         }
     }
@@ -64,12 +60,15 @@ impl TrashFileService {
         let files = self.trash.list_trashed_tree_ids(root_id, file.id).await?;
         let request_id = Uuid::new_v4();
 
-        self.deletions
-            .enqueue(request_id, &user.id.to_string(), FileTable::Trashed, &files)
-            .await?;
-
-        DeletionQueue::submit(handle, request_id, None).await
+        DeletionQueue::submit(
+            handle,
+            request_id,
+            PendingDeletion::from_refs(FileTable::Trashed, &files),
+            None,
+        )
+        .await
     }
+
     /// Move a trashed item and its descendants back into `files` under `input.parent`.
     #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
     pub async fn restore(
@@ -93,10 +92,10 @@ impl TrashFileService {
 
         self.validate_restore_parent(root_id, input.parent).await?;
 
-        let quota = self.live.root_quota(root_id).await?;
+        let quota = self.files.root_quota(root_id).await?;
 
         let used = if quota > 0 {
-            self.live.root_quota_usage(root_id).await?
+            self.files.root_quota_usage(root_id).await?
         } else {
             0
         };
@@ -125,12 +124,13 @@ impl TrashFileService {
             }
         }
 
-        self.live.insert_many(&mut *tx, &restored).await?;
+        self.files.insert_many(&mut *tx, &restored).await?;
 
         tx.commit().await?;
 
         Ok(())
     }
+
     /// Restore every trashed item in a root under `input.parent`.
     #[instrument(skip(self, user, target), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
     pub async fn restore_all(
@@ -154,10 +154,10 @@ impl TrashFileService {
             return Ok(());
         }
 
-        let quota = self.live.root_quota(root_id).await?;
+        let quota = self.files.root_quota(root_id).await?;
 
         let used = if quota > 0 {
-            self.live.root_quota_usage(root_id).await?
+            self.files.root_quota_usage(root_id).await?
         } else {
             0
         };
@@ -191,12 +191,13 @@ impl TrashFileService {
             return Err(AppError::QuotaExceeded);
         }
 
-        self.live.insert_many(&mut *tx, &restored).await?;
+        self.files.insert_many(&mut *tx, &restored).await?;
 
         tx.commit().await?;
 
         Ok(())
     }
+
     async fn validate_restore_parent(
         &self,
         root_id: Uuid,
@@ -207,7 +208,7 @@ impl TrashFileService {
         };
 
         let entry = self
-            .live
+            .files
             .get_live(parent)
             .await?
             .ok_or_else(|| AppError::Unprocessable("Target directory does not exist".into()))?;
@@ -218,6 +219,7 @@ impl TrashFileService {
 
         Ok(())
     }
+
     pub async fn get_trash_tree(&self, user: &User, root_id: Uuid) -> Result<FileTree, AppError> {
         super::accessible(&self.folders, user, root_id).await?;
 

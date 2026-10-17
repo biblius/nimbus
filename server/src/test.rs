@@ -21,8 +21,8 @@ use crate::{
     error::AppError,
     file::{
         model::FileEntry,
-        queue::{self, DeletionQueue, DeletionQueueHandle, DeletionResult, ProcessingQueue},
-        service::{LiveFileService, TrashFileService},
+        queue::{DeletionQueue, DeletionQueueHandle, DeletionResult, ProcessingQueue},
+        service::{FileService, TrashFileService},
         storage::Storage,
     },
     state::ServiceState,
@@ -79,11 +79,13 @@ impl TestState {
         let (services, repository, storage) =
             build_services(pool.clone(), cache.clone(), &storage_dir).await;
 
-        let expiry_trash = repository.trash.clone();
-        let expiry_deletions = repository.deletions.clone();
-        // Short sweep so SYSTEM-queue integration tests finish quickly.
-        let queue = DeletionQueue::start(repository, storage, std::time::Duration::from_secs(1));
-        tokio::spawn(queue::expiry::start(expiry_trash, expiry_deletions, 30));
+        // Short sweep so expired-trash integration tests finish quickly.
+        let queue = DeletionQueue::start(
+            repository,
+            storage,
+            std::time::Duration::from_secs(1),
+            30,
+        );
 
         Self {
             services,
@@ -224,12 +226,11 @@ async fn build_services(
         repository.sessions.clone(),
         email,
         Transactor::new(pool.clone()),
-        repository.deletions.clone(),
     );
 
     let processing = ProcessingQueue::start(storage.clone(), repository.files.clone());
 
-    let files = LiveFileService::new(
+    let files = FileService::new(
         repository.files.clone(),
         repository.share.clone(),
         repository.trash.clone(),
@@ -242,7 +243,6 @@ async fn build_services(
         repository.trash.clone(),
         repository.files.clone(),
         repository.folders.clone(),
-        repository.deletions.clone(),
         Transactor::new(pool),
     );
     let share = crate::file::service::ShareService::new(

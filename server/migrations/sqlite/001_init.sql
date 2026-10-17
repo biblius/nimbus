@@ -58,7 +58,9 @@ CREATE TABLE files (
   updated_at TEXT NOT NULL
 );
 
-CREATE INDEX files_root_id_idx ON files (root_id);
+CREATE INDEX files_root_id_parent_idx ON files (root_id, parent);
+
+CREATE INDEX files_root_id_id_idx ON files (root_id, id);
 
 CREATE INDEX files_created_by_idx ON files (created_by);
 
@@ -97,7 +99,9 @@ CREATE TABLE trashed_files (
   trashed_at TEXT NOT NULL
 );
 
-CREATE INDEX trashed_files_root_id_idx ON trashed_files (root_id);
+CREATE INDEX trashed_files_root_id_parent_idx ON trashed_files (root_id, parent);
+
+CREATE INDEX trashed_files_root_id_id_idx ON trashed_files (root_id, id);
 
 CREATE INDEX trashed_files_trashed_by_idx ON trashed_files (trashed_by);
 
@@ -135,23 +139,3 @@ CREATE TABLE user_folders (
 );
 
 CREATE INDEX user_folders_user_idx ON user_folders (user_id);
-
--- Deletion worker queue.
-CREATE TABLE file_deletion_queue (
-  id BLOB NOT NULL,
-  file_id BLOB NOT NULL,
-  origin TEXT NOT NULL,
-  created_by TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  error TEXT
-);
-
-CREATE UNIQUE INDEX file_deletion_queue_file_idx ON file_deletion_queue (origin, file_id);
-
-CREATE INDEX file_deletion_queue_request_idx ON file_deletion_queue (id)
-WHERE
-  error IS NULL;
-
-CREATE INDEX file_deletion_queue_pending_idx ON file_deletion_queue (created_by)
-WHERE
-  error IS NULL;

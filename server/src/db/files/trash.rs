@@ -26,10 +26,12 @@ impl TrashRepository {
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn get_trashed(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
         self.get_trashed_with(&self.pool, id).await
     }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn get_trashed_with<'e, E>(
         &self,
@@ -65,10 +67,12 @@ impl TrashRepository {
         .await
         .map_err(AppError::from)
     }
+
     /// Trash for a root. Directly trashed rows have a null parent, so they are the roots.
     pub async fn list_trash(&self, root_id: Uuid) -> Result<Vec<FileEntryTree>, AppError> {
         list_descendants_in(&self.pool, FileTable::Trashed, root_id, None).await
     }
+
     /// Move `ids` and every descendant out of `files` and into `trashed_files`.
     ///
     /// A moved row whose parent was not moved becomes a trash root.
@@ -193,6 +197,7 @@ impl TrashRepository {
 
         Ok(())
     }
+
     /// Root of one trashed row.
     #[instrument(skip(self), err(Debug))]
     pub async fn trashed_root(&self, id: Uuid) -> Result<Option<Uuid>, AppError> {
@@ -208,6 +213,7 @@ impl TrashRepository {
         .await
         .map_err(AppError::from)
     }
+
     /// Delete `id` and its descendants from `trashed_files`. Returns the removed rows.
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_trashed_tree<'e, E>(
@@ -261,10 +267,12 @@ impl TrashRepository {
 
         Ok(restored)
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn delete_trashed(&self, id: Uuid) -> Result<(), AppError> {
         self.delete_trashed_with(&self.pool, id).await
     }
+
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn delete_trashed_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
     where
@@ -276,6 +284,7 @@ impl TrashRepository {
 
         Ok(())
     }
+
     #[instrument(skip(self), err(Debug))]
     pub async fn list_trashed_ids(&self, root_id: Uuid) -> Result<Vec<FileRef>, AppError> {
         sqlx::query_as!(
@@ -291,6 +300,7 @@ impl TrashRepository {
         .await
         .map_err(AppError::from)
     }
+
     /// A trashed row and every descendant still attached below it.
     #[instrument(skip(self), err(Debug))]
     pub async fn list_trashed_tree_ids(
@@ -323,7 +333,8 @@ impl TrashRepository {
         .await
         .map_err(AppError::from)
     }
-    /// Trashed rows past `cutoff`.
+
+    /// Trashed rows with `trashed_at` before `cutoff` (past retention).
     #[instrument(skip(self), err(Debug))]
     pub async fn list_expired_trash(
         &self,

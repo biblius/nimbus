@@ -12,6 +12,13 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validify::{Validate, Validify};
 
+/// Safety cap for upward parent walks.
+///
+/// The app never creates cyclic trees (moves reject any destination that is
+/// the source or a descendant of it). This bound only guards the recursive
+/// CTE against corrupt data or a bug.
+pub(crate) const MAX_ANCESTOR_DEPTH: i64 = 1024;
+
 /// Application native model. `parent` is null for entries that sit directly in a root.
 /// Corresponds to the `files` / `trashed_files` SQL rows.
 #[derive(Debug, Clone, Serialize, ToSchema, FromRow)]
@@ -112,7 +119,7 @@ impl FileEntry {
     }
 }
 
-/// A file id used when enqueueing hard deletes.
+/// A file id used when submitting hard deletes.
 #[derive(Debug, Clone, Copy)]
 pub struct FileRef {
     pub id: Uuid,

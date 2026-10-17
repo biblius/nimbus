@@ -1308,7 +1308,7 @@
             ? "text-primary hover:text-primary"
             : "text-muted-foreground"}
           aria-label={locationEntry.shared
-            ? "Folder is shared — manage sharing"
+            ? "Folder is shared - manage sharing"
             : "Share this folder"}
           title={locationEntry.shared ? "Shared" : "Share folder"}
           onclick={() => (shareDirOpen = true)}
