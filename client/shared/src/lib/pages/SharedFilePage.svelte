@@ -98,7 +98,7 @@
           </h1>
         {/if}
       </div>
-      {#if entry && entry.file.kind === "file"}
+      {#if entry && entry.file.kind === "file" && entry.file.sharingMode === "download"}
         <Button
           type="button"
           variant="outline"
@@ -159,7 +159,9 @@
           <SharedFileBrowser shareRoot={entry} {parentId} />
         {:else if entry}
           <p class="text-sm text-muted-foreground">
-            This file cannot be previewed. Use the download button to save it.
+            {entry.file.sharingMode === "download"
+              ? "This file cannot be previewed. Use the download button to save it."
+              : "This file cannot be previewed."}
           </p>
         {/if}
       </div>

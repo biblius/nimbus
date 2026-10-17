@@ -346,7 +346,7 @@
         <Share2 size={16} />
         Copy to…
       </MenuItem>
-      {#if file.shared}
+      {#if file.sharingMode}
         <MenuItem onclick={onCopyLink}>
           <LinkIcon size={16} />
           Copy public link
@@ -383,7 +383,7 @@
       >
         <Folder size={iconSize} strokeWidth={1.75} />
       </button>
-      {#if file.shared}
+      {#if file.sharingMode}
         <SharedBadge size={large ? "lg" : "md"} />
       {/if}
     </span>
@@ -417,7 +417,7 @@
           <Eye size={large ? 22 : 18} strokeWidth={2} />
         </span>
       </button>
-      {#if file.shared}
+      {#if file.sharingMode}
         <SharedBadge size={large ? "lg" : "md"} />
       {/if}
     </span>
@@ -426,7 +426,7 @@
       class="relative flex aspect-square w-full items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
     >
       <FileTypeIcon fileType={file.fileType} size={iconSize} />
-      {#if file.shared}
+      {#if file.sharingMode}
         <SharedBadge size={large ? "lg" : "md"} />
       {/if}
     </span>

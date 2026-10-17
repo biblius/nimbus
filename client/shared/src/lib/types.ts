@@ -271,6 +271,9 @@ export type FileTree = {
   children: FileTree[];
 };
 
+/** How a publicly shared file may be accessed. */
+export type SharingMode = "view" | "download";
+
 export type FileEntry = {
   id: string;
   rootId: string;
@@ -281,10 +284,18 @@ export type FileEntry = {
   fileType: FileType | null;
   hash: string | null;
   sizeBytes: number;
-  /** When true, the entry is reachable via the public share routes. */
-  shared: boolean;
+  /** Public share access level. Null when not shared. */
+  sharingMode: SharingMode | null;
+  /** When set, the public share is treated as missing after this instant. */
+  shareExpiresAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** Body for creating or updating a public share. */
+export type ShareFile = {
+  sharingMode: SharingMode;
+  shareExpiresAt?: string | null;
 };
 
 /** Preview hashes from `file_metadata` for listings and trees. */

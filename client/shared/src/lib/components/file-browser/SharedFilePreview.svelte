@@ -123,14 +123,13 @@
   const isText = $derived(current != null && isTextFile(current));
   const isPdf = $derived(current != null && isPdfFile(current));
   const fileName = $derived(current?.file.name ?? "");
-  /** Full-file blob URL for image / PDF / text fetches. */
-  const downloadUrl = $derived(
-    current ? session.client.sharedDownloadUrl(current.file.id) : "",
-  );
-  /** Range-capable stream URL for video / audio. */
-  const streamUrl = $derived(
+  const canDownload = $derived(current?.file.sharingMode === "download");
+  /** Inline blob URL for image / PDF / text (allowed in view mode). */
+  const contentUrl = $derived(
     current ? session.client.sharedContentUrl(current.file.id) : "",
   );
+  /** Range-capable stream URL for video / audio. */
+  const streamUrl = $derived(contentUrl);
   let displayName = $state("");
 
   // Fit the file name in the header by dynamically computing the width.
@@ -209,7 +208,7 @@
   }
 
   async function download() {
-    if (!current) {
+    if (!current || !canDownload) {
       return;
     }
 
@@ -547,15 +546,17 @@
     <div
       class="pointer-events-auto flex shrink-0 items-center gap-2 justify-self-end"
     >
-      <button
-        type="button"
-        class="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-white/18"
-        aria-label="Download"
-        title="Download"
-        onclick={download}
-      >
-        <Download size={18} strokeWidth={2} />
-      </button>
+      {#if canDownload}
+        <button
+          type="button"
+          class="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-white/18"
+          aria-label="Download"
+          title="Download"
+          onclick={download}
+        >
+          <Download size={18} strokeWidth={2} />
+        </button>
+      {/if}
       {#if onClose}
         <button
           type="button"
@@ -578,7 +579,7 @@
     )}
   >
     {#if current && isImage}
-      <ImagePreviewContent url={downloadUrl} name={current.file.name} />
+      <ImagePreviewContent url={contentUrl} name={current.file.name} />
     {:else if current && isVideo}
       <VideoPreviewContent
         src={streamUrl}
@@ -596,14 +597,14 @@
     {:else if current && isText}
       {#await import("./preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}
         <TextPreviewContent
-          url={downloadUrl}
+          url={contentUrl}
           name={current.file.name}
           readonly
         />
       {/await}
     {:else if current && isPdf}
       {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
-        <PdfPreviewContent url={downloadUrl} name={current.file.name} />
+        <PdfPreviewContent url={contentUrl} name={current.file.name} />
       {/await}
     {/if}
   </div>

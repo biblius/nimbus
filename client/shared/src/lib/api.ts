@@ -16,6 +16,7 @@ import type {
   Root,
   RootData,
   SelfUserData,
+  ShareFile,
   UserData,
   UserPasskeyView,
   UserView,
@@ -602,10 +603,13 @@ export class NimbusClient {
   }
 
   /** Mark a live file (and descendants, for directories) as publicly shared. */
-  shareFile(rootId: string, id: string): Promise<void> {
+  shareFile(rootId: string, id: string, input: ShareFile): Promise<void> {
     return this.request<void>(
       `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/share`,
-      { method: "POST" },
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
     );
   }
 
@@ -700,9 +704,9 @@ export class NimbusClient {
     URL.revokeObjectURL(url);
   }
 
-  /** Fetch a publicly shared file's bytes. */
+  /** Fetch publicly shared file bytes for inline preview (allowed in view mode). */
   async sharedContent(fileId: string): Promise<Blob> {
-    const path = `/files/shared/${encodeURIComponent(fileId)}/blob/download`;
+    const path = `/files/shared/${encodeURIComponent(fileId)}/blob/chunk`;
     const response = await fetch(`${this.root}${path}`, {
       credentials: "omit",
     });
@@ -720,8 +724,24 @@ export class NimbusClient {
     return response.blob();
   }
 
+  /** Attachment download for a publicly shared file (download mode only). */
   async sharedDownload(fileId: string, name: string): Promise<void> {
-    const url = URL.createObjectURL(await this.sharedContent(fileId));
+    const path = `/files/shared/${encodeURIComponent(fileId)}/blob/download`;
+    const response = await fetch(`${this.root}${path}`, {
+      credentials: "omit",
+    });
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw this.httpError(response.status, body, path);
+    }
+
+    const url = URL.createObjectURL(await response.blob());
     const anchor = document.createElement("a");
 
     anchor.href = url;

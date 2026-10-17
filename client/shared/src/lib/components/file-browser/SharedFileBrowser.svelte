@@ -31,6 +31,8 @@
   const columns =
     "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-3 @lg:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_auto] @2xl:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_auto]";
 
+  const canDownload = $derived(shareRoot.file.sharingMode === "download");
+
   let entries = $state<FileView[]>([]);
   let loading = $state(true);
   let latestLoad = 0;
@@ -221,6 +223,10 @@
   }
 
   async function download(entry: FileView) {
+    if (!canDownload) {
+      return;
+    }
+
     try {
       await session.client.sharedDownload(entry.file.id, entry.file.name);
     } catch (cause) {
@@ -358,16 +364,18 @@
                     <span class="text-[11px] text-muted-foreground tabular-nums">
                       {formatBytes(entry.file.sizeBytes)}
                     </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      class="size-6 text-muted-foreground"
-                      aria-label="Download {entry.file.name}"
-                      onclick={() => download(entry)}
-                    >
-                      <Download size={14} />
-                    </Button>
+                    {#if canDownload}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        class="size-6 text-muted-foreground"
+                        aria-label="Download {entry.file.name}"
+                        onclick={() => download(entry)}
+                      >
+                        <Download size={14} />
+                      </Button>
+                    {/if}
                   </div>
                 {/if}
               </li>
@@ -425,7 +433,7 @@
                   {formatDatetime(entry.file.createdAt)}
                 </span>
                 <div class="flex min-w-9 items-center justify-end gap-1">
-                  {#if entry.file.kind === "file"}
+                  {#if entry.file.kind === "file" && canDownload}
                     <Button
                       type="button"
                       variant="ghost"

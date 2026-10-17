@@ -5,9 +5,7 @@
     File as FileIcon,
     Folder,
     FolderInput,
-    Link as LinkIcon,
     Link2,
-    Link2Off,
     Plus,
     Share2,
     Trash,
@@ -22,7 +20,13 @@
   import { PreviewQueue } from "../../previewQueue.svelte";
   import { session } from "../../session.svelte";
   import { toastError, toastSuccess } from "../../toast";
-  import { type FileEntry, type FileView, type Root } from "../../types";
+  import {
+    type FileEntry,
+    type FileView,
+    type Root,
+    type ShareFile,
+    type SharingMode,
+  } from "../../types";
   import { kv, type FilesViewMode } from "../../storage";
   import { UploadHandler } from "../../uploadHandler.svelte";
   import { isPreviewable } from "../../fileKind";
@@ -31,6 +35,7 @@
   } from "./DestinationPicker.svelte";
   import FileListItem from "./FileListItem.svelte";
   import FilePathCrumbs, { type Crumb } from "./FilePathCrumbs.svelte";
+  import FileShareOptions from "./FileShareOptions.svelte";
   import FileTileItem from "./FileTileItem.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
   import FileViewModeMenu from "./FileViewModeMenu.svelte";
@@ -38,7 +43,6 @@
   import PendingFileUpload from "./PendingFileUpload.svelte";
   import Button from "../ui/button/button.svelte";
   import ConfirmDialog from "../ui/confirm-dialog/confirm-dialog.svelte";
-  import Dialog from "../ui/dialog/dialog.svelte";
   import Input from "../ui/input/input.svelte";
   import MenuItem from "../ui/menu/menu-item.svelte";
   import Menu from "../ui/menu/menu.svelte";
@@ -185,8 +189,10 @@
   /** Current directory entry when browsing inside a folder; null at root. */
   let locationEntry = $state<FileEntry | null>(null);
 
-  let shareDirOpen = $state(false);
-  let shareDirBusy = $state(false);
+  /** Entry being shared, or null when sharing the open directory. */
+  let shareTarget = $state<FileEntry | null>(null);
+  let shareOpen = $state(false);
+  let shareBusy = $state(false);
 
   let fileInput = $state<HTMLInputElement | undefined>();
   let folderInput = $state<HTMLInputElement | undefined>();
@@ -236,10 +242,8 @@
 
   const showParentDrop = $derived(location.id !== null);
 
-  const shareDirDescription = $derived(
-    locationEntry?.shared
-      ? "This folder is publicly shared. Anyone with the link can view it and its contents."
-      : "Create a public link so anyone can view this folder and its contents.",
+  const shareSubject = $derived(
+    shareTarget ?? (shareOpen ? locationEntry : null),
   );
 
   const deleteDescription = $derived.by(() => {
@@ -363,8 +367,9 @@
     selectionAnchor = null;
     selectMode = false;
     previewFileId = null;
-    shareDirOpen = false;
-    shareDirBusy = false;
+    shareOpen = false;
+    shareBusy = false;
+    shareTarget = null;
 
     if (parent === null) {
       locationEntry = null;
@@ -744,7 +749,7 @@
       uploadMenuOpen ||
       newMenuOpen ||
       deleteOpen ||
-      shareDirOpen ||
+      shareOpen ||
       previewFileId !== null ||
       drafting
     ) {
@@ -904,16 +909,56 @@
     return `${window.location.origin}/files/shared/${entry.file.id}`;
   }
 
-  function setShared(id: string, shared: boolean) {
+  function applyShare(
+    id: string,
+    sharingMode: SharingMode | null,
+    shareExpiresAt: string | null,
+  ) {
     const index = entries.findIndex((item) => item.file.id === id);
 
     if (index !== -1) {
-      entries[index].file.shared = shared;
+      entries[index].file.sharingMode = sharingMode;
+      entries[index].file.shareExpiresAt = shareExpiresAt;
     }
 
     if (locationEntry?.id === id) {
-      locationEntry.shared = shared;
+      locationEntry.sharingMode = sharingMode;
+      locationEntry.shareExpiresAt = shareExpiresAt;
     }
+  }
+
+  /** Cascade share settings onto every visible child after sharing the open folder. */
+  function setListedShare(
+    sharingMode: SharingMode | null,
+    shareExpiresAt: string | null,
+  ) {
+    for (const item of entries) {
+      item.file.sharingMode = sharingMode;
+      item.file.shareExpiresAt = shareExpiresAt;
+    }
+  }
+
+  function openShareDialog(entry: FileEntry) {
+    shareTarget = entry;
+    shareOpen = true;
+  }
+
+  function openDirectoryShareDialog() {
+    if (!locationEntry) {
+      return;
+    }
+
+    shareTarget = null;
+    shareOpen = true;
+  }
+
+  function closeShareDialog() {
+    if (shareBusy) {
+      return;
+    }
+
+    shareOpen = false;
+    shareTarget = null;
   }
 
   async function copyLink(entry: FileView, message = "Public link copied") {
@@ -925,83 +970,37 @@
     }
   }
 
-  async function copyLocationLink(message = "Public link copied") {
-    if (!locationEntry) {
+  async function confirmShare(input: ShareFile) {
+    if (!shareSubject || shareBusy) {
       return;
     }
 
-    await copyLink({ file: locationEntry, metadata: null }, message);
-  }
-
-  async function shareEntry(entry: FileView) {
+    const entry = shareSubject;
     const rootId = root.id;
+    const expiresAt = input.shareExpiresAt ?? null;
+    const cascading = shareTarget == null;
+
+    shareBusy = true;
 
     try {
-      await session.client.shareFile(rootId, entry.file.id);
-
-      // Only the opened entry is listed here. Descendants of a shared
-      // directory are not part of this list, so no cascade is needed.
-      if (root.id === rootId) {
-        setShared(entry.file.id, true);
-      }
-    } catch (cause) {
-      toastError(
-        cause instanceof TypeError
-          ? "The server could not be reached"
-          : "Could not create a public link",
-      );
-      return;
-    }
-
-    await copyLink(entry, `Sharing ${entry.file.name}`);
-  }
-
-  async function unshareEntry(entry: FileView) {
-    const rootId = root.id;
-
-    try {
-      await session.client.unshareFile(rootId, entry.file.id);
+      await session.client.shareFile(rootId, entry.id, {
+        sharingMode: input.sharingMode,
+        shareExpiresAt: expiresAt,
+      });
 
       if (root.id === rootId) {
-        setShared(entry.file.id, false);
+        applyShare(entry.id, input.sharingMode, expiresAt);
+        if (cascading) {
+          setListedShare(input.sharingMode, expiresAt);
+        }
       }
 
-      toastSuccess(`Stopped sharing ${entry.file.name}`);
-    } catch (cause) {
-      toastError(
-        cause instanceof TypeError
-          ? "The server could not be reached"
-          : "Could not stop sharing",
+      await copyLink(
+        { file: entry, metadata: null },
+        `Sharing ${entry.name}`,
       );
-    }
-  }
-
-  /** Cascade share flag onto every visible child after sharing the open folder. */
-  function setListedShared(shared: boolean) {
-    for (const item of entries) {
-      item.file.shared = shared;
-    }
-  }
-
-  async function shareCurrentDirectory() {
-    if (!locationEntry || shareDirBusy) {
-      return;
-    }
-
-    const entry = locationEntry;
-    const rootId = root.id;
-
-    shareDirBusy = true;
-
-    try {
-      await session.client.shareFile(rootId, entry.id);
-
-      if (root.id === rootId && locationEntry?.id === entry.id) {
-        locationEntry.shared = true;
-        setListedShared(true);
-      }
-
-      await copyLocationLink(`Sharing ${entry.name}`);
+      shareOpen = false;
+      shareTarget = null;
     } catch (cause) {
       toastError(
         cause instanceof TypeError
@@ -1010,31 +1009,35 @@
       );
     } finally {
       if (root.id === rootId) {
-        shareDirBusy = false;
+        shareBusy = false;
       }
     }
   }
 
-  async function unshareCurrentDirectory() {
-    if (!locationEntry || shareDirBusy) {
+  async function confirmUnshare() {
+    if (!shareSubject || shareBusy) {
       return;
     }
 
-    const entry = locationEntry;
+    const entry = shareSubject;
     const rootId = root.id;
+    const cascading = shareTarget == null;
 
-    shareDirBusy = true;
+    shareBusy = true;
 
     try {
       await session.client.unshareFile(rootId, entry.id);
 
-      if (root.id === rootId && locationEntry?.id === entry.id) {
-        locationEntry.shared = false;
-        setListedShared(false);
+      if (root.id === rootId) {
+        applyShare(entry.id, null, null);
+        if (cascading) {
+          setListedShare(null, null);
+        }
       }
 
       toastSuccess(`Stopped sharing ${entry.name}`);
-      shareDirOpen = false;
+      shareOpen = false;
+      shareTarget = null;
     } catch (cause) {
       toastError(
         cause instanceof TypeError
@@ -1043,7 +1046,7 @@
       );
     } finally {
       if (root.id === rootId) {
-        shareDirBusy = false;
+        shareBusy = false;
       }
     }
   }
@@ -1304,16 +1307,16 @@
           type="button"
           variant="outline"
           size="sm"
-          class={locationEntry.shared
+          class={locationEntry.sharingMode
             ? "text-primary hover:text-primary"
             : "text-muted-foreground"}
-          aria-label={locationEntry.shared
+          aria-label={locationEntry.sharingMode
             ? "Folder is shared - manage sharing"
             : "Share this folder"}
-          title={locationEntry.shared ? "Shared" : "Share folder"}
-          onclick={() => (shareDirOpen = true)}
+          title={locationEntry.sharingMode ? "Shared" : "Share folder"}
+          onclick={() => openDirectoryShareDialog()}
         >
-          {#if locationEntry.shared}
+          {#if locationEntry.sharingMode}
             <Link2 size={15} />
           {:else}
             <Share2 size={15} />
@@ -1499,8 +1502,8 @@
                   onPreview={() => (previewFileId = entry.file.id)}
                   onDownload={() => download(entry)}
                   onCopy={() => startCopy(entry)}
-                  onShare={() => shareEntry(entry)}
-                  onUnshare={() => unshareEntry(entry)}
+                  onShare={() => openShareDialog(entry.file)}
+                  onUnshare={() => openShareDialog(entry.file)}
                   onCopyLink={() => copyLink(entry)}
                   onDelete={() => startDelete([entry.file.id])}
                 />
@@ -1521,8 +1524,8 @@
                   onPreview={() => (previewFileId = entry.file.id)}
                   onDownload={() => download(entry)}
                   onCopy={() => startCopy(entry)}
-                  onShare={() => shareEntry(entry)}
-                  onUnshare={() => unshareEntry(entry)}
+                  onShare={() => openShareDialog(entry.file)}
+                  onUnshare={() => openShareDialog(entry.file)}
                   onCopyLink={() => copyLink(entry)}
                   onMove={() => startMove([entry.file.id])}
                   onRename={(name) => renameEntry(entry, name)}
@@ -1618,58 +1621,14 @@
     onConfirm={confirmDelete}
   />
 
-  {#if locationEntry}
-    <Dialog
-      open={shareDirOpen}
-      title={locationEntry.shared ? "Shared folder" : "Share folder"}
-      description={shareDirDescription}
-      busy={shareDirBusy}
-      onCancel={() => {
-        if (!shareDirBusy) {
-          shareDirOpen = false;
-        }
-      }}
-    >
-      {#snippet footer()}
-        <Button
-          type="button"
-          variant="outline"
-          onclick={() => (shareDirOpen = false)}
-          disabled={shareDirBusy}
-        >
-          Close
-        </Button>
-        {#if locationEntry.shared}
-          <Button
-            type="button"
-            variant="outline"
-            onclick={() => copyLocationLink()}
-            disabled={shareDirBusy}
-          >
-            <LinkIcon size={15} />
-            Copy link
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            onclick={() => unshareCurrentDirectory()}
-            disabled={shareDirBusy}
-          >
-            <Link2Off size={15} />
-            Stop sharing
-          </Button>
-        {:else}
-          <Button
-            type="button"
-            onclick={() => shareCurrentDirectory()}
-            disabled={shareDirBusy}
-          >
-            <Share2 size={15} />
-            Create public link
-          </Button>
-        {/if}
-      {/snippet}
-    </Dialog>
+  {#if shareOpen && shareSubject}
+    <FileShareOptions
+      entry={shareSubject}
+      busy={shareBusy}
+      onCancel={closeShareDialog}
+      onShare={confirmShare}
+      onUnshare={confirmUnshare}
+    />
   {/if}
 </div>
 

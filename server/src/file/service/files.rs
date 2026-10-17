@@ -721,12 +721,12 @@ impl FileService {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         }
 
-        if let Some(expires_at) = input.share_expires_at {
-            if expires_at <= Utc::now() {
-                return Err(AppError::Unprocessable(
-                    "Share expiry must be in the future".into(),
-                ));
-            }
+        if let Some(expires_at) = input.share_expires_at
+            && expires_at <= Utc::now()
+        {
+            return Err(AppError::Unprocessable(
+                "Share expiry must be in the future".into(),
+            ));
         }
 
         self.share

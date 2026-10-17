@@ -459,7 +459,7 @@
         >
           <Folder size={iconSize} strokeWidth={1.75} />
         </button>
-        {#if file.shared}
+        {#if file.sharingMode}
           <SharedBadge size={compact ? "sm" : "md"} />
         {/if}
       </span>
@@ -495,7 +495,7 @@
             <Eye size={eyeSize} strokeWidth={2} />
           </span>
         </button>
-        {#if file.shared}
+        {#if file.sharingMode}
           <SharedBadge size={compact ? "sm" : "md"} />
         {/if}
       </span>
@@ -507,7 +507,7 @@
         )}
       >
         <FileTypeIcon fileType={file.fileType} size={iconSize} />
-        {#if file.shared}
+        {#if file.sharingMode}
           <SharedBadge size={compact ? "sm" : "md"} />
         {/if}
       </span>
@@ -603,7 +603,7 @@
         </Button>
       {/snippet}
       <MenuItem onclick={onCopy}>Copy to…</MenuItem>
-      {#if file.shared}
+      {#if file.sharingMode}
         <MenuItem onclick={onCopyLink}>Copy public link</MenuItem>
         <MenuItem onclick={onUnshare}>Stop sharing</MenuItem>
       {:else}
@@ -663,7 +663,7 @@
           <Share2 size={16} />
           Copy to…
         </MenuItem>
-        {#if file.shared}
+        {#if file.sharingMode}
           <MenuItem onclick={onCopyLink}>
             <LinkIcon size={16} />
             Copy public link
