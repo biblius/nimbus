@@ -7,7 +7,6 @@ export type SessionView = {
   createdAt: string;
   updatedAt: string;
   expiresAt: string | null;
-  firstLogin: boolean;
   user: UserView;
 };
 
@@ -257,7 +256,48 @@ export type FileType =
         | "Msi"
         | "Cpio";
     }
-  | { text: "Html" | "Xml" | "Sh" | "Txt" | "Json" | "Md" | "Csv" | "Css" }
+  | {
+      text:
+        | "Html"
+        | "Xml"
+        | "Sh"
+        | "Txt"
+        | "Json"
+        | "Jsonc"
+        | "Md"
+        | "Csv"
+        | "Tsv"
+        | "Css"
+        | "Yaml"
+        | "Toml"
+        | "Ini"
+        | "Conf"
+        | "Env"
+        | "Properties"
+        | "Log"
+        | "Sql"
+        | "Graphql"
+        | "Rst"
+        | "Tex"
+        | "Js"
+        | "Jsx"
+        | "Ts"
+        | "Tsx"
+        | "Py"
+        | "Rs"
+        | "Go"
+        | "Java"
+        | "C"
+        | "Cpp"
+        | "Rb"
+        | "Php"
+        | "Lua"
+        | "Kotlin"
+        | "Swift"
+        | "Dart"
+        | "Vue"
+        | "Svelte";
+    }
   | { other: string };
 
 export type FileTree = {

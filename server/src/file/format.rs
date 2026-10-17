@@ -191,12 +191,43 @@ formats!(Archive, ArchiveFormat {
 formats!(Text, TextFormat {
     Html => "html" | "htm", "text/html",
     Xml => "xml", "text/xml",
-    Sh => "sh", "text/x-shellscript",
+    Sh => "sh" | "bash" | "zsh" | "fish", "text/x-shellscript",
     Txt => "txt" | "text", "text/plain; charset=utf-8",
     Json => "json", "application/json",
-    Md => "md" |  "markdown", "text/markdown; charset=utf-8",
+    Jsonc => "jsonc" | "json5", "application/json",
+    Md => "md" | "markdown", "text/markdown; charset=utf-8",
     Csv => "csv", "text/csv; charset=utf-8",
+    Tsv => "tsv", "text/tab-separated-values; charset=utf-8",
     Css => "css", "text/css; charset=utf-8",
+    Yaml => "yaml" | "yml", "application/yaml",
+    Toml => "toml", "application/toml",
+    Ini => "ini", "text/plain; charset=utf-8",
+    Conf => "conf", "text/plain; charset=utf-8",
+    Env => "env", "text/plain; charset=utf-8",
+    Properties => "properties", "text/x-java-properties",
+    Log => "log", "text/plain; charset=utf-8",
+    Sql => "sql", "application/sql",
+    Graphql => "graphql" | "gql", "application/graphql",
+    Rst => "rst", "text/x-rst",
+    Tex => "tex" | "latex", "application/x-tex",
+    Js => "js" | "mjs" | "cjs", "text/javascript; charset=utf-8",
+    Jsx => "jsx", "text/jsx; charset=utf-8",
+    Ts => "ts" | "mts" | "cts", "text/typescript; charset=utf-8",
+    Tsx => "tsx", "text/tsx; charset=utf-8",
+    Py => "py" | "pyi", "text/x-python; charset=utf-8",
+    Rs => "rs", "text/x-rust; charset=utf-8",
+    Go => "go", "text/x-go; charset=utf-8",
+    Java => "java", "text/x-java-source; charset=utf-8",
+    C => "c" | "h", "text/x-c; charset=utf-8",
+    Cpp => "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx", "text/x-c++src; charset=utf-8",
+    Rb => "rb", "text/x-ruby; charset=utf-8",
+    Php => "php", "application/x-httpd-php",
+    Lua => "lua", "text/x-lua; charset=utf-8",
+    Kotlin => "kt" | "kts", "text/x-kotlin; charset=utf-8",
+    Swift => "swift", "text/x-swift; charset=utf-8",
+    Dart => "dart", "text/x-dart; charset=utf-8",
+    Vue => "vue", "text/x-vue; charset=utf-8",
+    Svelte => "svelte", "text/x-svelte; charset=utf-8",
 });
 
 impl FileType {
@@ -219,6 +250,22 @@ impl FileType {
         let from_ext = ext.as_deref().map(Self::from_extension);
 
         match (from_bytes, from_ext) {
+            // OOXML / ODF / epub / ora are ZIP containers; prefer the specific extension.
+            (
+                Some(Self::Archive(ArchiveFormat::Zip)),
+                Some(
+                    ext_type @ (Self::Doc(
+                        DocFormat::Docx
+                        | DocFormat::Xlsx
+                        | DocFormat::Pptx
+                        | DocFormat::Odt
+                        | DocFormat::Ods
+                        | DocFormat::Odp,
+                    )
+                    | Self::Book(BookFormat::Epub)
+                    | Self::Image(ImageFormat::Ora)),
+                ),
+            ) => ext_type,
             // Types infered from bytes always have priority.
             (Some(byte_type), _) => byte_type,
             // Types inferred from extensions must either be for text
@@ -324,6 +371,44 @@ mod tests {
 
     const PNG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
     const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF, 0x00];
+    /// Minimal local-file header — enough for `infer` to call it a zip.
+    const ZIP: &[u8] = &[0x50, 0x4B, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00];
+
+    #[test]
+    fn zip_container_extensions_prefer_the_specific_format() {
+        assert_eq!(
+            FileType::infer("report.docx", ZIP),
+            FileType::Doc(DocFormat::Docx)
+        );
+        assert_eq!(
+            FileType::infer("sheet.xlsx", ZIP),
+            FileType::Doc(DocFormat::Xlsx)
+        );
+        assert_eq!(
+            FileType::infer("deck.pptx", ZIP),
+            FileType::Doc(DocFormat::Pptx)
+        );
+        assert_eq!(
+            FileType::infer("notes.odt", ZIP),
+            FileType::Doc(DocFormat::Odt)
+        );
+        assert_eq!(
+            FileType::infer("book.epub", ZIP),
+            FileType::Book(BookFormat::Epub)
+        );
+        assert_eq!(
+            FileType::infer("paint.ora", ZIP),
+            FileType::Image(ImageFormat::Ora)
+        );
+    }
+
+    #[test]
+    fn plain_zip_stays_an_archive() {
+        assert_eq!(
+            FileType::infer("archive.zip", ZIP),
+            FileType::Archive(ArchiveFormat::Zip)
+        );
+    }
 
     #[test]
     fn agreeing_magic_and_extension_keep_the_format() {
@@ -366,6 +451,22 @@ mod tests {
         assert_eq!(
             FileType::infer("notes.json", br#"{"a":1}"#),
             FileType::Text(TextFormat::Json)
+        );
+    }
+
+    #[test]
+    fn yaml_and_toml_extensions_are_text() {
+        assert_eq!(
+            FileType::infer("config.yaml", b"key: value\n"),
+            FileType::Text(TextFormat::Yaml)
+        );
+        assert_eq!(
+            FileType::infer("config.yml", b"key: value\n"),
+            FileType::Text(TextFormat::Yaml)
+        );
+        assert_eq!(
+            FileType::infer("Cargo.toml", b"[package]\n"),
+            FileType::Text(TextFormat::Toml)
         );
     }
 
