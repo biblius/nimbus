@@ -6,7 +6,6 @@
     type RenderTask,
   } from "pdfjs-dist";
   import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-  import { session } from "../../../session.svelte";
   import { cn } from "../../../utils";
 
   GlobalWorkerOptions.workerSrc = workerUrl;
@@ -16,13 +15,14 @@
   const LAZY_ROOT_MARGIN = "100% 0px";
 
   let {
-    rootId,
-    fileId,
+    url,
     name,
+    credentials = "omit",
   }: {
-    rootId: string;
-    fileId: string;
+    url: string;
     name: string;
+    /** Use `"include"` for authenticated blob routes. */
+    credentials?: RequestCredentials;
   } = $props();
 
   let loading = $state(true);
@@ -40,7 +40,7 @@
   );
 
   $effect(() => {
-    const id = fileId;
+    const contentUrl = url;
 
     loading = true;
     error = "";
@@ -53,8 +53,13 @@
     let loadingTask: ReturnType<typeof getDocument> | null = null;
     let doc: PDFDocumentProxy | null = null;
 
-    session.client
-      .content(rootId, id)
+    fetch(contentUrl, { credentials })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error("fetch failed");
+        }
+        return res.blob();
+      })
       .then(async (blob) => {
         if (cancelled) {
           return;

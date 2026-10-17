@@ -30,6 +30,7 @@
     type FileFamily,
     type PreviewFilter,
   } from "../../fileKind";
+  import { session } from "../../session.svelte";
   import { kv } from "../../storage";
   import type { FileEntry, FileView } from "../../types";
   import { cn } from "../../utils";
@@ -122,6 +123,16 @@
   const isText = $derived(current != null && isTextFile(current));
   const isPdf = $derived(current != null && isPdfFile(current));
   const fileName = $derived(current?.file.name ?? "");
+  /** Full-file blob URL for image / PDF / text fetches. */
+  const downloadUrl = $derived(
+    current
+      ? session.client.downloadUrl(rootId, current.file.id)
+      : "",
+  );
+  /** Range-capable stream URL for video / audio. */
+  const streamUrl = $derived(
+    current ? session.client.contentUrl(rootId, current.file.id) : "",
+  );
   let displayName = $state("");
 
   // Fit the file name in the header by dynamically computing the width.
@@ -559,31 +570,33 @@
   >
     {#if current && isImage}
       <ImagePreviewContent
-        {rootId}
-        fileId={current.file.id}
+        url={downloadUrl}
         name={current.file.name}
+        credentials="include"
       />
     {:else if current && isVideo}
       <VideoPreviewContent
-        {rootId}
-        fileId={current.file.id}
+        src={streamUrl}
         name={current.file.name}
         {autoplay}
+        crossorigin="use-credentials"
       />
     {:else if current && isAudio}
       <AudioPreviewContent
-        {rootId}
-        fileId={current.file.id}
+        src={streamUrl}
         name={current.file.name}
         {autoplay}
+        crossorigin="use-credentials"
       />
     {:else if current && isText}
       {#await import("./preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}
         <TextPreviewContent
           bind:this={textPreview}
+          url={downloadUrl}
           {rootId}
           fileId={current.file.id}
           name={current.file.name}
+          credentials="include"
           {onUpdated}
           bind:editing
         />
@@ -591,9 +604,9 @@
     {:else if current && isPdf}
       {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
         <PdfPreviewContent
-          {rootId}
-          fileId={current.file.id}
+          url={downloadUrl}
           name={current.file.name}
+          credentials="include"
         />
       {/await}
     {/if}

@@ -231,6 +231,7 @@ async fn build_services(
 
     let files = LiveFileService::new(
         repository.files.clone(),
+        repository.share.clone(),
         repository.trash.clone(),
         repository.folders.clone(),
         storage.clone(),
@@ -244,6 +245,10 @@ async fn build_services(
         repository.deletions.clone(),
         Transactor::new(pool),
     );
+    let share = crate::file::service::ShareService::new(
+        repository.share.clone(),
+        storage.clone(),
+    );
     files.prepare().await.unwrap();
     user_service.ensure_initial_admin().await.unwrap();
 
@@ -252,6 +257,7 @@ async fn build_services(
             auth,
             users: user_service,
             files,
+            share,
             trash,
         },
         repository,

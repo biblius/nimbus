@@ -5,6 +5,7 @@ mod overwrite;
 mod processing;
 mod renaming;
 mod roots;
+mod share;
 mod trash;
 mod tree;
 mod upload;

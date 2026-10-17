@@ -14,3 +14,7 @@ export function toastError(message: string) {
     },
   });
 }
+
+export function toastSuccess(message: string) {
+  toast.push(message);
+}

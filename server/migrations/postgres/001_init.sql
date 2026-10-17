@@ -15,6 +15,18 @@ CREATE UNIQUE INDEX users_email_idx ON users (email)
 WHERE
   email IS NOT NULL;
 
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY NOT NULL,
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  remote_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  expires_at TIMESTAMPTZ
+);
+
+CREATE INDEX sessions_user_id_idx ON sessions (user_id);
+
 CREATE TABLE user_passkeys (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -60,6 +72,9 @@ CREATE TABLE files (
   hash TEXT,
   -- Always null for directories
   size_bytes BIGINT NOT NULL,
+  -- When true, the entry is reachable without authentication via the public share routes.
+  -- Sharing a directory sets this on every descendant and unsharing clears it.
+  shared BOOLEAN NOT NULL DEFAULT FALSE,
   -- Optional generated artifacts (preview hashes, etc.). Null until processing.
   metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL,
@@ -74,13 +89,17 @@ CREATE INDEX files_parent_idx ON files (parent);
 
 CREATE INDEX files_hash_idx ON files (hash);
 
-CREATE INDEX files_preview_64_idx ON files ((metadata ->> 'preview64'))
+CREATE INDEX files_shared_idx ON files (shared)
 WHERE
-  metadata ->> 'preview64' IS NOT NULL;
+  shared;
 
-CREATE INDEX files_preview_256_idx ON files ((metadata ->> 'preview256'))
+CREATE INDEX files_preview_64_idx ON files ((metadata - > > 'preview64'))
 WHERE
-  metadata ->> 'preview256' IS NOT NULL;
+  metadata - > > 'preview64' IS NOT NULL;
+
+CREATE INDEX files_preview_256_idx ON files ((metadata - > > 'preview256'))
+WHERE
+  metadata - > > 'preview256' IS NOT NULL;
 
 -- Used for soft deletion. Files end up here from `files`.
 -- A file that is directly deleted from `files` has its parent set to null
@@ -106,33 +125,19 @@ CREATE TABLE trashed_files (
 
 CREATE INDEX trashed_files_root_id_idx ON trashed_files (root_id);
 
-CREATE INDEX trashed_files_trashed_by_idx ON trashed_files (trashed_by);
-
 CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
 
-CREATE INDEX trashed_files_preview_64_idx ON trashed_files ((metadata ->> 'preview64'))
+CREATE INDEX trashed_files_preview_64_idx ON trashed_files ((metadata - > > 'preview64'))
 WHERE
-  metadata ->> 'preview64' IS NOT NULL;
+  metadata - > > 'preview64' IS NOT NULL;
 
-CREATE INDEX trashed_files_preview_256_idx ON trashed_files ((metadata ->> 'preview256'))
+CREATE INDEX trashed_files_preview_256_idx ON trashed_files ((metadata - > > 'preview256'))
 WHERE
-  metadata ->> 'preview256' IS NOT NULL;
+  metadata - > > 'preview256' IS NOT NULL;
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
-
-CREATE TABLE sessions (
-  id UUID PRIMARY KEY NOT NULL,
-  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  remote_address TEXT,
-  user_agent TEXT,
-  created_at TIMESTAMPTZ NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL,
-  expires_at TIMESTAMPTZ
-);
-
-CREATE INDEX sessions_user_id_idx ON sessions (user_id);
 
 -- Membership of a shared root. Private roots are not recorded here.
 CREATE TABLE user_folders (
@@ -147,7 +152,8 @@ CREATE INDEX user_folders_user_idx ON user_folders (user_id);
 CREATE TABLE file_deletion_queue (
   -- Used for live updates, see queue worker.
   id UUID NOT NULL,
-  -- Points to either `files` or `trashed_files` depending on the `origin` column. ID uniqueness is guaranteed across both tables, since the only way
+  -- Points to either `files` or `trashed_files` depending on the `origin` column.
+  -- ID uniqueness is guaranteed across both tables, since the only way
   -- files can end up in the trash is if they existed in files,
   -- but there are split seconds where the same file from trash and live
   -- can coexist here.

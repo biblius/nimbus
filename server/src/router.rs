@@ -7,16 +7,30 @@ pub mod users;
 
 use axum::{
     Router,
+    body::Body,
     extract::DefaultBodyLimit,
-    http::{HeaderName, HeaderValue, Method, StatusCode},
+    http::{HeaderName, HeaderValue, Method, StatusCode, header},
     middleware as axum_middleware,
-    response::{IntoResponse, Sse, sse::Event},
+    response::{IntoResponse, Response, Sse, sse::Event},
     routing::{delete, get, post, put},
 };
+use axum_extra::{TypedHeader, headers::Range};
 use futures::Stream;
-use std::{convert::Infallible, str::FromStr, time::Duration};
-use tokio::sync::mpsc;
+use std::{
+    convert::Infallible,
+    io::SeekFrom,
+    ops::Bound,
+    path::Path,
+    str::FromStr,
+    time::Duration,
+};
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, AsyncSeekExt},
+    sync::mpsc,
+};
 use tokio_stream::StreamExt;
+use tokio_util::io::ReaderStream;
 use tower_http::{
     cors::{AllowCredentials, CorsLayer},
     trace::TraceLayer,
@@ -26,7 +40,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use self::openapi::ApiDoc;
-use crate::state::AppState;
+use crate::{error::AppError, state::AppState};
 
 pub fn router(state: AppState) -> Router {
     let upload_max = state.upload_max_bytes;
@@ -83,7 +97,24 @@ pub fn router(state: AppState) -> Router {
             post(auth::start_native_passkey_login),
         )
         .route("/auth/reset", post(auth::start_password_reset))
-        .route("/auth/reset/{token}", post(auth::finish_password_reset));
+        .route("/auth/reset/{token}", post(auth::finish_password_reset))
+        .route("/files/shared/{file_id}", get(files::shared_file))
+        .route(
+            "/files/shared/{file_id}/children",
+            get(files::shared_children),
+        )
+        .route(
+            "/files/shared/{file_id}/blob/download",
+            get(files::shared_download),
+        )
+        .route(
+            "/files/shared/{file_id}/blob/chunk",
+            get(files::shared_download_chunk),
+        )
+        .route(
+            "/files/shared/{file_id}/preview",
+            get(files::shared_preview),
+        );
 
     let session = Router::new()
         .route("/auth/me", get(auth::me).patch(auth::update_me))
@@ -145,6 +176,10 @@ pub fn router(state: AppState) -> Router {
             put(files::overwrite).layer(DefaultBodyLimit::max(upload_max)),
         )
         .route("/roots/{root_id}/files/{id}/preview", get(files::preview))
+        .route(
+            "/roots/{root_id}/files/{id}/share",
+            post(files::share_file).delete(files::unshare_file),
+        )
         .route("/roots/{root_id}/tree", get(files::tree))
         .route("/roots/{root_id}/trash", get(files::trash))
         .route("/roots/{root_id}/trash/restore", post(files::restore_all))
@@ -233,4 +268,113 @@ where
             .interval(Duration::from_secs(1))
             .text("keep-alive"),
     )
+}
+
+/// Stream a file with optional HTTP Range support (for `<video>` / `<audio>`).
+///
+/// Without a Range header the whole file is returned with `Accept-Ranges: bytes`.
+/// With a Range header the first satisfiable byte range is served as `206`.
+pub(crate) async fn chunked_download(
+    path: &Path,
+    name: &str,
+    mime: &'static str,
+    range: Option<TypedHeader<Range>>,
+) -> Result<Response, AppError> {
+    let mut file = File::open(path).await?;
+    let file_bytes = file.metadata().await?.len();
+
+    // Inline so media elements can play from this URL instead of downloading.
+    let disposition = content_disposition(name, true);
+
+    let Some(TypedHeader(range)) = range else {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::CONTENT_TYPE, mime)
+            .header(header::CONTENT_DISPOSITION, &disposition)
+            .header(header::CONTENT_LENGTH, file_bytes.to_string())
+            .body(Body::from_stream(ReaderStream::new(file)))
+            .map_err(|error| {
+                tracing::error!(%error, "building chunk download response");
+                AppError::Internal
+            });
+    };
+
+    // Browsers request a single range for video seek/buffer; serve the first satisfiable one.
+    let Some((start_bound, end_bound)) = range.satisfiable_ranges(file_bytes).next() else {
+        return Response::builder()
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{file_bytes}"))
+            .body(Body::empty())
+            .map_err(|error| {
+                tracing::error!(%error, "building range-not-satisfiable response");
+                AppError::Internal
+            });
+    };
+
+    let start = match start_bound {
+        Bound::Included(value) => value,
+        Bound::Excluded(value) => value.saturating_add(1),
+        Bound::Unbounded => 0,
+    };
+
+    let end = match end_bound {
+        Bound::Included(value) => value,
+        Bound::Excluded(value) => value.saturating_sub(1),
+        Bound::Unbounded => file_bytes.saturating_sub(1),
+    };
+
+    if start > end || start >= file_bytes {
+        return Response::builder()
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{file_bytes}"))
+            .body(Body::empty())
+            .map_err(|error| {
+                tracing::error!(%error, "building range-not-satisfiable response");
+                AppError::Internal
+            });
+    }
+
+    let len = end - start + 1;
+
+    file.seek(SeekFrom::Start(start)).await?;
+
+    let chunk = file.take(len);
+
+    Response::builder()
+        .status(StatusCode::PARTIAL_CONTENT)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::CONTENT_DISPOSITION, &disposition)
+        .header(header::CONTENT_LENGTH, len.to_string())
+        .header(
+            header::CONTENT_RANGE,
+            format!("bytes {start}-{end}/{file_bytes}"),
+        )
+        .body(Body::from_stream(ReaderStream::new(chunk)))
+        .map_err(|error| {
+            tracing::error!(%error, "building partial chunk response");
+            AppError::Internal
+        })
+}
+
+pub(crate) fn content_disposition(name: &str, inline: bool) -> String {
+    let name: String = name
+        .chars()
+        .map(|character| {
+            if character.is_ascii()
+                && character != '"'
+                && character != '\\'
+                && !character.is_control()
+            {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    let kind = if inline { "inline" } else { "attachment" };
+
+    format!("{kind}; filename=\"{name}\"")
 }

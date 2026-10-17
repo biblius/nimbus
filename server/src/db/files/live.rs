@@ -283,6 +283,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
+                shared,
                 metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at
@@ -319,11 +320,12 @@ impl FileRepository {
                 format,
                 hash,
                 size_bytes,
+                shared,
                 metadata,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE, NULL, $10, $11)
             RETURNING
                 id,
                 root_id,
@@ -334,6 +336,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
+                shared,
                 metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at
@@ -376,6 +379,7 @@ impl FileRepository {
                 format,
                 hash,
                 size_bytes,
+                shared,
                 metadata,
                 created_at,
                 updated_at
@@ -393,6 +397,7 @@ impl FileRepository {
                 .push_bind(file.file_type.clone())
                 .push_bind(&file.hash)
                 .push_bind(file.size_bytes)
+                .push_bind(file.shared)
                 .push_bind(&file.metadata)
                 .push_bind(file.created_at)
                 .push_bind(file.updated_at);
@@ -437,6 +442,7 @@ impl FileRepository {
                 f.format AS file_type,
                 f.hash,
                 f.size_bytes,
+                f.shared,
                 f.metadata,
                 f.created_at,
                 f.updated_at
@@ -554,6 +560,7 @@ impl FileRepository {
                 format AS file_type,
                 hash,
                 size_bytes,
+                shared,
                 metadata,
                 created_at,
                 updated_at
@@ -590,6 +597,7 @@ impl FileRepository {
                 format AS file_type,
                 hash,
                 size_bytes,
+                shared,
                 metadata,
                 created_at,
                 updated_at
@@ -674,6 +682,7 @@ impl FileRepository {
                     format,
                     hash,
                     size_bytes,
+                    shared,
                     metadata,
                     created_at,
                     updated_at
@@ -691,6 +700,7 @@ impl FileRepository {
                     child.format,
                     child.hash,
                     child.size_bytes,
+                    child.shared,
                     child.metadata,
                     child.created_at,
                     child.updated_at
@@ -707,6 +717,7 @@ impl FileRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes AS "size_bytes!",
+                shared AS "shared!",
                 metadata AS "metadata: Json<FileMetadata>",
                 created_at AS "created_at!",
                 updated_at AS "updated_at!"

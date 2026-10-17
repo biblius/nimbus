@@ -1,26 +1,22 @@
 <script lang="ts">
-  import { session } from "../../../session.svelte";
-
   let {
-    rootId,
-    fileId,
+    src,
     name,
     autoplay = true,
+    /** Omit on public shared media; use `"use-credentials"` when auth cookies are required. */
+    crossorigin,
   }: {
-    rootId: string;
-    fileId: string;
+    src: string;
     name: string;
     autoplay?: boolean;
+    crossorigin?: "anonymous" | "use-credentials";
   } = $props();
-
-  // Direct chunk URL - browser issues Range requests and streams.
-  const videoUrl = $derived(session.client.contentUrl(rootId, fileId));
 
   let loading = $state(true);
   let error = $state("");
 
   $effect(() => {
-    void fileId;
+    void src;
     loading = true;
     error = "";
   });
@@ -38,8 +34,9 @@
     {/if}
     <!-- svelte-ignore a11y_media_has_caption -->
     <video
-      src={videoUrl}
+      {src}
       {autoplay}
+      {crossorigin}
       controls
       playsinline
       preload="auto"

@@ -7,6 +7,11 @@ export const { navigate, route, isActive } = createRouter({
   "/reset-password/:token": () =>
     import("./pages/ResetPasswordTokenPage.svelte"),
 
+  // Public shared files. No session required, so these sit outside SessionApp.
+  "/files/shared/:file_id": () => import("./pages/SharedFilePage.svelte"),
+  "/files/shared/:file_id/dir/:parent_id": () =>
+    import("./pages/SharedFilePage.svelte"),
+
   // Pages that need a signed-in user. SessionApp loads the user and renders the header.
   "/": {
     "/": () => import("./pages/HomeRedirect.svelte"),

@@ -5,6 +5,9 @@
     Eye,
     Folder,
     FolderInput,
+    Link as LinkIcon,
+    Link2,
+    Link2Off,
     Pencil,
     Share2,
     Trash,
@@ -43,6 +46,9 @@
     onPreview,
     onDownload,
     onCopy,
+    onShare,
+    onUnshare,
+    onCopyLink,
     onMove,
     onRename,
     onDelete,
@@ -67,6 +73,12 @@
     onPreview: () => void;
     onDownload: () => void;
     onCopy: () => void;
+    /** Create a public link for this entry. */
+    onShare: () => void | Promise<void>;
+    /** Stop publicly sharing this entry. */
+    onUnshare: () => void | Promise<void>;
+    /** Copy the public link for an already-shared entry. */
+    onCopyLink: () => void | Promise<void>;
     onMove: () => void;
     onRename: (name: string) => void | Promise<void>;
     onDelete: () => void;
@@ -530,6 +542,13 @@
         {/if}
       {:else}
         <span class={cn("truncate font-medium", textClass)}>{name}</span>
+        {#if file.shared}
+          <Link2
+            size={compact ? 12 : 14}
+            class="ml-1.5 shrink-0 text-muted-foreground"
+            aria-label="Publicly shared"
+          />
+        {/if}
       {/if}
     </div>
   </div>
@@ -584,6 +603,12 @@
         </Button>
       {/snippet}
       <MenuItem onclick={onCopy}>Copy to…</MenuItem>
+      {#if file.shared}
+        <MenuItem onclick={onCopyLink}>Copy public link</MenuItem>
+        <MenuItem onclick={onUnshare}>Stop sharing</MenuItem>
+      {:else}
+        <MenuItem onclick={onShare}>Create public link</MenuItem>
+      {/if}
     </Menu>
     <Button
       type="button"
@@ -638,7 +663,21 @@
           <Share2 size={16} />
           Copy to…
         </MenuItem>
-        <MenuItem disabled>Public link</MenuItem>
+        {#if file.shared}
+          <MenuItem onclick={onCopyLink}>
+            <LinkIcon size={16} />
+            Copy public link
+          </MenuItem>
+          <MenuItem onclick={onUnshare}>
+            <Link2Off size={16} />
+            Stop sharing
+          </MenuItem>
+        {:else}
+          <MenuItem onclick={onShare}>
+            <LinkIcon size={16} />
+            Create public link
+          </MenuItem>
+        {/if}
       </div>
     {/if}
   </div>

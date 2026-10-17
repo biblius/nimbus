@@ -1,14 +1,13 @@
 <script lang="ts">
-  import { session } from "../../../session.svelte";
-
   let {
-    rootId,
-    fileId,
+    url,
     name,
+    credentials = "omit",
   }: {
-    rootId: string;
-    fileId: string;
+    url: string;
     name: string;
+    /** Use `"include"` for authenticated blob routes. */
+    credentials?: RequestCredentials;
   } = $props();
 
   let imageUrl = $state<string | null>(null);
@@ -16,7 +15,8 @@
   let error = $state("");
 
   $effect(() => {
-    const id = fileId;
+    const contentUrl = url;
+    const creds = credentials;
 
     imageUrl = null;
     error = "";
@@ -25,8 +25,13 @@
     let cancelled = false;
     let objectUrl: string | null = null;
 
-    session.client
-      .content(rootId, id)
+    fetch(contentUrl, { credentials: creds })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error("fetch failed");
+        }
+        return res.blob();
+      })
       .then((blob) => {
         if (cancelled) {
           return;

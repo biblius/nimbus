@@ -601,6 +601,38 @@ export class NimbusClient {
     });
   }
 
+  /** Mark a live file (and descendants, for directories) as publicly shared. */
+  shareFile(rootId: string, id: string): Promise<void> {
+    return this.request<void>(
+      `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/share`,
+      { method: "POST" },
+    );
+  }
+
+  /** Clear the public share flag on a live file and its descendants. */
+  unshareFile(rootId: string, id: string): Promise<void> {
+    return this.request<void>(
+      `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/share`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** Public shared file entry (no session required). */
+  sharedFile(fileId: string): Promise<FileView> {
+    return this.request<FileView>(
+      `/files/shared/${encodeURIComponent(fileId)}`,
+      { credentials: "omit" },
+    );
+  }
+
+  /** Children of a publicly shared directory. */
+  sharedList(parentId: string): Promise<FileView[]> {
+    return this.request<FileView[]>(
+      `/files/shared/${encodeURIComponent(parentId)}/children`,
+      { credentials: "omit" },
+    );
+  }
+
   /** Full-file blob URL (attachment download). */
   downloadUrl(rootId: string, id: string): string {
     return `${this.root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/download`;
@@ -609,6 +641,16 @@ export class NimbusClient {
   /** Range-capable blob URL for streaming media (`<video>` / `<audio>` src). */
   contentUrl(rootId: string, id: string): string {
     return `${this.root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/chunk`;
+  }
+
+  /** Public shared attachment download URL. */
+  sharedDownloadUrl(fileId: string): string {
+    return `${this.root}/files/shared/${encodeURIComponent(fileId)}/blob/download`;
+  }
+
+  /** Public shared Range-capable blob URL for media. */
+  sharedContentUrl(fileId: string): string {
+    return `${this.root}/files/shared/${encodeURIComponent(fileId)}/blob/chunk`;
   }
 
   /** Fetch a file's bytes (same auth as download). */
@@ -658,6 +700,37 @@ export class NimbusClient {
     URL.revokeObjectURL(url);
   }
 
+  /** Fetch a publicly shared file's bytes. */
+  async sharedContent(fileId: string): Promise<Blob> {
+    const path = `/files/shared/${encodeURIComponent(fileId)}/blob/download`;
+    const response = await fetch(`${this.root}${path}`, {
+      credentials: "omit",
+    });
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw this.httpError(response.status, body, path);
+    }
+
+    return response.blob();
+  }
+
+  async sharedDownload(fileId: string, name: string): Promise<void> {
+    const url = URL.createObjectURL(await this.sharedContent(fileId));
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = name;
+    anchor.click();
+
+    URL.revokeObjectURL(url);
+  }
+
   /** Fetch a file's preview image as a blob (`64` list icon or `256` large tile). */
   async preview(
     rootId: string,
@@ -667,6 +740,26 @@ export class NimbusClient {
     const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview?size=${size}`;
     const response = await fetch(`${this.root}${path}`, {
       credentials: "include",
+    });
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw this.httpError(response.status, body, path);
+    }
+
+    return response.blob();
+  }
+
+  /** Fetch a publicly shared file's preview image. */
+  async sharedPreview(fileId: string, size: 64 | 256 = 64): Promise<Blob> {
+    const path = `/files/shared/${encodeURIComponent(fileId)}/preview?size=${size}`;
+    const response = await fetch(`${this.root}${path}`, {
+      credentials: "omit",
     });
 
     if (!response.ok) {
@@ -856,7 +949,7 @@ export class NimbusClient {
     const response = await fetch(`${this.root}${path}`, {
       ...init,
       headers,
-      credentials: "include",
+      credentials: init.credentials ?? "include",
     });
 
     if (!response.ok) {

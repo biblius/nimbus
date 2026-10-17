@@ -17,6 +17,8 @@ export type PreviewQueueOptions = {
   getParentId: () => string | null;
   /** Preview pixel size: 64 for list icons, 256 for tiles. */
   getSize: () => number;
+  /** Override authenticated preview fetch (e.g. public shared links). */
+  fetchPreview?: (fileId: string, size: 64 | 256) => Promise<Blob>;
 };
 
 /**
@@ -123,11 +125,10 @@ export class PreviewQueue {
       await Promise.all(
         jobs.map(async (job) => {
           try {
-            const blob = await session.client.preview(
-              rootId,
-              job.id,
-              previewSize,
-            );
+            const size = (previewSize === 256 ? 256 : 64) as 64 | 256;
+            const blob = this.opts.fetchPreview
+              ? await this.opts.fetchPreview(job.id, size)
+              : await session.client.preview(rootId, job.id, size);
 
             const prev = this.thumbs[job.id];
 

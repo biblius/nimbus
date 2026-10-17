@@ -1,7 +1,9 @@
 mod live;
+mod share;
 mod trash;
 
 pub use live::LiveFileService;
+pub use share::ShareService;
 pub use trash::TrashFileService;
 
 use crate::{

@@ -10,17 +10,26 @@
   const WQ_HINT_MS = 2500;
 
   let {
+    url,
+    name,
     rootId,
     fileId,
-    name,
     onUpdated,
     editing = $bindable(false),
+    readonly = false,
+    credentials = "omit",
   }: {
-    rootId: string;
-    fileId: string;
+    url: string;
     name: string;
+    /** Required when not `readonly` (for overwrite). */
+    rootId?: string;
+    fileId?: string;
     onUpdated?: (entry: FileEntry) => void;
     editing?: boolean;
+    /** Hide editing controls and never enter edit mode. */
+    readonly?: boolean;
+    /** Use `"include"` for authenticated blob routes. */
+    credentials?: RequestCredentials;
   } = $props();
 
   // Called from parent
@@ -50,6 +59,10 @@
     "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium tracking-wide transition-colors";
 
   function startEdit() {
+    if (readonly) {
+      return;
+    }
+
     draft = text;
     editing = true;
   }
@@ -80,7 +93,7 @@
   }
 
   async function save() {
-    if (saving) {
+    if (saving || readonly || rootId == null || fileId == null) {
       return;
     }
 
@@ -105,7 +118,8 @@
   }
 
   $effect(() => {
-    const id = fileId;
+    const contentUrl = url;
+    const creds = credentials;
 
     text = "";
     draft = "";
@@ -116,10 +130,12 @@
 
     let cancelled = false;
 
-    session.client
-      .content(rootId, id)
-      .then(async (blob) => {
-        const value = await blob.text();
+    fetch(contentUrl, { credentials: creds })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error("fetch failed");
+        }
+        const value = await res.text();
         if (cancelled) {
           return;
         }
@@ -215,7 +231,7 @@
               {saving ? "Saving…" : "Save"}
             </button>
           {/if}
-        {:else}
+        {:else if !readonly}
           <button
             type="button"
             class="inline-flex h-8 items-center gap-1.5 rounded-md bg-white/10 px-3 text-xs font-medium text-white transition-colors hover:bg-white/16"
@@ -240,7 +256,7 @@
     <CodeMirrorEditor
       bind:this={editor}
       bind:value={draft}
-      editable={editing}
+      editable={editing && !readonly}
       aria-label={editing ? `Edit ${name}` : name}
       onWrite={save}
       onQuit={cancelEdit}

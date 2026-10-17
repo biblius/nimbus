@@ -281,6 +281,8 @@ export type FileEntry = {
   fileType: FileType | null;
   hash: string | null;
   sizeBytes: number;
+  /** When true, the entry is reachable via the public share routes. */
+  shared: boolean;
   createdAt: string;
   updatedAt: string;
 };

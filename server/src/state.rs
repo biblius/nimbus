@@ -11,7 +11,7 @@ use crate::{
     email::EmailSender,
     file::{
         queue::{self, DeletionQueue, DeletionQueueHandle, ProcessingQueue},
-        service::{LiveFileService, TrashFileService},
+        service::{LiveFileService, ShareService, TrashFileService},
         storage::Storage,
     },
     user::service::UserService,
@@ -30,6 +30,7 @@ pub struct ServiceState {
     pub auth: AuthenticationService,
     pub users: UserService,
     pub files: LiveFileService,
+    pub share: ShareService,
     pub trash: TrashFileService,
 }
 
@@ -121,6 +122,7 @@ impl AppState {
 
         let file_service = LiveFileService::new(
             repository.files.clone(),
+            repository.share.clone(),
             repository.trash.clone(),
             repository.folders.clone(),
             storage.clone(),
@@ -135,6 +137,8 @@ impl AppState {
             repository.deletions.clone(),
             transactor,
         );
+
+        let share_service = ShareService::new(repository.share.clone(), storage.clone());
 
         file_service
             .prepare()
@@ -158,6 +162,7 @@ impl AppState {
             auth,
             users: user_service,
             files: file_service,
+            share: share_service,
             trash: trash_service,
         };
 

@@ -9,9 +9,11 @@ use sqlx::QueryBuilder;
 use uuid::Uuid;
 
 mod live;
+mod share;
 mod trash;
 
 pub use live::FileRepository;
+pub use share::ShareRepository;
 pub use trash::TrashRepository;
 
 /// Which table a queued/deleted file lives in. Stored as text: `files` or `trash`.

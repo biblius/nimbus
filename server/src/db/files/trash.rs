@@ -52,6 +52,7 @@ impl TrashRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
+                FALSE AS "shared!",
                 metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at
@@ -121,6 +122,7 @@ impl TrashRepository {
                 format AS file_type,
                 hash,
                 size_bytes,
+                shared,
                 metadata,
                 created_at,
                 updated_at
@@ -242,6 +244,7 @@ impl TrashRepository {
                 format AS "file_type: FileType",
                 hash,
                 size_bytes,
+                FALSE AS "shared!",
                 metadata AS "metadata: Json<FileMetadata>",
                 created_at,
                 updated_at

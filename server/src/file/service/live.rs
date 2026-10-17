@@ -5,7 +5,7 @@ use super::super::{
 };
 use crate::{
     db::{
-        files::{FileRepository, NewFile, TrashRepository},
+        files::{FileRepository, NewFile, ShareRepository, TrashRepository},
         tx::Transactor,
         user_folders::UserFolderRepository,
     },
@@ -31,6 +31,7 @@ use validify::{Validate, Validify};
 #[derive(Clone)]
 pub struct LiveFileService {
     live: FileRepository,
+    share: ShareRepository,
     trash: TrashRepository,
     folders: UserFolderRepository,
     storage: Storage,
@@ -41,6 +42,7 @@ pub struct LiveFileService {
 impl LiveFileService {
     pub fn new(
         live: FileRepository,
+        share: ShareRepository,
         trash: TrashRepository,
         folders: UserFolderRepository,
         storage: Storage,
@@ -49,6 +51,7 @@ impl LiveFileService {
     ) -> Self {
         Self {
             live,
+            share,
             trash,
             folders,
             storage,
@@ -282,6 +285,7 @@ impl LiveFileService {
                 file_type: None,
                 hash: None,
                 size_bytes: 0,
+                shared: false,
                 metadata: None,
                 created_at: now,
                 updated_at: now,
@@ -298,6 +302,7 @@ impl LiveFileService {
             file_type: Some(file.file_type.clone()),
             hash: Some(file.hash.clone()),
             size_bytes: file.size,
+            shared: false,
             metadata: None,
             created_at: now,
             updated_at: now,
@@ -639,6 +644,8 @@ impl LiveFileService {
                 file_type: entry.file_type,
                 hash: entry.hash,
                 size_bytes: entry.size_bytes,
+                // Copies are private until explicitly shared again.
+                shared: false,
                 metadata: entry.metadata,
                 created_at: now,
                 updated_at: entry.updated_at,
@@ -682,6 +689,30 @@ impl LiveFileService {
             children: FileTree::from_entries(files),
         })
     }
+    /// Mark a live file (and every descendant, for directories) as publicly shared.
+    #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
+    pub async fn share_file(&self, user: &User, root_id: Uuid, id: Uuid) -> Result<(), AppError> {
+        let file = self.readable(user, id).await?;
+
+        if file.root_id != root_id {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        self.share.set_shared_subtree(root_id, id, true).await
+    }
+
+    /// Clear the public share flag on a live file and every descendant.
+    #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
+    pub async fn unshare_file(&self, user: &User, root_id: Uuid, id: Uuid) -> Result<(), AppError> {
+        let file = self.readable(user, id).await?;
+
+        if file.root_id != root_id {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        self.share.set_shared_subtree(root_id, id, false).await
+    }
+
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     async fn readable(&self, user: &User, id: Uuid) -> Result<FileEntry, AppError> {
         let file = self

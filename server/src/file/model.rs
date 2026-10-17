@@ -26,6 +26,8 @@ pub struct FileEntry {
     pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
+    /// When true, the entry is reachable via the public share routes.
+    pub shared: bool,
     /// Generated artifacts (preview hashes, etc.). Omitted from JSON when null.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<FileMetadata>)]

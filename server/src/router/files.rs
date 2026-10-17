@@ -9,7 +9,7 @@ use crate::{
         queue::DeletionResult,
         tree::FileTree,
     },
-    router::sse,
+    router::{chunked_download, content_disposition, sse},
     state::AppState,
 };
 use axum::{
@@ -24,10 +24,7 @@ use futures::Stream;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::io::SeekFrom;
-use std::ops::Bound;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
@@ -643,84 +640,7 @@ pub(crate) async fn download_chunk(
 ) -> Result<Response, AppError> {
     let (entry, path, mime) = state.services.files.content(&session.user, file_id).await?;
 
-    let mut file = File::open(&path).await?;
-
-    let file_bytes = file.metadata().await?.len();
-
-    // Inline so `<video>` / `<audio>` can play from this URL instead of downloading.
-    let disposition = content_disposition(&entry.name, true);
-
-    // No Range header: stream the whole file and advertise byte ranges for media players.
-    let Some(TypedHeader(range)) = range else {
-        return Response::builder()
-            .status(StatusCode::OK)
-            .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::CONTENT_TYPE, mime)
-            .header(header::CONTENT_DISPOSITION, &disposition)
-            .header(header::CONTENT_LENGTH, file_bytes.to_string())
-            .body(Body::from_stream(ReaderStream::new(file)))
-            .map_err(|error| {
-                tracing::error!(%error, "building chunk download response");
-                AppError::Internal
-            });
-    };
-
-    // Browsers request a single range for video seek/buffer; serve the first satisfiable one.
-    let Some((start_bound, end_bound)) = range.satisfiable_ranges(file_bytes).next() else {
-        return Response::builder()
-            .status(StatusCode::RANGE_NOT_SATISFIABLE)
-            .header(header::CONTENT_RANGE, format!("bytes */{file_bytes}"))
-            .body(Body::empty())
-            .map_err(|error| {
-                tracing::error!(%error, "building range-not-satisfiable response");
-                AppError::Internal
-            });
-    };
-
-    let start = match start_bound {
-        Bound::Included(value) => value,
-        Bound::Excluded(value) => value.saturating_add(1),
-        Bound::Unbounded => 0,
-    };
-
-    let end = match end_bound {
-        Bound::Included(value) => value,
-        Bound::Excluded(value) => value.saturating_sub(1),
-        Bound::Unbounded => file_bytes.saturating_sub(1),
-    };
-
-    if start > end || start >= file_bytes {
-        return Response::builder()
-            .status(StatusCode::RANGE_NOT_SATISFIABLE)
-            .header(header::CONTENT_RANGE, format!("bytes */{file_bytes}"))
-            .body(Body::empty())
-            .map_err(|error| {
-                tracing::error!(%error, "building range-not-satisfiable response");
-                AppError::Internal
-            });
-    }
-
-    let len = end - start + 1;
-
-    file.seek(SeekFrom::Start(start)).await?;
-
-    let chunk = file.take(len);
-
-    Response::builder()
-        .status(StatusCode::PARTIAL_CONTENT)
-        .header(header::ACCEPT_RANGES, "bytes")
-        .header(header::CONTENT_TYPE, mime)
-        .header(header::CONTENT_DISPOSITION, &disposition)
-        .header(header::CONTENT_LENGTH, len.to_string())
-        .header(
-            header::CONTENT_RANGE,
-            format!("bytes {start}-{end}/{file_bytes}"),
-        )
-        .body(Body::from_stream(ReaderStream::new(chunk)))
-        .map_err(|error| {
-            tracing::error!(%error, "building partial chunk response");
-            AppError::Internal
-        })
+    chunked_download(&path, &entry.name, mime, range).await
 }
 
 #[utoipa::path(
@@ -862,23 +782,147 @@ pub(crate) async fn delete_files(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn content_disposition(name: &str, inline: bool) -> String {
-    let name: String = name
-        .chars()
-        .map(|character| {
-            if character.is_ascii()
-                && character != '"'
-                && character != '\\'
-                && !character.is_control()
-            {
-                character
-            } else {
-                '_'
-            }
+#[utoipa::path(
+    get,
+    path = "/files/shared/{file_id}",
+    params(("file_id" = Uuid, Path, description = "Shared file id")),
+    responses((status = 200, description = "Shared file entry", body = FileView))
+)]
+pub(crate) async fn shared_file(
+    State(state): State<AppState>,
+    Path(file_id): Path<Uuid>,
+) -> Result<Json<FileView>, AppError> {
+    Ok(Json(state.services.share.get(file_id).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/files/shared/{file_id}/children",
+    params(("file_id" = Uuid, Path, description = "Shared directory id")),
+    responses((status = 200, description = "Shared directory children", body = Vec<FileView>))
+)]
+pub(crate) async fn shared_children(
+    State(state): State<AppState>,
+    Path(file_id): Path<Uuid>,
+) -> Result<Json<Vec<FileView>>, AppError> {
+    Ok(Json(state.services.share.list(file_id).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/files/shared/{file_id}/blob/download",
+    params(("file_id" = Uuid, Path, description = "Shared file id")),
+    responses((status = 200, description = "Full file bytes"))
+)]
+pub(crate) async fn shared_download(
+    State(state): State<AppState>,
+    Path(file_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let (entry, path, mime) = state.services.share.content(file_id).await?;
+
+    let file = File::open(path).await?;
+
+    Response::builder()
+        .header(header::CONTENT_TYPE, mime)
+        .header(
+            header::CONTENT_DISPOSITION,
+            content_disposition(&entry.name, false),
+        )
+        .header(header::CONTENT_LENGTH, entry.size_bytes.to_string())
+        .body(Body::from_stream(ReaderStream::new(file)))
+        .map_err(|error| {
+            tracing::error!(%error, "building shared download response");
+            AppError::Internal
         })
-        .collect();
+}
 
-    let kind = if inline { "inline" } else { "attachment" };
+#[utoipa::path(
+    get,
+    path = "/files/shared/{file_id}/blob/chunk",
+    params(("file_id" = Uuid, Path, description = "Shared file id")),
+    responses(
+        (status = 200, description = "Full file bytes (when no Range header)"),
+        (status = 206, description = "Partial content for Range requests"),
+    )
+)]
+pub(crate) async fn shared_download_chunk(
+    State(state): State<AppState>,
+    Path(file_id): Path<Uuid>,
+    range: Option<TypedHeader<Range>>,
+) -> Result<Response, AppError> {
+    let (entry, path, mime) = state.services.share.content(file_id).await?;
 
-    format!("{kind}; filename=\"{name}\"")
+    chunked_download(&path, &entry.name, mime, range).await
+}
+
+#[utoipa::path(
+    get,
+    path = "/files/shared/{file_id}/preview",
+    params(
+        ("file_id" = Uuid, Path, description = "Shared file id"),
+        ("size" = Option<u32>, Query, description = "Preview edge length: 64 (default) or 256")
+    ),
+    responses((status = 200, description = "Preview image bytes"))
+)]
+pub(crate) async fn shared_preview(
+    State(state): State<AppState>,
+    Path(file_id): Path<Uuid>,
+    Query(query): Query<PreviewQuery>,
+) -> Result<Response, AppError> {
+    let size = PreviewSize::from_px(query.size.unwrap_or(64))?;
+    let preview = state.services.share.preview(file_id, size).await?;
+
+    Response::builder()
+        .header(header::CONTENT_TYPE, preview.mime)
+        .header(header::CONTENT_LENGTH, preview.len.to_string())
+        .header(header::CACHE_CONTROL, "public, max-age=86400")
+        .body(Body::from_stream(ReaderStream::new(preview.file)))
+        .map_err(|error| {
+            tracing::error!(%error, "building shared preview response");
+            AppError::Internal
+        })
+}
+
+#[utoipa::path(
+    post,
+    path = "/roots/{root_id}/files/{id}/share",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("id" = Uuid, Path, description = "File id")
+    ),
+    responses((status = 204, description = "File shared publicly"))
+)]
+pub(crate) async fn share_file(
+    Path((root_id, id)): Path<(Uuid, Uuid)>,
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<StatusCode, AppError> {
+    state
+        .services
+        .files
+        .share_file(&session.user, root_id, id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    delete,
+    path = "/roots/{root_id}/files/{id}/share",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("id" = Uuid, Path, description = "File id")
+    ),
+    responses((status = 204, description = "Public share removed"))
+)]
+pub(crate) async fn unshare_file(
+    Path((root_id, id)): Path<(Uuid, Uuid)>,
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<StatusCode, AppError> {
+    state
+        .services
+        .files
+        .unshare_file(&session.user, root_id, id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }

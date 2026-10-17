@@ -49,6 +49,9 @@ CREATE TABLE files (
   format TEXT,
   hash TEXT,
   size_bytes INTEGER NOT NULL,
+  -- When true, the entry is reachable via the public share routes.
+  -- Sharing a directory sets this on every descendant; unsharing clears them.
+  shared INTEGER NOT NULL DEFAULT 0,
   -- Optional generated artifacts (preview hashes, etc.). Null until processing.
   metadata TEXT,
   created_at TEXT NOT NULL,
@@ -62,6 +65,10 @@ CREATE INDEX files_created_by_idx ON files (created_by);
 CREATE INDEX files_parent_idx ON files (parent);
 
 CREATE INDEX files_hash_idx ON files (hash);
+
+CREATE INDEX files_shared_idx ON files (shared)
+WHERE
+  shared = 1;
 
 CREATE INDEX files_preview_64_idx ON files (json_extract(metadata, '$.preview64'))
 WHERE

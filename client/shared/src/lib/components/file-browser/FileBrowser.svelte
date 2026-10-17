@@ -17,7 +17,7 @@
   import { ApiError, ValidationError } from "../../api";
   import { PreviewQueue } from "../../previewQueue.svelte";
   import { session } from "../../session.svelte";
-  import { toastError } from "../../toast";
+  import { toastError, toastSuccess } from "../../toast";
   import { type FileEntry, type FileView, type Root } from "../../types";
   import { kv, type FilesViewMode } from "../../storage";
   import { UploadHandler } from "../../uploadHandler.svelte";
@@ -868,6 +868,70 @@
     }
   }
 
+  function publicLink(entry: FileView) {
+    return `${window.location.origin}/files/shared/${entry.file.id}`;
+  }
+
+  function setShared(id: string, shared: boolean) {
+    const index = entries.findIndex((item) => item.file.id === id);
+
+    if (index !== -1) {
+      entries[index].file.shared = shared;
+    }
+  }
+
+  async function copyLink(entry: FileView, message = "Public link copied") {
+    try {
+      await navigator.clipboard.writeText(publicLink(entry));
+      toastSuccess(message);
+    } catch {
+      toastError("Could not copy the public link");
+    }
+  }
+
+  async function shareEntry(entry: FileView) {
+    const rootId = root.id;
+
+    try {
+      await session.client.shareFile(rootId, entry.file.id);
+
+      // Only the opened entry is listed here. Descendants of a shared
+      // directory are not part of this list, so no cascade is needed.
+      if (root.id === rootId) {
+        setShared(entry.file.id, true);
+      }
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not create a public link",
+      );
+      return;
+    }
+
+    await copyLink(entry, "Public link created and copied");
+  }
+
+  async function unshareEntry(entry: FileView) {
+    const rootId = root.id;
+
+    try {
+      await session.client.unshareFile(rootId, entry.file.id);
+
+      if (root.id === rootId) {
+        setShared(entry.file.id, false);
+      }
+
+      toastSuccess("Stopped sharing");
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not stop sharing",
+      );
+    }
+  }
+
   function startCopy(entry: FileView) {
     const destinations = roots.filter((item) => item.id !== root.id);
 
@@ -1298,6 +1362,9 @@
                   onPreview={() => (previewFileId = entry.file.id)}
                   onDownload={() => download(entry)}
                   onCopy={() => startCopy(entry)}
+                  onShare={() => shareEntry(entry)}
+                  onUnshare={() => unshareEntry(entry)}
+                  onCopyLink={() => copyLink(entry)}
                   onDelete={() => startDelete([entry.file.id])}
                 />
               {:else}
@@ -1317,6 +1384,9 @@
                   onPreview={() => (previewFileId = entry.file.id)}
                   onDownload={() => download(entry)}
                   onCopy={() => startCopy(entry)}
+                  onShare={() => shareEntry(entry)}
+                  onUnshare={() => unshareEntry(entry)}
+                  onCopyLink={() => copyLink(entry)}
                   onMove={() => startMove([entry.file.id])}
                   onRename={(name) => renameEntry(entry, name)}
                   onDelete={() => startDelete([entry.file.id])}
