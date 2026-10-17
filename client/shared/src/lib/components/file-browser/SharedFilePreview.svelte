@@ -218,7 +218,7 @@
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not download that file",
+          : `Could not download ${current.file.name}`,
       );
     }
   }

@@ -794,10 +794,17 @@
 
       deleteOpen = false;
     } catch (cause) {
+      const single =
+        ids.length === 1
+          ? entries.find((item) => item.file.id === ids[0])
+          : undefined;
+
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not delete that item",
+          : single
+            ? `Could not delete ${label(single)}`
+            : `Could not delete ${ids.length} items`,
       );
     } finally {
       if (root.id === rootId && location.id === parent) {
@@ -886,10 +893,17 @@
       entries = entries.filter((entry) => !gone.has(entry.file.id));
       selected = selected.filter((id) => !gone.has(id));
     } catch (cause) {
+      const single =
+        ids.length === 1
+          ? entries.find((item) => item.file.id === ids[0])
+          : undefined;
+
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not move that item",
+          : single
+            ? `Could not move ${label(single)}`
+            : `Could not move ${ids.length} items`,
       );
     }
   }
@@ -911,7 +925,7 @@
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not download that item",
+          : `Could not download ${label(entry)}`,
       );
     }
   }
@@ -931,7 +945,7 @@
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not download that folder",
+          : `Could not download ${locationEntry?.name ?? root.name}`,
       );
     }
   }
@@ -1108,7 +1122,7 @@
           toastError(
             cause instanceof TypeError
               ? "The server could not be reached"
-              : "Could not copy that item",
+              : `Could not copy ${label(entry)}`,
           );
         }
       },
@@ -1162,7 +1176,9 @@
           toastError(
             cause instanceof TypeError
               ? "The server could not be reached"
-              : "Could not move that item",
+              : single
+                ? `Could not move ${label(single)}`
+                : `Could not move ${ids.length} items`,
           );
         }
       },
@@ -1184,7 +1200,7 @@
           ? "The server could not be reached"
           : cause instanceof ValidationError
             ? cause.field("name")?.message || "That name is not allowed"
-            : "Could not rename that item",
+            : `Could not rename ${label(entry)}`,
       );
       throw cause;
     }

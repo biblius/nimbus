@@ -76,7 +76,7 @@
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not download that item",
+          : `Could not download ${view.file.name}`,
       );
     }
   }

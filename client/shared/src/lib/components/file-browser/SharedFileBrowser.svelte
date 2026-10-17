@@ -239,7 +239,7 @@
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not download that item",
+          : `Could not download ${entry.file.name}`,
       );
     }
   }
@@ -250,7 +250,8 @@
     }
 
     const id = locationId;
-    const name = `${trail.at(-1)?.name ?? shareRoot.file.name}.zip`;
+    const folderName = trail.at(-1)?.name ?? shareRoot.file.name;
+    const name = `${folderName}.zip`;
 
     try {
       await session.client.sharedDownload(id, name);
@@ -258,7 +259,7 @@
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not download that folder",
+          : `Could not download ${folderName}`,
       );
     }
   }
