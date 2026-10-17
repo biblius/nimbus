@@ -17,7 +17,7 @@
     Type,
     X,
   } from "@lucide/svelte";
-  import { fitMiddleEllipsis, formatBytes } from "../format";
+  import { fitMiddleEllipsis, formatBytes } from "../../format";
   import {
     FILE_FAMILY_LABELS,
     fileFamily,
@@ -29,10 +29,10 @@
     parsePreviewFilter,
     type FileFamily,
     type PreviewFilter,
-  } from "../fileKind";
-  import { kv } from "../storage";
-  import type { FileEntry, FileView } from "../types";
-  import { cn } from "../utils";
+  } from "../../fileKind";
+  import { kv } from "../../storage";
+  import type { FileEntry, FileView } from "../../types";
+  import { cn } from "../../utils";
   import AudioPreviewContent from "./preview/AudioPreviewContent.svelte";
   import ImagePreviewContent from "./preview/ImagePreviewContent.svelte";
   import VideoPreviewContent from "./preview/VideoPreviewContent.svelte";

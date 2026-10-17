@@ -595,5 +595,5 @@
   confirmLabel="Remove"
   busy={deletingPasskey}
   onCancel={() => (deletePasskeyId = null)}
-  onConfirm={() => void removePasskey()}
+  onConfirm={() => removePasskey()}
 />

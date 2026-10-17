@@ -9,14 +9,14 @@
   } from "@lucide/svelte";
   import { createDraggable, createDroppable } from "@dnd-kit/svelte";
   import { onDestroy, untrack } from "svelte";
-  import { hasListThumbnail, isPreviewable } from "../fileKind";
-  import { formatBytes } from "../format";
-  import { session } from "../session.svelte";
-  import type { FileView } from "../types";
-  import { cn } from "../utils";
-  import Button from "./ui/button/button.svelte";
-  import MenuItem from "./ui/menu/menu-item.svelte";
-  import Menu from "./ui/menu/menu.svelte";
+  import { hasListThumbnail, isPreviewable } from "../../fileKind";
+  import { formatBytes } from "../../format";
+  import { session } from "../../session.svelte";
+  import type { FileView } from "../../types";
+  import { cn } from "../../utils";
+  import Button from "../ui/button/button.svelte";
+  import MenuItem from "../ui/menu/menu-item.svelte";
+  import Menu from "../ui/menu/menu.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
 
   const LONG_PRESS_MS = 480;

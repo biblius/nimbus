@@ -6,11 +6,11 @@
     LayoutGrid,
     List,
   } from "@lucide/svelte";
-  import { type FilesViewMode, kv } from "../storage";
-  import { cn } from "../utils";
-  import Button from "./ui/button/button.svelte";
-  import MenuItem from "./ui/menu/menu-item.svelte";
-  import Menu from "./ui/menu/menu.svelte";
+  import { type FilesViewMode, kv } from "../../storage";
+  import { cn } from "../../utils";
+  import Button from "../ui/button/button.svelte";
+  import MenuItem from "../ui/menu/menu-item.svelte";
+  import Menu from "../ui/menu/menu.svelte";
 
   let {
     mode = $bindable<FilesViewMode>(),

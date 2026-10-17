@@ -4,7 +4,7 @@
   import { session } from "../session.svelte";
   import type { FileTree, Root } from "../types";
   import { cn } from "../utils";
-  import FileTypeIcon from "./FileTypeIcon.svelte";
+  import FileTypeIcon from "./file-browser/FileTypeIcon.svelte";
   import Button from "./ui/button/button.svelte";
 
   let {

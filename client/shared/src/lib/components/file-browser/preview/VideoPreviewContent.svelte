@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { Music } from "@lucide/svelte";
-  import { session } from "../../session.svelte";
+  import { session } from "../../../session.svelte";
 
   let {
     rootId,
@@ -15,7 +14,7 @@
   } = $props();
 
   // Direct chunk URL - browser issues Range requests and streams.
-  const audioUrl = $derived(session.client.contentUrl(rootId, fileId));
+  const videoUrl = $derived(session.client.contentUrl(rootId, fileId));
 
   let loading = $state(true);
   let error = $state("");
@@ -30,36 +29,30 @@
 {#if error}
   <p class="text-sm text-red-300">{error}</p>
 {:else}
-  <div
-    class="relative flex w-full max-w-md flex-col items-center gap-6 rounded-2xl bg-white/8 px-6 py-8 ring-1 ring-white/12"
-  >
+  <div class="relative flex max-h-full max-w-full items-center justify-center">
     {#if loading}
       <div
         class="absolute size-8 animate-spin rounded-full border-2 border-white/20 border-t-white/80"
         aria-label="Loading"
       ></div>
     {/if}
-    <Music
-      size={40}
-      strokeWidth={1.5}
-      class={loading ? "text-white/55 opacity-0" : "text-white/55"}
-      aria-hidden="true"
-    />
-    <audio
-      src={audioUrl}
-      controls
+    <!-- svelte-ignore a11y_media_has_caption -->
+    <video
+      src={videoUrl}
       {autoplay}
+      controls
+      playsinline
       preload="auto"
       aria-label={name}
-      class="w-full max-w-md"
+      class="max-h-full max-w-full shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)]"
       class:opacity-0={loading}
       onloadstart={() => {
         loading = false;
       }}
       onerror={() => {
-        error = "Could not load audio";
+        error = "Could not load video";
         loading = false;
       }}
-    ></audio>
+    ></video>
   </div>
 {/if}

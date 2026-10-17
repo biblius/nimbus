@@ -5,8 +5,8 @@
 <script lang="ts">
   import { FolderUp } from "@lucide/svelte";
   import { createDroppable } from "@dnd-kit/svelte";
-  import type { FilesViewMode } from "../storage";
-  import { cn } from "../utils";
+  import type { FilesViewMode } from "../../storage";
+  import { cn } from "../../utils";
 
   let {
     columns,

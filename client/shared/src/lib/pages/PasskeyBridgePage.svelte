@@ -102,7 +102,7 @@
     }
 
     token = value;
-    void runFlow();
+    runFlow();
   });
 
   onDestroy(() => {
@@ -196,7 +196,7 @@
           type="button"
           class="w-full"
           disabled={busy}
-          onclick={() => void runFlow()}
+          onclick={() => runFlow()}
         >
           Try again
         </Button>

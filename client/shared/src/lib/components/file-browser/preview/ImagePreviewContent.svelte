@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { session } from "../../session.svelte";
+  import { session } from "../../../session.svelte";
 
   let {
     rootId,

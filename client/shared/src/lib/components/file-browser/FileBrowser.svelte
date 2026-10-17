@@ -2,7 +2,6 @@
   import {
     Check,
     ChevronDown,
-    ChevronRight,
     File as FileIcon,
     Folder,
     Plus,
@@ -13,27 +12,31 @@
   import { PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
   import { DragDropProvider, DragOverlay } from "@dnd-kit/svelte";
   import { onDestroy, tick, untrack } from "svelte";
-  import { navigate } from "../router";
-  import { ApiError, ValidationError } from "../api";
-  import { session } from "../session.svelte";
-  import { toastError } from "../toast";
-  import { type FileEntry, type FileView, type Root } from "../types";
-  import { kv, type FilesViewMode } from "../storage";
-  import { hasListThumbnail, isPreviewable } from "../fileKind";
+  import { navigate } from "../../router";
+  import { ApiError, ValidationError } from "../../api";
+  import { PreviewQueue } from "../../previewQueue.svelte";
+  import { session } from "../../session.svelte";
+  import { toastError } from "../../toast";
+  import { type FileEntry, type FileView, type Root } from "../../types";
+  import { kv, type FilesViewMode } from "../../storage";
+  import { UploadHandler } from "../../uploadHandler.svelte";
+  import { isPreviewable } from "../../fileKind";
   import DestinationPicker, {
     type DestinationRequest,
   } from "./DestinationPicker.svelte";
   import FileListItem from "./FileListItem.svelte";
+  import FilePathCrumbs, { type Crumb } from "./FilePathCrumbs.svelte";
   import FileTileItem from "./FileTileItem.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
   import FileViewModeMenu from "./FileViewModeMenu.svelte";
   import ParentDropItem, { PARENT_DROPPABLE_ID } from "./ParentDropItem.svelte";
-  import Button from "./ui/button/button.svelte";
-  import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";
-  import Input from "./ui/input/input.svelte";
-  import MenuItem from "./ui/menu/menu-item.svelte";
-  import Menu from "./ui/menu/menu.svelte";
-  import SortHeader from "./ui/sort-header/sort-header.svelte";
+  import PendingFileUpload from "./PendingFileUpload.svelte";
+  import Button from "../ui/button/button.svelte";
+  import ConfirmDialog from "../ui/confirm-dialog/confirm-dialog.svelte";
+  import Input from "../ui/input/input.svelte";
+  import MenuItem from "../ui/menu/menu-item.svelte";
+  import Menu from "../ui/menu/menu.svelte";
+  import SortHeader from "../ui/sort-header/sort-header.svelte";
 
   let {
     folder: root,
@@ -45,35 +48,6 @@
     parentId?: string | null;
     roots: Root[];
   } = $props();
-
-  type PendingUpload = {
-    id: number;
-    name: string;
-    loaded: number;
-    total: number;
-    error: string;
-  };
-
-  /**
-   * A reference to an ancestor of the folder being viewed.
-   * A crumb with `id === null` represents the root directory.
-   */
-  type Crumb = {
-    id: string | null;
-    name: string;
-  };
-
-  /// How many files are sent at the same time.
-  const PARALLEL_UPLOADS = 10;
-  const PREVIEW_POLL_MS = 3000;
-  const PREVIEW_MAX_ATTEMPTS = 5;
-
-  type PreviewJob = { id: string; attempts: number };
-
-  const previewQueue: PreviewJob[] = [];
-  let previewThumbs = $state<Record<string, string>>({});
-  let previewTimer: ReturnType<typeof setInterval> | undefined;
-  let previewPolling = false;
 
   const sensors = [
     PointerSensor.configure({
@@ -168,17 +142,6 @@
   let directoryError = $state("");
   let directorySaving = $state(false);
 
-  let pending = $state<PendingUpload[]>([]);
-
-  let nextUploadId = 0;
-
-  /// Queued and in-flight uploads. Aborting one cancels that file only.
-  const uploadControllers = new Map<number, AbortController>();
-
-  /** Desktop OS file drag overlay; depth avoids flicker across child elements. */
-  let fileDragActive = $state(false);
-  let fileDragDepth = 0;
-
   let uploadMenuOpen = $state(false);
   let newMenuOpen = $state(false);
 
@@ -210,6 +173,21 @@
    */
   const location = $derived(trail[trail.length - 1]);
 
+  const previews = new PreviewQueue({
+    getRootId: () => root.id,
+    getParentId: () => location.id,
+    getSize: () => (tiles ? 256 : 64),
+  });
+
+  const uploads = new UploadHandler({
+    getRootId: () => root.id,
+    getParentId: () => location.id,
+    onCreated: (entry) => {
+      insertEntry(entry);
+      previews.enqueue(entry, true);
+    },
+  });
+
   /** Parent of the current folder; null when moving into the root. */
   const upParent = $derived(
     trail.length >= 2 ? trail[trail.length - 2].id : null,
@@ -233,8 +211,18 @@
     // Untrack the open function, since it mutates state and would trigger
     // the effect indefinitely.
     untrack(() => {
-      void open(rootId, parent);
+      open(rootId, parent);
     });
+  });
+
+  $effect(() => {
+    const next = tiles;
+
+    if (seenTiles !== undefined && seenTiles !== next) {
+      previews.refreshAll(entries.map((entry) => entry.file));
+    }
+
+    seenTiles = next;
   });
 
   /**
@@ -305,134 +293,10 @@
     directoryError = "";
   }
 
-  function stopPreviewPoll() {
-    if (previewTimer !== undefined) {
-      clearInterval(previewTimer);
-      previewTimer = undefined;
-    }
-  }
-
-  function clearPreviewThumbs() {
-    stopPreviewPoll();
-
-    previewQueue.length = 0;
-
-    for (const url of Object.values(previewThumbs)) {
-      URL.revokeObjectURL(url);
-    }
-
-    previewThumbs = {};
-  }
-
-  function enqueuePreview(file: FileEntry) {
-    if (file.kind !== "file" || file.parent !== location.id) {
-      return;
-    }
-
-    if (!hasListThumbnail({ file, metadata: null })) {
-      return;
-    }
-
-    if (
-      previewThumbs[file.id] ||
-      previewQueue.some((job) => job.id === file.id)
-    ) {
-      return;
-    }
-
-    previewQueue.push({ id: file.id, attempts: 0 });
-
-    startPreviewPoll();
-  }
-
-  function startPreviewPoll() {
-    if (previewTimer !== undefined) {
-      return;
-    }
-
-    void drainPreviewQueue();
-
-    previewTimer = setInterval(() => {
-      void drainPreviewQueue();
-    }, PREVIEW_POLL_MS);
-  }
-
-  async function drainPreviewQueue() {
-    if (previewPolling || previewQueue.length === 0) {
-      if (previewQueue.length === 0) {
-        stopPreviewPoll();
-      }
-      return;
-    }
-
-    previewPolling = true;
-
-    const rootId = root.id;
-    // Tiles (small or large) need 256; list icons stay at 64.
-    const previewSize = tiles ? 256 : 64;
-    const jobs = previewQueue.slice();
-
-    try {
-      await Promise.all(
-        jobs.map(async (job) => {
-          try {
-            const blob = await session.client.preview(
-              rootId,
-              job.id,
-              previewSize,
-            );
-
-            const prev = previewThumbs[job.id];
-
-            if (prev) {
-              URL.revokeObjectURL(prev);
-            }
-
-            previewThumbs[job.id] = URL.createObjectURL(blob);
-
-            const index = previewQueue.findIndex((item) => item.id === job.id);
-
-            if (index !== -1) {
-              previewQueue.splice(index, 1);
-            }
-          } catch {
-            job.attempts += 1;
-            if (job.attempts >= PREVIEW_MAX_ATTEMPTS) {
-              const index = previewQueue.findIndex(
-                (item) => item.id === job.id,
-              );
-              if (index !== -1) {
-                previewQueue.splice(index, 1);
-              }
-            }
-          }
-        }),
-      );
-    } finally {
-      previewPolling = false;
-      if (previewQueue.length === 0) {
-        stopPreviewPoll();
-      }
-    }
-  }
-
   // Swap cached thumbs when switching between list (64) and tiles (256).
   let seenTiles: boolean | undefined;
-  $effect(() => {
-    const next = tiles;
-    if (seenTiles !== undefined && seenTiles !== next) {
-      for (const url of Object.values(previewThumbs)) {
-        URL.revokeObjectURL(url);
-      }
-      previewThumbs = {};
-      for (const entry of entries) {
-        enqueuePreview(entry.file);
-      }
-    }
-    seenTiles = next;
-  });
 
-  onDestroy(clearPreviewThumbs);
+  onDestroy(() => previews.clear());
 
   async function open(rootId: string, parent: string | null) {
     const currentLoad = ++latestLoad;
@@ -441,7 +305,7 @@
 
     loading = true;
 
-    clearPreviewThumbs();
+    previews.clear();
 
     entries = [];
     selected = [];
@@ -488,6 +352,7 @@
     }
 
     kv.filesSort.set(sort);
+
     order();
   }
 
@@ -495,6 +360,7 @@
     entries.sort((left, right) => {
       const a = left.file;
       const b = right.file;
+
       let byColumn = 0;
 
       switch (sort.column) {
@@ -586,363 +452,6 @@
     showDirectory(parent);
   }
 
-  function uploadFailure(item: PendingUpload, cause: unknown) {
-    uploadControllers.delete(item.id);
-
-    if (cause instanceof DOMException && cause.name === "AbortError") {
-      removeUpload(item.id);
-      return;
-    }
-
-    if (cause instanceof TypeError) {
-      item.error = "The server could not be reached";
-    } else if (cause instanceof ApiError && cause.status === 413) {
-      item.error = "Not enough space";
-    } else if (cause instanceof ApiError && cause.status === 403) {
-      item.error = "You cannot upload here";
-    } else {
-      item.error = "Upload failed";
-    }
-  }
-
-  async function uploadFiles(files: File[]) {
-    if (files.length === 0) {
-      return;
-    }
-
-    const rootId = root.id;
-
-    const parent = location.id;
-
-    const queue = files.map((file) => {
-      const id = nextUploadId++;
-      const controller = new AbortController();
-
-      uploadControllers.set(id, controller);
-
-      pending.push({
-        id,
-        name: file.name,
-        loaded: 0,
-        total: file.size,
-        error: "",
-      });
-
-      // Read the element back so later writes go through the reactive proxy.
-      const item = pending[pending.length - 1];
-
-      return { file, item, controller };
-    });
-
-    const workers = Array.from(
-      { length: Math.min(PARALLEL_UPLOADS, queue.length) },
-      async () => {
-        while (queue.length > 0) {
-          const { file, item, controller } = queue.shift()!;
-
-          if (controller.signal.aborted) {
-            continue;
-          }
-
-          try {
-            const created = await session.client.upload(
-              rootId,
-              parent,
-              file,
-              (loaded, total) => {
-                item.loaded = loaded;
-                item.total = total;
-              },
-              controller.signal,
-            );
-
-            removeUpload(item.id);
-
-            if (root.id === rootId && location.id === parent) {
-              insertEntry(created);
-              enqueuePreview(created);
-            }
-          } catch (cause) {
-            uploadFailure(item, cause);
-          }
-        }
-      },
-    );
-
-    await Promise.all(workers);
-  }
-
-  async function upload(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-
-    const files: File[] = [];
-
-    if (input.files) {
-      for (const file of input.files) {
-        files.push(file);
-      }
-    }
-
-    input.value = "";
-
-    await uploadFiles(files);
-  }
-
-  async function uploadFolderFiles(files: File[]) {
-    if (files.length === 0) {
-      return;
-    }
-
-    const rootId = root.id;
-    const parent = location.id;
-    const id = nextUploadId++;
-    const controller = new AbortController();
-
-    uploadControllers.set(id, controller);
-
-    const path = files[0]?.webkitRelativePath || files[0]?.name || "Folder";
-    const name = path.split("/")[0] || "Folder";
-    const total = files.reduce((sum, file) => sum + file.size, 0);
-
-    pending.push({
-      id,
-      name,
-      loaded: 0,
-      total,
-      error: "",
-    });
-
-    const item = pending[pending.length - 1];
-
-    try {
-      const created = await session.client.uploadDir(
-        rootId,
-        parent,
-        files,
-        (loaded, totalBytes) => {
-          item.loaded = loaded;
-          item.total = totalBytes;
-        },
-        controller.signal,
-      );
-
-      removeUpload(item.id);
-
-      if (root.id === rootId && location.id === parent) {
-        for (const entry of created) {
-          insertEntry(entry);
-          enqueuePreview(entry);
-        }
-      }
-    } catch (cause) {
-      uploadFailure(item, cause);
-    }
-  }
-
-  async function uploadFolder(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-
-    const files: File[] = [];
-
-    if (input.files) {
-      for (const file of input.files) {
-        files.push(file);
-      }
-    }
-
-    input.value = "";
-
-    await uploadFolderFiles(files);
-  }
-
-  function isExternalFileDrag(event: DragEvent) {
-    return Boolean(event.dataTransfer?.types.includes("Files"));
-  }
-
-  function supportsExternalFileDrop() {
-    return window.matchMedia("(pointer: fine)").matches;
-  }
-
-  function onWindowDragEnter(event: DragEvent) {
-    if (!supportsExternalFileDrop() || !isExternalFileDrag(event)) {
-      return;
-    }
-
-    event.preventDefault();
-    fileDragDepth += 1;
-    fileDragActive = true;
-  }
-
-  function onWindowDragLeave(event: DragEvent) {
-    if (!supportsExternalFileDrop() || !isExternalFileDrag(event)) {
-      return;
-    }
-
-    fileDragDepth = Math.max(0, fileDragDepth - 1);
-
-    if (fileDragDepth === 0) {
-      fileDragActive = false;
-    }
-  }
-
-  function onWindowDragOver(event: DragEvent) {
-    if (!supportsExternalFileDrop() || !isExternalFileDrag(event)) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = "copy";
-    }
-  }
-
-  async function onWindowDrop(event: DragEvent) {
-    if (!supportsExternalFileDrop() || !isExternalFileDrag(event)) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    fileDragDepth = 0;
-    fileDragActive = false;
-
-    const batch = await collectDropped(event.dataTransfer);
-    const uploads = [uploadFiles(batch.files)];
-
-    for (const files of batch.directories) {
-      uploads.push(uploadFolderFiles(files));
-    }
-
-    await Promise.all(uploads);
-  }
-
-  /**
-   * Directory members are `File`s whose `name` is the relative path so
-   * `uploadDir` can recreate the tree via `webkitRelativePath || name`.
-   */
-  async function collectDropped(dataTransfer: DataTransfer | null) {
-    const files: File[] = [];
-    const directories: File[][] = [];
-
-    if (!dataTransfer) {
-      return { files, directories };
-    }
-
-    const items = dataTransfer.items;
-
-    if (
-      items &&
-      items.length > 0 &&
-      typeof items[0].webkitGetAsEntry === "function"
-    ) {
-      for (let i = 0; i < items.length; i++) {
-        const entry = items[i].webkitGetAsEntry();
-        if (!entry) {
-          continue;
-        }
-
-        if (entry.isFile) {
-          files.push(await readFileEntry(entry as FileSystemFileEntry));
-        } else if (entry.isDirectory) {
-          const dirFiles = await readDirectoryEntry(
-            entry as FileSystemDirectoryEntry,
-            entry.name,
-          );
-          if (dirFiles.length > 0) {
-            directories.push(dirFiles);
-          }
-        }
-      }
-
-      return { files, directories };
-    }
-
-    for (let i = 0; i < dataTransfer.files.length; i++) {
-      files.push(dataTransfer.files[i]);
-    }
-
-    return { files, directories };
-  }
-
-  function readFileEntry(entry: FileSystemFileEntry) {
-    return new Promise<File>((resolve, reject) => {
-      entry.file(resolve, reject);
-    });
-  }
-
-  function readAllEntries(reader: FileSystemDirectoryReader) {
-    return new Promise<FileSystemEntry[]>((resolve, reject) => {
-      const all: FileSystemEntry[] = [];
-
-      const readBatch = () => {
-        reader.readEntries((batch) => {
-          if (batch.length === 0) {
-            resolve(all);
-            return;
-          }
-          for (const entry of batch) {
-            all.push(entry);
-          }
-          readBatch();
-        }, reject);
-      };
-
-      readBatch();
-    });
-  }
-
-  async function readDirectoryEntry(
-    entry: FileSystemDirectoryEntry,
-    prefix: string,
-  ) {
-    const children = await readAllEntries(entry.createReader());
-    const files: File[] = [];
-
-    for (const child of children) {
-      if (child.isFile) {
-        const file = await readFileEntry(child as FileSystemFileEntry);
-
-        files.push(new File([file], `${prefix}/${file.name}`));
-      } else if (child.isDirectory) {
-        const nested = await readDirectoryEntry(
-          child as FileSystemDirectoryEntry,
-          `${prefix}/${child.name}`,
-        );
-
-        for (const file of nested) {
-          files.push(file);
-        }
-      }
-    }
-
-    return files;
-  }
-
-  function removeUpload(id: number) {
-    uploadControllers.delete(id);
-
-    const index = pending.findIndex((entry) => entry.id === id);
-
-    if (index !== -1) {
-      pending.splice(index, 1);
-    }
-  }
-
-  function cancelUpload(id: number) {
-    uploadControllers.get(id)?.abort();
-    removeUpload(id);
-  }
-
-  function percent(item: PendingUpload) {
-    if (item.total <= 0) {
-      return 0;
-    }
-    return Math.min(100, Math.round((item.loaded / item.total) * 100));
-  }
-
   function focusDraft(node: HTMLInputElement) {
     nameInput = node;
 
@@ -997,7 +506,7 @@
 
     if (event.key === "Enter") {
       event.preventDefault();
-      void commitDirectory();
+      commitDirectory();
     }
   }
 
@@ -1392,14 +901,14 @@
 
 <svelte:window
   onkeydown={onWindowKeydown}
-  ondragenter={onWindowDragEnter}
-  ondragleave={onWindowDragLeave}
-  ondragover={onWindowDragOver}
-  ondrop={onWindowDrop}
+  ondragenter={(event) => uploads.onWindowDragEnter(event)}
+  ondragleave={(event) => uploads.onWindowDragLeave(event)}
+  ondragover={(event) => uploads.onWindowDragOver(event)}
+  ondrop={(event) => uploads.onWindowDrop(event)}
 />
 
 <div class="relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-  {#if fileDragActive}
+  {#if uploads.fileDragActive}
     <div
       class="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-border bg-card/90"
       aria-hidden="true"
@@ -1410,40 +919,13 @@
     </div>
   {/if}
   <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
-    <nav
-      class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm"
-      aria-label="Current folder"
-    >
-      {#each trail as crumb, index (crumb.id ?? "root")}
-        {#if index > 0}
-          <ChevronRight
-            size={14}
-            class="shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
-        {/if}
-
-        {#if index === trail.length - 1}
-          <span
-            class="max-w-40 truncate px-1.5 py-1 font-medium sm:max-w-none"
-            aria-current="page"
-          >
-            {crumb.name}
-          </span>
-        {:else}
-          <button
-            type="button"
-            class="max-w-40 truncate rounded-md px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground sm:max-w-none"
-            onclick={() => {
-              ancestors = ancestors.slice(0, index);
-              showDirectory(crumb.id);
-            }}
-          >
-            {crumb.name}
-          </button>
-        {/if}
-      {/each}
-    </nav>
+    <FilePathCrumbs
+      crumbs={trail}
+      onNavigate={(index, crumb) => {
+        ancestors = ancestors.slice(0, index);
+        showDirectory(crumb.id);
+      }}
+    />
 
     <div class="flex shrink-0 items-center gap-1.5">
       <input
@@ -1453,7 +935,7 @@
         multiple
         tabindex={-1}
         aria-hidden="true"
-        onchange={upload}
+        onchange={(event) => uploads.fromFileInput(event)}
       />
       <input
         bind:this={folderInput}
@@ -1463,7 +945,7 @@
         webkitdirectory
         tabindex={-1}
         aria-hidden="true"
-        onchange={uploadFolder}
+        onchange={(event) => uploads.fromFolderInput(event)}
       />
       <!-- 
            Native OS file pickers (at least linux) include both files
@@ -1532,11 +1014,11 @@
             />
           </Button>
         {/snippet}
-        <MenuItem onclick={() => void beginDraft("text")}>
+        <MenuItem onclick={() => beginDraft("text")}>
           <FileIcon size={15} />
           Text file
         </MenuItem>
-        <MenuItem onclick={() => void beginDraft("directory")}>
+        <MenuItem onclick={() => beginDraft("directory")}>
           <Folder size={15} />
           Directory
         </MenuItem>
@@ -1569,58 +1051,17 @@
     </div>
   </div>
 
-  {#if pending.length > 0}
+  {#if uploads.pending.length > 0}
     <ul
       class="max-h-40 shrink-0 space-y-2 overflow-y-auto rounded-lg border bg-card p-3"
     >
-      {#each pending as item (item.id)}
-        <li class="space-y-1">
-          <div class="flex items-center justify-between gap-3 text-sm">
-            <span class="min-w-0 truncate">{item.name}</span>
-            {#if item.error}
-              <span class="flex shrink-0 items-center gap-2 text-destructive">
-                {item.error}
-                <button
-                  type="button"
-                  class="text-xs underline"
-                  onclick={() =>
-                    (pending = pending.filter((entry) => entry.id !== item.id))}
-                >
-                  Dismiss
-                </button>
-              </span>
-            {:else}
-              <span class="flex shrink-0 items-center gap-2">
-                <span class="text-muted-foreground tabular-nums"
-                  >{percent(item)}%</span
-                >
-                <button
-                  type="button"
-                  class="text-xs underline"
-                  aria-label="Cancel {item.name}"
-                  onclick={() => cancelUpload(item.id)}
-                >
-                  Cancel
-                </button>
-              </span>
-            {/if}
-          </div>
-          <div
-            class="h-1.5 overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-label={item.name}
-            aria-valuemin="0"
-            aria-valuemax="100"
-            aria-valuenow={percent(item)}
-          >
-            <div
-              class="h-full rounded-full transition-[width] duration-150 {item.error
-                ? 'bg-destructive'
-                : 'bg-primary'}"
-              style:width="{percent(item)}%"
-            ></div>
-          </div>
-        </li>
+      {#each uploads.pending as item (item.id)}
+        <PendingFileUpload
+          {item}
+          percent={uploads.percent(item)}
+          onCancel={() => uploads.cancel(item.id)}
+          onDismiss={() => uploads.dismiss(item.id)}
+        />
       {/each}
     </ul>
   {/if}
@@ -1753,7 +1194,7 @@
                 <FileTileItem
                   {entry}
                   rootId={root.id}
-                  thumbnailUrl={previewThumbs[entry.file.id]}
+                  thumbnailUrl={previews.thumbs[entry.file.id]}
                   name={label(entry)}
                   size={tileSize}
                   selected={selected.includes(entry.file.id)}
@@ -1771,7 +1212,7 @@
                 <FileListItem
                   {entry}
                   rootId={root.id}
-                  thumbnailUrl={previewThumbs[entry.file.id]}
+                  thumbnailUrl={previews.thumbs[entry.file.id]}
                   name={label(entry)}
                   {columns}
                   density={listDensity}
@@ -1843,6 +1284,10 @@
   </div>
 
   {#if previewFileId !== null && previewEntries.some((entry) => entry.file.id === previewFileId)}
+    <!-- 
+    Use dymanic import here so we don't load preview libs (pdfjs, codemirror)
+    on the initial file browser load
+    -->
     {#await import("./FilePreview.svelte") then { default: FilePreview }}
       <FilePreview
         rootId={root.id}

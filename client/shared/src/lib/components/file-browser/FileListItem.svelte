@@ -11,17 +11,17 @@
   } from "@lucide/svelte";
   import { createDraggable, createDroppable } from "@dnd-kit/svelte";
   import { onDestroy, tick, untrack } from "svelte";
-  import { hasListThumbnail, isPreviewable } from "../fileKind";
-  import { formatBytes, formatDatetime } from "../format";
-  import { session } from "../session.svelte";
-  import type { FileView } from "../types";
-  import { cn } from "../utils";
-  import Button from "./ui/button/button.svelte";
-  import Input from "./ui/input/input.svelte";
-  import ContextMenu from "./ui/menu/context-menu.svelte";
-  import MenuItem from "./ui/menu/menu-item.svelte";
-  import MenuSeparator from "./ui/menu/menu-separator.svelte";
-  import Menu from "./ui/menu/menu.svelte";
+  import { hasListThumbnail, isPreviewable } from "../../fileKind";
+  import { formatBytes, formatDatetime } from "../../format";
+  import { session } from "../../session.svelte";
+  import type { FileView } from "../../types";
+  import { cn } from "../../utils";
+  import Button from "../ui/button/button.svelte";
+  import Input from "../ui/input/input.svelte";
+  import ContextMenu from "../ui/menu/context-menu.svelte";
+  import MenuItem from "../ui/menu/menu-item.svelte";
+  import MenuSeparator from "../ui/menu/menu-separator.svelte";
+  import Menu from "../ui/menu/menu.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
 
   const LONG_PRESS_MS = 480;
@@ -349,7 +349,7 @@
     if (event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
-      void commitRename();
+      commitRename();
     } else if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -598,7 +598,7 @@
       Download
     </MenuItem>
   {/if}
-  <MenuItem onclick={() => void beginRename()}>
+  <MenuItem onclick={() => beginRename()}>
     <Pencil size={16} />
     Rename
   </MenuItem>

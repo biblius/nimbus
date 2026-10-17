@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { Root } from "../types";
+  import type { Root } from "../../types";
 
   export type DestinationRequest = {
     roots: Root[];
@@ -15,12 +15,12 @@
 
 <script lang="ts">
   import { ChevronRight, Folder } from "@lucide/svelte";
-  import { session } from "../session.svelte";
-  import { toastError } from "../toast";
-  import type { FileTree, Root } from "../types";
-  import { cn } from "../utils";
-  import Button from "./ui/button/button.svelte";
-  import Dialog from "./ui/dialog/dialog.svelte";
+  import { session } from "../../session.svelte";
+  import { toastError } from "../../toast";
+  import type { FileTree } from "../../types";
+  import { cn } from "../../utils";
+  import Button from "../ui/button/button.svelte";
+  import Dialog from "../ui/dialog/dialog.svelte";
 
   let {
     request,
@@ -31,12 +31,17 @@
   } = $props();
 
   let expandedRoots = $state<Record<string, boolean>>({});
+
   let trees = $state<Record<string, FileTree>>({});
+
   let loadingRoots = $state<Record<string, boolean>>({});
+
   let expandedDirs = $state<Record<string, boolean>>({});
+
   let selection = $state<{ rootId: string; parent: string | null } | null>(
     null,
   );
+
   let busy = $state(false);
   let started = false;
   let activeRequest: DestinationRequest | null = null;
@@ -86,6 +91,7 @@
 
     expandedRoots[root.id] = next;
 
+    // Skip loading root if it's already loaded
     if (!next || trees[root.id]) {
       return;
     }
@@ -145,6 +151,7 @@
 
 {#snippet dirRows(nodes: FileTree[], root: Root, depth: number)}
   {@const dirs = nodes.filter((node) => node.kind === "directory")}
+
   {#if dirs.length === 0}
     <p
       class="px-2 py-2 text-sm text-muted-foreground"
@@ -178,10 +185,7 @@
               >
                 <ChevronRight
                   size={14}
-                  class={cn(
-                    "transition-transform",
-                    dirExpanded && "rotate-90",
-                  )}
+                  class={cn("transition-transform", dirExpanded && "rotate-90")}
                 />
               </button>
             {:else}
@@ -213,13 +217,7 @@
 {/snippet}
 
 {#if request && open}
-  <Dialog
-    open={true}
-    title={request.title}
-    {description}
-    {busy}
-    {onCancel}
-  >
+  <Dialog open={true} title={request.title} {description} {busy} {onCancel}>
     <div class="mt-4 max-h-72 overflow-y-auto rounded-md border p-2.5">
       <ul class="flex flex-col gap-0.5">
         {#each request.roots as root (root.id)}
@@ -238,7 +236,7 @@
                 disabled={busy}
                 onclick={(event) => {
                   event.stopPropagation();
-                  void toggleRoot(root);
+                  toggleRoot(root);
                 }}
               >
                 <ChevronRight

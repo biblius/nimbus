@@ -431,7 +431,7 @@
             variant="outline"
             class="w-full"
             disabled={busy}
-            onclick={() => void beginPasskeyLogin()}
+            onclick={() => beginPasskeyLogin()}
           >
             <KeyRound size={16} class="mr-2" />
             Sign in with passkey

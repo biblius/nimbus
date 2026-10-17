@@ -18,7 +18,7 @@
   let anyBusy = $derived(busyAll || busyId !== null);
 
   onMount(() => {
-    void loadSessions();
+    loadSessions();
   });
 
   async function loadSessions() {
@@ -234,7 +234,7 @@
                       type="button"
                       class="max-w-full truncate font-mono tabular-nums hover:text-foreground"
                       title={s.id}
-                      onclick={() => void copyId(s.id)}
+                      onclick={() => copyId(s.id)}
                     >
                       {shortId(s.id)}
                     </button>
@@ -263,7 +263,7 @@
               size="sm"
               class="shrink-0 self-start"
               disabled={anyBusy}
-              onclick={() => void expireOne(s.id)}
+              onclick={() => expireOne(s.id)}
             >
               {busyId === s.id ? "Signing out…" : "Sign out"}
             </Button>
@@ -285,5 +285,5 @@
       confirmOthers = false;
     }
   }}
-  onConfirm={() => void expireOthers()}
+  onConfirm={() => expireOthers()}
 />

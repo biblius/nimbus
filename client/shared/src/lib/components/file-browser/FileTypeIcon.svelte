@@ -11,9 +11,9 @@
     Music,
     Type,
   } from "@lucide/svelte";
-  import { fileFamily, type FileFamily } from "../fileKind";
-  import type { FileType } from "../types";
-  import { cn } from "../utils";
+  import { fileFamily, type FileFamily } from "../../fileKind";
+  import type { FileType } from "../../types";
+  import { cn } from "../../utils";
 
   let {
     fileType = null,

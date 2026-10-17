@@ -1,11 +1,11 @@
 <script lang="ts">
   import { FastForward, Info, Pencil, TextWrap } from "@lucide/svelte";
-  import { editorPrefs } from "../../codemirror.svelte";
-  import { session } from "../../session.svelte";
-  import { toastError } from "../../toast";
-  import type { FileEntry } from "../../types";
-  import { cn } from "../../utils";
-  import CodeMirrorEditor from "../CodeMirrorEditor.svelte";
+  import { editorPrefs } from "../../../codemirror.svelte";
+  import { session } from "../../../session.svelte";
+  import { toastError } from "../../../toast";
+  import type { FileEntry } from "../../../types";
+  import { cn } from "../../../utils";
+  import CodeMirrorEditor from "../../CodeMirrorEditor.svelte";
 
   const WQ_HINT_MS = 2500;
 

@@ -52,6 +52,7 @@
 
 <div class="relative" bind:this={root}>
   {@render trigger(triggerProps, open)}
+
   {#if open}
     <div
       role="menu"

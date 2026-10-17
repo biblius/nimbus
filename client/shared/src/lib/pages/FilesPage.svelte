@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import FileBrowser from "../components/FileBrowser.svelte";
+  import FileBrowser from "../components/file-browser/FileBrowser.svelte";
   import PanelShell from "../components/PanelShell.svelte";
   import TrashBrowser from "../components/TrashBrowser.svelte";
   import UserSidebar from "../components/UserSidebar.svelte";

@@ -6,8 +6,8 @@
     type RenderTask,
   } from "pdfjs-dist";
   import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-  import { session } from "../../session.svelte";
-  import { cn } from "../../utils";
+  import { session } from "../../../session.svelte";
+  import { cn } from "../../../utils";
 
   GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -70,7 +70,7 @@
         doc = await loadingTask.promise;
 
         if (cancelled) {
-          void loadingTask.destroy();
+          loadingTask.destroy();
           return;
         }
 
@@ -86,7 +86,7 @@
         }
 
         if (cancelled) {
-          void loadingTask.destroy();
+          loadingTask.destroy();
           return;
         }
 
@@ -105,7 +105,7 @@
 
     return () => {
       cancelled = true;
-      void loadingTask?.destroy();
+      loadingTask?.destroy();
       pdfDoc = null;
     };
   });
@@ -291,7 +291,7 @@
       const paint = () => {
         const id = ++paintId;
 
-        void (async () => {
+        (async () => {
           try {
             const task = await renderPage(
               canvas,
