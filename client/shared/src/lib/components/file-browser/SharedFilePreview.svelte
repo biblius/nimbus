@@ -28,6 +28,7 @@
     isTextFile,
     isVideoFile,
     isXlsxFile,
+    isZipFile,
     parsePreviewFilter,
     type FileFamily,
     type PreviewFilter,
@@ -124,9 +125,10 @@
   const isText = $derived(current != null && isTextFile(current));
   const isPdf = $derived(current != null && isPdfFile(current));
   const isXlsx = $derived(current != null && isXlsxFile(current));
+  const isZip = $derived(current != null && isZipFile(current));
   const fileName = $derived(current?.file.name ?? "");
   const canDownload = $derived(current?.file.sharingMode === "download");
-  /** Inline blob URL for image / PDF / text / xlsx (allowed in view mode). */
+  /** Inline blob URL for image / PDF / text / xlsx / zip (allowed in view mode). */
   const contentUrl = $derived(
     current ? session.client.sharedContentUrl(current.file.id) : "",
   );
@@ -575,7 +577,7 @@
   <div
     class={cn(
       "absolute inset-0 flex px-14 py-20 sm:px-20 sm:py-24",
-      isText || isPdf || isXlsx
+      isText || isPdf || isXlsx || isZip
         ? "items-stretch justify-stretch"
         : "items-center justify-center",
     )}
@@ -599,6 +601,10 @@
     {:else if current && isXlsx}
       {#await import("./preview/XlsxPreviewContent.svelte") then { default: XlsxPreviewContent }}
         <XlsxPreviewContent url={contentUrl} name={current.file.name} />
+      {/await}
+    {:else if current && isZip}
+      {#await import("./preview/ZipPreviewContent.svelte") then { default: ZipPreviewContent }}
+        <ZipPreviewContent url={contentUrl} name={current.file.name} />
       {/await}
     {:else if current && isText}
       {#await import("./preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}

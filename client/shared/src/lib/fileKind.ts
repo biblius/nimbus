@@ -134,6 +134,16 @@ export function isXlsxFile(entry: FileView): boolean {
   return false;
 }
 
+/** ZIP archives — listed via SheetJS `CFB.read` (same lib as xlsx preview). */
+export function isZipFile(entry: FileView): boolean {
+  return (
+    entry.file.kind === "file" &&
+    entry.file.fileType != null &&
+    "archive" in entry.file.fileType &&
+    entry.file.fileType.archive === "Zip"
+  );
+}
+
 /** Files that show a generated WebP icon in the browser list. */
 export function hasListThumbnail(entry: FileView): boolean {
   return isImageFile(entry) || isVideoFile(entry);
@@ -158,6 +168,7 @@ export function isPreviewable(entry: FileView): boolean {
     isAudioFile(entry) ||
     isTextFile(entry) ||
     isPdfFile(entry) ||
-    isXlsxFile(entry)
+    isXlsxFile(entry) ||
+    isZipFile(entry)
   );
 }
