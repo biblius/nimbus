@@ -122,10 +122,10 @@ mod roots {
         let kept = state
             .services
             .files
-            .content(&bob.user, bob_file.id)
+            .content_for_download(&bob.user, bob_file.id)
             .await
             .unwrap();
-        assert_eq!(kept.0.id, bob_file.id);
+        assert_eq!(kept.0, bob_file.name);
 
         let rx = state
             .services
@@ -178,10 +178,10 @@ mod roots {
         let still_there = state
             .services
             .files
-            .content(&admin.user, file.id)
+            .content_for_download(&admin.user, file.id)
             .await
             .unwrap();
-        assert_eq!(still_there.0.id, file.id);
+        assert_eq!(still_there.0, file.name);
 
         let extra = state
             .services

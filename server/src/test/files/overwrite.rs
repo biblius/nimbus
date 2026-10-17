@@ -42,13 +42,16 @@ mod overwrite {
         assert_eq!(updated.size_bytes, 11);
         assert_ne!(updated.hash, original.hash);
 
-        let (_entry, path, mime) = state
+        let (_name, body) = state
             .services
             .files
-            .content(&session.user, updated.id)
+            .content_for_download(&session.user, updated.id)
             .await
             .unwrap();
 
+        let crate::file::service::DownloadBody::File { path, mime } = body else {
+            panic!("expected file download body");
+        };
         assert_eq!(mime, "text/plain; charset=utf-8");
         assert_eq!(tokio::fs::read(&path).await.unwrap(), b"hello world");
         assert_eq!(test::blob_count(state.storage_dir()), before);

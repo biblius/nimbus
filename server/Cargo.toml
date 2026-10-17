@@ -51,7 +51,7 @@ argon2 = "0.6.0"
 zxcvbn = "3.1.1"
 sha2 = "0.11.1"
 hex = "0.4.3"
-tokio-util = { version = "0.7.20", features = ["io"] }
+tokio-util = { version = "0.7.20", features = ["io", "compat"] }
 futures = "0.3.34"
 lettre = { version = "0.11.23", default-features = false, features = [
   "smtp-transport",
@@ -70,6 +70,10 @@ webauthn-rs = { version = "0.5.5", features = [
   "danger-allow-state-serialisation",
   # Usermameless passkey login via start/finish_discoverable_authentication.
   "conditional-ui",
+] }
+async_zip = { version = "0.0.19", default-features = false, features = [
+  "tokio",
+  "deflate",
 ] }
 
 [dev-dependencies]

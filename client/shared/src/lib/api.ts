@@ -637,9 +637,14 @@ export class NimbusClient {
     );
   }
 
-  /** Full-file blob URL (attachment download). */
+  /** Full-file blob URL (attachment download). Directories zip. */
   downloadUrl(rootId: string, id: string): string {
     return `${this.root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/download`;
+  }
+
+  /** Zip of every top-level entry in a root. */
+  downloadRootUrl(rootId: string): string {
+    return `${this.root}/roots/${encodeURIComponent(rootId)}/download`;
   }
 
   /** Range-capable blob URL for streaming media (`<video>` / `<audio>` src). */
@@ -693,15 +698,29 @@ export class NimbusClient {
     );
   }
 
-  async download(rootId: string, id: string, name: string): Promise<void> {
-    const url = URL.createObjectURL(await this.content(rootId, id));
+  /**
+   * Kick off a browser-managed download (streams to disk).
+   *
+   * Prefer this over `fetch` + `blob()` for large/zip payloads: buffering the
+   * whole response in JS waits until the server finishes before any save UI.
+   */
+  private triggerDownload(url: string, name: string): void {
     const anchor = document.createElement("a");
-
     anchor.href = url;
     anchor.download = name;
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
     anchor.click();
+    anchor.remove();
+  }
 
-    URL.revokeObjectURL(url);
+  async download(rootId: string, id: string, name: string): Promise<void> {
+    this.triggerDownload(this.downloadUrl(rootId, id), name);
+  }
+
+  /** Download the whole root as a zip archive. */
+  async downloadRoot(rootId: string, name: string): Promise<void> {
+    this.triggerDownload(this.downloadRootUrl(rootId), name);
   }
 
   /** Fetch publicly shared file bytes for inline preview (allowed in view mode). */
@@ -726,29 +745,7 @@ export class NimbusClient {
 
   /** Attachment download for a publicly shared file (download mode only). */
   async sharedDownload(fileId: string, name: string): Promise<void> {
-    const path = `/files/shared/${encodeURIComponent(fileId)}/blob/download`;
-    const response = await fetch(`${this.root}${path}`, {
-      credentials: "omit",
-    });
-
-    if (!response.ok) {
-      let body: ErrorBody | null = null;
-      try {
-        body = (await response.json()) as ErrorBody;
-      } catch {
-        body = null;
-      }
-      throw this.httpError(response.status, body, path);
-    }
-
-    const url = URL.createObjectURL(await response.blob());
-    const anchor = document.createElement("a");
-
-    anchor.href = url;
-    anchor.download = name;
-    anchor.click();
-
-    URL.revokeObjectURL(url);
+    this.triggerDownload(this.sharedDownloadUrl(fileId), name);
   }
 
   /** Fetch a file's preview image as a blob (`64` list icon or `256` large tile). */

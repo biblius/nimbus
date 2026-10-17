@@ -42,18 +42,26 @@ mod trash {
             .unwrap();
 
         assert!(matches!(
-            state.services.files.content(&session.user, first.id).await,
+            state
+                .services
+                .files
+                .content_for_download(&session.user, first.id)
+                .await,
             Err(AppError::ResourceMissing(_))
         ));
         assert!(matches!(
-            state.services.files.content(&session.user, second.id).await,
+            state
+                .services
+                .files
+                .content_for_download(&session.user, second.id)
+                .await,
             Err(AppError::ResourceMissing(_))
         ));
         assert!(
             state
                 .services
                 .files
-                .content(&session.user, kept.id)
+                .content_for_download(&session.user, kept.id)
                 .await
                 .is_ok()
         );
@@ -77,14 +85,18 @@ mod trash {
             .unwrap();
 
         assert!(matches!(
-            state.services.files.content(&session.user, kept.id).await,
+            state
+                .services
+                .files
+                .content_for_download(&session.user, kept.id)
+                .await,
             Err(AppError::ResourceMissing(_))
         ));
         assert!(
             state
                 .services
                 .files
-                .content(&bob.user, foreign.id)
+                .content_for_download(&bob.user, foreign.id)
                 .await
                 .is_ok()
         );

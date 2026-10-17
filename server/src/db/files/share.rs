@@ -1,9 +1,10 @@
 use crate::{
-    db::DbPool,
+    db::{Db, DbPool},
     error::AppError,
     file::{
         format::FileType,
         model::{FileEntry, FileKind, FileMetadata, FileView, SharingMode},
+        tree::FileEntryTree,
     },
 };
 use chrono::{DateTime, Utc};
@@ -60,6 +61,98 @@ impl ShareRepository {
         .fetch_optional(&self.pool)
         .await
         .map_err(AppError::from)
+    }
+
+    /// Shared descendants under `parent` (non-expired only), for zip downloads.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn list_shared_descendants(
+        &self,
+        root_id: Uuid,
+        parent: Uuid,
+    ) -> Result<Vec<FileEntryTree>, AppError> {
+        let now = Utc::now();
+
+        let mut query = QueryBuilder::<Db>::new(
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT
+                    f.id,
+                    f.root_id,
+                    f."type" AS kind,
+                    f.name,
+                    f.parent,
+                    f.format AS file_type,
+                    f.hash,
+                    f.size_bytes,
+                    f.metadata,
+                    f.created_at,
+                    f.updated_at,
+                    TRUE AS query_root
+                FROM files f
+                WHERE f.root_id =
+            "#,
+        );
+
+        query.push_bind(root_id);
+        query.push(" AND f.parent = ").push_bind(parent);
+        query.push(
+            r#"
+              AND f.sharing_mode IS NOT NULL
+              AND (f.share_expires_at IS NULL OR f.share_expires_at >
+            "#,
+        );
+        query.push_bind(now);
+        query.push(
+            r#"
+              )
+            UNION
+            SELECT
+                child.id,
+                child.root_id,
+                child."type",
+                child.name,
+                child.parent,
+                child.format,
+                child.hash,
+                child.size_bytes,
+                child.metadata,
+                child.created_at,
+                child.updated_at,
+                FALSE AS query_root
+            FROM files child
+            JOIN tree t ON child.parent = t.id
+            WHERE child.sharing_mode IS NOT NULL
+              AND (child.share_expires_at IS NULL OR child.share_expires_at >
+            "#,
+        );
+        query.push_bind(now);
+        query.push(
+            r#"
+              )
+            )
+            SELECT
+                id,
+                root_id,
+                kind,
+                name,
+                parent,
+                file_type,
+                hash,
+                size_bytes,
+                metadata,
+                created_at,
+                updated_at,
+                query_root
+            FROM tree
+            ORDER BY CASE WHEN kind = 'd' THEN 0 ELSE 1 END, name, created_at, id
+            "#,
+        );
+
+        query
+            .build_query_as::<FileEntryTree>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)
     }
 
     /// Shared children of a shared directory (non-expired only).

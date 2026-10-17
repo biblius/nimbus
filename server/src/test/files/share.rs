@@ -52,8 +52,11 @@ mod sharing {
         assert!(shared.file.share_expires_at.is_none());
         assert_eq!(shared.file.name, "notes.txt");
 
-        let (entry, path, mime) = state.services.share.download(file.id).await.unwrap();
-        assert_eq!(entry.id, file.id);
+        let (name, body) = state.services.share.download(file.id).await.unwrap();
+        assert_eq!(name, "notes.txt");
+        let crate::file::service::DownloadBody::File { path, mime } = body else {
+            panic!("expected file download body");
+        };
         assert!(path.exists());
         assert!(mime.starts_with("text/plain"));
     }

@@ -4,6 +4,7 @@ use crate::{
     file::{
         model::{FileContentPreview, FileEntry, FileKind, FileView, PreviewSize, SharingMode},
         storage::Storage,
+        tree::FileTree,
     },
 };
 use std::path::PathBuf;
@@ -61,13 +62,19 @@ impl ShareService {
         self.shared_blob(id).await
     }
 
-    /// Blob path for an attachment download. Rejected when the share is view-only.
+    /// Attachment download. Rejected when the share is view-only.
+    ///
+    /// Files stream as-is; directories are returned as a zip streamed while being built.
     #[instrument(skip(self), err(Debug))]
     pub async fn download(
         &self,
         id: Uuid,
-    ) -> Result<(FileEntry, PathBuf, &'static str), AppError> {
-        let (file, path, mime) = self.shared_blob(id).await?;
+    ) -> Result<(String, super::DownloadBody), AppError> {
+        let file = self
+            .share
+            .get_shared(id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
         if file.sharing_mode != Some(SharingMode::Download) {
             return Err(AppError::Forbidden(
@@ -75,7 +82,45 @@ impl ShareService {
             ));
         }
 
-        Ok((file, path, mime))
+        match file.kind {
+            FileKind::File => {
+                let hash = file.hash.as_deref().ok_or(AppError::Internal)?;
+                let path = self.storage.path(hash);
+
+                if !tokio::fs::try_exists(&path).await? {
+                    tracing::error!(%id, hash, "shared file row has no blob on disk");
+                    return Err(AppError::Internal);
+                }
+
+                let mime = file
+                    .file_type
+                    .as_ref()
+                    .map(|file_type| file_type.mime())
+                    .unwrap_or("application/octet-stream");
+
+                Ok((file.name, super::DownloadBody::File { path, mime }))
+            }
+            FileKind::Directory => {
+                let children = self
+                    .share
+                    .list_shared_descendants(file.root_id, file.id)
+                    .await?;
+
+                let blob_paths = super::blob_paths_for(&self.storage, &children).await?;
+                let name = format!("{}.zip", file.name);
+
+                let tree = FileTree {
+                    id: file.id,
+                    name: file.name,
+                    kind: file.kind,
+                    file_type: file.file_type,
+                    metadata: file.metadata.map(|m| m.0),
+                    children: FileTree::from_entries(children),
+                };
+
+                Ok((name, super::zip_directory_stream(tree, blob_paths)))
+            }
+        }
     }
 
     async fn shared_blob(
@@ -90,7 +135,7 @@ impl ShareService {
 
         if file.kind != FileKind::File {
             return Err(AppError::Unprocessable(
-                "Directories cannot be downloaded".into(),
+                "Directories cannot be streamed".into(),
             ));
         }
 

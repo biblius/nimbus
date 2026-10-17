@@ -337,7 +337,10 @@ mod deletion {
         let second = test::upload(state, &session.user, root, "b.png", &png).await;
 
         let (icon_hash, tile_hash) = await_previews(state, first.id).await;
-        assert_eq!(await_previews(state, second.id).await, (icon_hash.clone(), tile_hash.clone()));
+        assert_eq!(
+            await_previews(state, second.id).await,
+            (icon_hash.clone(), tile_hash.clone())
+        );
         let icon_path = test::preview_path(state.storage_dir(), &icon_hash);
         let tile_path = test::preview_path(state.storage_dir(), &tile_hash);
 
@@ -502,10 +505,10 @@ mod deletion {
         let content = state
             .services
             .files
-            .content(&bob_session.user, file.id)
+            .content_for_download(&bob_session.user, file.id)
             .await
             .unwrap();
-        assert_eq!(content.0.id, file.id);
+        assert_eq!(content.0, file.name);
     }
 
     #[test]

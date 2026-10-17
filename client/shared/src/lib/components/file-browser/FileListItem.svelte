@@ -577,18 +577,16 @@
     onclick={(event) => event.stopPropagation()}
     ondblclick={(event) => event.stopPropagation()}
   >
-    {#if file.kind === "file"}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        class="text-muted-foreground"
-        aria-label="Download {name}"
-        onclick={onDownload}
-      >
-        <Download size={16} />
-      </Button>
-    {/if}
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      class="text-muted-foreground"
+      aria-label="Download {name}"
+      onclick={onDownload}
+    >
+      <Download size={16} />
+    </Button>
     <Menu class="mt-1">
       {#snippet trigger(props)}
         <Button
@@ -624,12 +622,10 @@
 </li>
 
 <ContextMenu bind:open={menuOpen} x={menuX} y={menuY} class="w-44">
-  {#if file.kind === "file"}
-    <MenuItem onclick={onDownload}>
-      <Download size={16} />
-      Download
-    </MenuItem>
-  {/if}
+  <MenuItem onclick={onDownload}>
+    <Download size={16} />
+    Download
+  </MenuItem>
   <MenuItem onclick={() => beginRename()}>
     <Pencil size={16} />
     Rename

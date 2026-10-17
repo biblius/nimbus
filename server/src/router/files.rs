@@ -9,7 +9,7 @@ use crate::{
         queue::DeletionResult,
         tree::FileTree,
     },
-    router::{chunked_download, content_disposition, sse},
+    router::{chunked_download, sse},
     state::AppState,
 };
 use axum::{
@@ -24,7 +24,6 @@ use futures::Stream;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::convert::Infallible;
-use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
@@ -590,34 +589,45 @@ pub(crate) async fn overwrite(
 
 #[utoipa::path(
     get,
+    path = "/roots/{root_id}/download",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    responses((status = 200, description = "Zip archive of the root"))
+)]
+pub(crate) async fn download_root(
+    State(state): State<AppState>,
+    session: Session,
+    Path(root_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let (name, body) = state
+        .services
+        .files
+        .content_for_root_download(&session.user, root_id)
+        .await?;
+
+    body.to_response(name).await
+}
+
+#[utoipa::path(
+    get,
     path = "/roots/{root_id}/files/{id}/blob/download",
     params(
         ("root_id" = Uuid, Path, description = "Root id"),
         ("id" = Uuid, Path, description = "File id")
     ),
-    responses((status = 200, description = "Full file bytes"))
+    responses((status = 200, description = "Full file bytes or zip archive for directories"))
 )]
 pub(crate) async fn download(
     State(state): State<AppState>,
     session: Session,
     Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, AppError> {
-    let (entry, path, mime) = state.services.files.content(&session.user, file_id).await?;
+    let (name, body) = state
+        .services
+        .files
+        .content_for_download(&session.user, file_id)
+        .await?;
 
-    let file = File::open(path).await?;
-
-    Response::builder()
-        .header(header::CONTENT_TYPE, mime)
-        .header(
-            header::CONTENT_DISPOSITION,
-            content_disposition(&entry.name, false),
-        )
-        .header(header::CONTENT_LENGTH, entry.size_bytes.to_string())
-        .body(Body::from_stream(ReaderStream::new(file)))
-        .map_err(|error| {
-            tracing::error!(%error, "building download response");
-            AppError::Internal
-        })
+    body.to_response(name).await
 }
 
 #[utoipa::path(
@@ -638,9 +648,13 @@ pub(crate) async fn download_chunk(
     Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
     range: Option<TypedHeader<Range>>,
 ) -> Result<Response, AppError> {
-    let (entry, path, mime) = state.services.files.content(&session.user, file_id).await?;
+    let (name, path, mime) = state
+        .services
+        .files
+        .content_for_stream(&session.user, file_id)
+        .await?;
 
-    chunked_download(&path, &entry.name, mime, range).await
+    chunked_download(&path, &name, mime, range).await
 }
 
 #[utoipa::path(
@@ -818,22 +832,9 @@ pub(crate) async fn shared_download(
     State(state): State<AppState>,
     Path(file_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    let (entry, path, mime) = state.services.share.download(file_id).await?;
+    let (name, body) = state.services.share.download(file_id).await?;
 
-    let file = File::open(path).await?;
-
-    Response::builder()
-        .header(header::CONTENT_TYPE, mime)
-        .header(
-            header::CONTENT_DISPOSITION,
-            content_disposition(&entry.name, false),
-        )
-        .header(header::CONTENT_LENGTH, entry.size_bytes.to_string())
-        .body(Body::from_stream(ReaderStream::new(file)))
-        .map_err(|error| {
-            tracing::error!(%error, "building shared download response");
-            AppError::Internal
-        })
+    body.to_response(name).await
 }
 
 #[utoipa::path(

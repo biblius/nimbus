@@ -70,6 +70,7 @@ use crate::{
         files::upload_dir,
         files::ancestors,
         files::metadata,
+        files::download_root,
         files::download,
         files::download_chunk,
         files::overwrite,

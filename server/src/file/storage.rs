@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use tokio::{fs::File, io::AsyncWriteExt};
 use uuid::Uuid;
 
-const TMP_DIR: &str = "tmp";
 const DATA_DIR: &str = "data";
 
 /// Content-addressed bytes on the local filesystem.
@@ -23,10 +22,15 @@ pub struct Storage {
     /// See [crate::config::StartArgs::preview_dir]
     preview: PathBuf,
 
+    /// Ephemeral files (in-progress uploads, zip archives).
+    ///
+    /// See [crate::config::StartArgs::tmp_dir]
+    tmp: PathBuf,
+
     max_bytes: i64,
 }
 
-/// Per-file writer for uploads.
+/// Per-file writer for uploads. Used to hash the file as it is being written.
 #[derive(Debug)]
 pub struct UploadWriter {
     /// The file name obtained from the client.
@@ -77,23 +81,23 @@ pub struct TempFile {
 }
 
 impl Storage {
-    pub fn new(root: PathBuf, preview: PathBuf, max_bytes: usize) -> Self {
+    pub fn new(root: PathBuf, preview: PathBuf, tmp: PathBuf, max_bytes: usize) -> Self {
         Self {
             root,
             preview,
+            tmp,
             max_bytes: max_bytes as i64,
         }
     }
 
     pub async fn prepare(&self) -> Result<(), AppError> {
         let data = self.root.join(DATA_DIR);
-        let tmp = self.root.join(TMP_DIR);
 
         tracing::debug!(path = %data.display(), "creating storage data directory");
         tokio::fs::create_dir_all(&data).await?;
 
-        tracing::debug!(path = %tmp.display(), "creating storage tmp directory");
-        tokio::fs::create_dir_all(&tmp).await?;
+        tracing::debug!(path = %self.tmp.display(), "creating storage tmp directory");
+        tokio::fs::create_dir_all(&self.tmp).await?;
 
         tracing::debug!(path = %self.preview.display(), "creating preview directory");
         tokio::fs::create_dir_all(&self.preview).await?;
@@ -101,8 +105,13 @@ impl Storage {
         Ok(())
     }
 
+    /// Fresh path under the configured tmp directory (caller creates/removes the file).
+    pub fn tmp_path(&self) -> PathBuf {
+        self.tmp.join(Uuid::new_v4().to_string())
+    }
+
     pub async fn writer(&self, name: String) -> Result<UploadWriter, AppError> {
-        let temp = self.root.join(TMP_DIR).join(Uuid::new_v4().to_string());
+        let temp = self.tmp_path();
 
         let file = File::create(&temp).await?;
 
@@ -146,6 +155,13 @@ impl Storage {
 
     pub fn path(&self, hash: &str) -> PathBuf {
         self.root.join(DATA_DIR).join(hash)
+    }
+
+    /// Create a temporary file under the configured tmp directory.
+    pub async fn tmp_file(&self) -> Result<File, AppError> {
+        File::create(&self.tmp_path())
+            .await
+            .map_err(AppError::from)
     }
 
     pub fn preview_path(&self, hash: &str) -> PathBuf {

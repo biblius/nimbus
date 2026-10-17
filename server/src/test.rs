@@ -198,6 +198,7 @@ async fn build_services(
     let storage = Storage::new(
         storage_dir.join("storage"),
         storage_dir.join("preview"),
+        storage_dir.join("tmp"),
         1024 * 1024,
     );
     let repository = Repository::new(pool.clone());

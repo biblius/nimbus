@@ -22,7 +22,7 @@ use crate::{
 };
 use chrono::Utc;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     path::PathBuf,
 };
 use tracing::instrument;
@@ -428,22 +428,22 @@ impl FileService {
         Ok(entry)
     }
 
+    /// Single-file blob for streaming / range requests. Directories are rejected.
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
-    pub async fn content(
+    pub async fn content_for_stream(
         &self,
         user: &User,
         id: Uuid,
-    ) -> Result<(FileEntry, PathBuf, &'static str), AppError> {
+    ) -> Result<(String, PathBuf, &'static str), AppError> {
         let file = self.readable(user, id).await?;
 
         if file.kind != FileKind::File {
             return Err(AppError::Unprocessable(
-                "Directories cannot be downloaded".into(),
+                "Directories cannot be streamed".into(),
             ));
         }
 
         let hash = file.hash.as_deref().ok_or(AppError::Internal)?;
-
         let path = self.storage.path(hash);
 
         if !tokio::fs::try_exists(&path).await? {
@@ -457,7 +457,90 @@ impl FileService {
             .map(|file_type| file_type.mime())
             .unwrap_or("application/octet-stream");
 
-        Ok((file, path, mime))
+        Ok((file.name, path, mime))
+    }
+
+    /// Files stream as-is; directories are returned as a zip streamed while being built.
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
+    pub async fn content_for_download(
+        &self,
+        user: &User,
+        id: Uuid,
+    ) -> Result<(String, super::DownloadBody), AppError> {
+        let file = self.readable(user, id).await?;
+
+        match file.kind {
+            FileKind::File => {
+                let hash = file.hash.as_deref().ok_or(AppError::Internal)?;
+                let path = self.storage.path(hash);
+
+                if !tokio::fs::try_exists(&path).await? {
+                    tracing::error!(%id, hash, "file row has no blob on disk");
+                    return Err(AppError::Internal);
+                }
+
+                let mime = file
+                    .file_type
+                    .as_ref()
+                    .map(|file_type| file_type.mime())
+                    .unwrap_or("application/octet-stream");
+
+                Ok((file.name, super::DownloadBody::File { path, mime }))
+            }
+            FileKind::Directory => {
+                let children = self
+                    .files
+                    .list_descendants(file.root_id, Some(file.id))
+                    .await?;
+
+                let blob_paths = super::blob_paths_for(&self.storage, &children).await?;
+                let name = format!("{}.zip", file.name);
+
+                let tree = FileTree {
+                    id: file.id,
+                    name: file.name,
+                    kind: file.kind,
+                    file_type: file.file_type,
+                    metadata: file.metadata.map(|m| m.0),
+                    children: FileTree::from_entries(children),
+                };
+
+                Ok((name, super::zip_directory_stream(tree, blob_paths)))
+            }
+        }
+    }
+
+    /// Zip every top-level entry in a root the user can access.
+    #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
+    pub async fn content_for_root_download(
+        &self,
+        user: &User,
+        root_id: Uuid,
+    ) -> Result<(String, super::DownloadBody), AppError> {
+        super::accessible(&self.folders, user, root_id).await?;
+
+        let root = self
+            .files
+            .get_root(root_id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))?;
+
+        let children = self.files.list_descendants(root_id, None).await?;
+
+        let blob_paths = super::blob_paths_for(&self.storage, &children).await?;
+
+        let name = format!("{}.zip", root.name);
+
+        let tree = FileTree {
+            id: root.id,
+            name: root.name,
+            kind: FileKind::Directory,
+            file_type: None,
+            metadata: None,
+            children: FileTree::from_entries(children),
+        };
+
+        Ok((name, super::zip_directory_stream(tree, blob_paths)))
     }
 
     /// Serve a generated preview image for a file, when one exists.

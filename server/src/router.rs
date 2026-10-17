@@ -40,7 +40,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use self::openapi::ApiDoc;
-use crate::{error::AppError, state::AppState};
+use crate::{error::AppError, file::service::DownloadBody, state::AppState};
 
 pub fn router(state: AppState) -> Router {
     let upload_max = state.upload_max_bytes;
@@ -139,6 +139,7 @@ pub fn router(state: AppState) -> Router {
         .route("/roots/{root_id}/users", get(folders::list_members))
         .route("/roots/{root_id}/users/all", get(folders::list_all_members))
         .route("/roots/{root_id}/usage", get(folders::usage))
+        .route("/roots/{root_id}/download", get(files::download_root))
         .route("/roots/{root_id}", get(files::list))
         .route(
             "/roots/{root_id}",
@@ -268,6 +269,42 @@ where
             .interval(Duration::from_secs(1))
             .text("keep-alive"),
     )
+}
+
+impl DownloadBody {
+    /// Build an attachment response. Files include `Content-Length`; zips are chunked.
+    pub async fn to_response(self, name: String) -> Result<Response, AppError> {
+        match self {
+            Self::File { path, mime } => {
+                let file = File::open(&path).await?;
+                let len = file.metadata().await?.len();
+
+                Response::builder()
+                    .header(header::CONTENT_TYPE, mime)
+                    .header(
+                        header::CONTENT_DISPOSITION,
+                        content_disposition(&name, false),
+                    )
+                    .header(header::CONTENT_LENGTH, len.to_string())
+                    .body(Body::from_stream(ReaderStream::new(file)))
+                    .map_err(|error| {
+                        tracing::error!(%error, "building download response");
+                        AppError::Internal
+                    })
+            }
+            Self::Zip { reader } => Response::builder()
+                .header(header::CONTENT_TYPE, "application/zip")
+                .header(
+                    header::CONTENT_DISPOSITION,
+                    content_disposition(&name, false),
+                )
+                .body(Body::from_stream(ReaderStream::new(reader)))
+                .map_err(|error| {
+                    tracing::error!(%error, "building zip download response");
+                    AppError::Internal
+                }),
+        }
+    }
 }
 
 /// Stream a file with optional HTTP Range support (for `<video>` / `<audio>`).

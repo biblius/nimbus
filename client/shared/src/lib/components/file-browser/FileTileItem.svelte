@@ -336,12 +336,10 @@
           <EllipsisVertical size={16} />
         </Button>
       {/snippet}
-      {#if file.kind === "file"}
-        <MenuItem onclick={onDownload}>
-          <Download size={16} />
-          Download
-        </MenuItem>
-      {/if}
+      <MenuItem onclick={onDownload}>
+        <Download size={16} />
+        Download
+      </MenuItem>
       <MenuItem onclick={onCopy}>
         <Share2 size={16} />
         Copy to…

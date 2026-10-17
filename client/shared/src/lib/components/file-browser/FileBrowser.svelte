@@ -2,6 +2,7 @@
   import {
     Check,
     ChevronDown,
+    Download,
     File as FileIcon,
     Folder,
     FolderInput,
@@ -893,14 +894,44 @@
     }
   }
 
+  function downloadName(entry: FileView) {
+    return entry.file.kind === "directory"
+      ? `${entry.file.name}.zip`
+      : entry.file.name;
+  }
+
   async function download(entry: FileView) {
     try {
-      await session.client.download(root.id, entry.file.id, entry.file.name);
+      await session.client.download(
+        root.id,
+        entry.file.id,
+        downloadName(entry),
+      );
     } catch (cause) {
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not download that file",
+          : "Could not download that item",
+      );
+    }
+  }
+
+  async function downloadCurrent() {
+    try {
+      if (locationEntry) {
+        await session.client.download(
+          root.id,
+          locationEntry.id,
+          `${locationEntry.name}.zip`,
+        );
+      } else {
+        await session.client.downloadRoot(root.id, `${root.name}.zip`);
+      }
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not download that folder",
       );
     }
   }
@@ -1302,6 +1333,20 @@
           </MenuItem>
         </Menu>
       {/if}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        class="text-muted-foreground"
+        aria-label={locationEntry
+          ? `Download ${locationEntry.name}`
+          : `Download ${root.name}`}
+        title={locationEntry ? "Download folder" : "Download root"}
+        onclick={downloadCurrent}
+      >
+        <Download size={15} />
+        <span class="hidden sm:inline">Download</span>
+      </Button>
       {#if locationEntry}
         <Button
           type="button"

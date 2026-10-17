@@ -65,13 +65,18 @@
   });
 
   async function download(view: FileView) {
+    const name =
+      view.file.kind === "directory"
+        ? `${view.file.name}.zip`
+        : view.file.name;
+
     try {
-      await session.client.sharedDownload(view.file.id, view.file.name);
+      await session.client.sharedDownload(view.file.id, name);
     } catch (cause) {
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not download that file",
+          : "Could not download that item",
       );
     }
   }
@@ -98,7 +103,7 @@
           </h1>
         {/if}
       </div>
-      {#if entry && entry.file.kind === "file" && entry.file.sharingMode === "download"}
+      {#if entry && entry.file.sharingMode === "download"}
         <Button
           type="button"
           variant="outline"

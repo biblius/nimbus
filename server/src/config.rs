@@ -55,6 +55,10 @@ pub struct StartArgs {
     #[arg(long)]
     preview_dir: Option<String>,
 
+    /// Directory for ephemeral files (uploads in progress, zip downloads).
+    #[arg(long)]
+    tmp_dir: Option<String>,
+
     /// Days a soft-deleted file stays recoverable.
     #[arg(long)]
     file_retention_days: Option<String>,
@@ -209,6 +213,18 @@ arg!(
 
 arg!(upload_dir, "UPLOAD_DIR", default "./data".to_string());
 arg!(preview_dir, "PREVIEW_DIR", default "./preview".to_string());
+arg!(
+    tmp_dir,
+    "TMP_DIR",
+    default {
+        let dir = std::env::temp_dir();
+        if dir.is_dir() {
+            dir.to_string_lossy().into_owned()
+        } else {
+            "./tmp".to_string()
+        }
+    }
+);
 arg!(file_retention_days, "FILE_RETENTION_DAYS", default 30, u16);
 arg!(
     file_deletion_interval_secs,
@@ -271,6 +287,7 @@ impl fmt::Display for StartArgs {
         writeln!(f, "valkey_url: {}", self.valkey_url())?;
         writeln!(f, "upload_dir: {}", self.upload_dir())?;
         writeln!(f, "preview_dir: {}", self.preview_dir())?;
+        writeln!(f, "tmp_dir: {}", self.tmp_dir())?;
         writeln!(f, "file_retention_days: {}", self.file_retention_days())?;
         writeln!(
             f,

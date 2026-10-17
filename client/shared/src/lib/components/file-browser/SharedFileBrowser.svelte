@@ -222,18 +222,43 @@
     }
   }
 
+  function downloadName(entry: FileView) {
+    return entry.file.kind === "directory"
+      ? `${entry.file.name}.zip`
+      : entry.file.name;
+  }
+
   async function download(entry: FileView) {
     if (!canDownload) {
       return;
     }
 
     try {
-      await session.client.sharedDownload(entry.file.id, entry.file.name);
+      await session.client.sharedDownload(entry.file.id, downloadName(entry));
     } catch (cause) {
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not download that file",
+          : "Could not download that item",
+      );
+    }
+  }
+
+  async function downloadCurrent() {
+    if (!canDownload) {
+      return;
+    }
+
+    const id = locationId;
+    const name = `${trail.at(-1)?.name ?? shareRoot.file.name}.zip`;
+
+    try {
+      await session.client.sharedDownload(id, name);
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not download that folder",
       );
     }
   }
@@ -287,6 +312,20 @@
         showDirectory(crumb.id);
       }}
     />
+    {#if canDownload}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        class="text-muted-foreground"
+        aria-label="Download folder"
+        title="Download folder"
+        onclick={downloadCurrent}
+      >
+        <Download size={15} />
+        <span class="hidden sm:inline">Download</span>
+      </Button>
+    {/if}
   </div>
 
   <div
@@ -359,25 +398,25 @@
                     {entry.file.name}
                   </span>
                 </button>
-                {#if entry.file.kind === "file"}
-                  <div class="flex items-center justify-center gap-1">
-                    <span class="text-[11px] text-muted-foreground tabular-nums">
-                      {formatBytes(entry.file.sizeBytes)}
-                    </span>
-                    {#if canDownload}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        class="size-6 text-muted-foreground"
-                        aria-label="Download {entry.file.name}"
-                        onclick={() => download(entry)}
-                      >
-                        <Download size={14} />
-                      </Button>
-                    {/if}
-                  </div>
-                {/if}
+                <div class="flex items-center justify-center gap-1">
+                  <span class="text-[11px] text-muted-foreground tabular-nums">
+                    {entry.file.kind === "directory"
+                      ? "-"
+                      : formatBytes(entry.file.sizeBytes)}
+                  </span>
+                  {#if canDownload}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      class="size-6 text-muted-foreground"
+                      aria-label="Download {entry.file.name}"
+                      onclick={() => download(entry)}
+                    >
+                      <Download size={14} />
+                    </Button>
+                  {/if}
+                </div>
               </li>
             {:else}
               <li
@@ -433,7 +472,7 @@
                   {formatDatetime(entry.file.createdAt)}
                 </span>
                 <div class="flex min-w-9 items-center justify-end gap-1">
-                  {#if entry.file.kind === "file" && canDownload}
+                  {#if canDownload}
                     <Button
                       type="button"
                       variant="ghost"
