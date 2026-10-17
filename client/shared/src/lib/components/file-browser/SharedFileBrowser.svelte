@@ -423,7 +423,7 @@
               <li
                 class={cn(
                   columns,
-                  compact ? "min-h-10 py-1" : "min-h-14 py-2",
+                  compact ? "min-h-11 py-1" : "min-h-16 py-2",
                   "hover:bg-accent/60",
                 )}
               >
@@ -431,7 +431,7 @@
                   type="button"
                   class={cn(
                     "flex w-full min-w-0 items-center rounded-md text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none enabled:cursor-pointer",
-                    compact ? "min-h-9 gap-2.5" : "min-h-12 gap-3",
+                    compact ? "min-h-11 gap-2.5" : "min-h-14 gap-3",
                   )}
                   disabled={!openable}
                   aria-label={entry.file.kind === "directory"
@@ -441,8 +441,8 @@
                 >
                   {@render thumb(
                     entry,
-                    cn("shrink-0", compact ? "size-9" : "size-12"),
-                    compact ? 18 : 24,
+                    cn("shrink-0", compact ? "size-11" : "size-14"),
+                    compact ? 22 : 30,
                   )}
                   <span
                     class={cn(
@@ -495,7 +495,7 @@
   </div>
 
   {#if previewFileId !== null && previewEntries.some((entry) => entry.file.id === previewFileId)}
-    <!-- Dynamic import so pdfjs / codemirror load only when previewing. -->
+    <!-- Dynamic import so pdfjs / codemirror / sheetjs load only when previewing. -->
     {#await import("./SharedFilePreview.svelte") then { default: SharedFilePreview }}
       <SharedFilePreview
         files={previewEntries}

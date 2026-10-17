@@ -1648,7 +1648,7 @@
 
   {#if previewFileId !== null && previewEntries.some((entry) => entry.file.id === previewFileId)}
     <!-- 
-    Use dymanic import here so we don't load preview libs (pdfjs, codemirror)
+    Use dynamic import here so we don't load preview libs (pdfjs, codemirror, sheetjs)
     on the initial file browser load
     -->
     {#await import("./FilePreview.svelte") then { default: FilePreview }}

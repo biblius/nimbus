@@ -86,15 +86,15 @@
 
   const file = $derived(entry.file);
   const compact = $derived(density === "compact");
-  const iconSize = $derived(compact ? 18 : 24);
-  const eyeSize = $derived(compact ? 16 : 20);
-  const thumbPx = $derived(compact ? 36 : 48);
-  const boxClass = $derived(compact ? "size-9" : "size-12");
-  const rowPadClass = $derived(compact ? "min-h-10 py-1" : "min-h-14 py-2");
+  const iconSize = $derived(compact ? 22 : 30);
+  const eyeSize = $derived(compact ? 18 : 22);
+  const thumbPx = $derived(compact ? 44 : 56);
+  const boxClass = $derived(compact ? "size-11" : "size-14");
+  const rowPadClass = $derived(compact ? "min-h-11 py-1" : "min-h-16 py-2");
   const innerRowClass = $derived(
-    compact ? "min-h-9 gap-2.5" : "min-h-12 gap-3",
+    compact ? "min-h-11 gap-2.5" : "min-h-14 gap-3",
   );
-  const nameAreaClass = $derived(compact ? "min-h-9" : "min-h-12");
+  const nameAreaClass = $derived(compact ? "min-h-11" : "min-h-14");
   const textClass = $derived(compact ? "text-xs" : "text-sm");
 
   const fileId = untrack(() => entry.file.id);
@@ -443,7 +443,7 @@
 >
   <div
     class={cn(
-      "flex w-full min-w-0 items-center overflow-hidden",
+      "flex w-full min-w-0 items-center",
       innerRowClass,
     )}
   >

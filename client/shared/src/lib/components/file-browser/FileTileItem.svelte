@@ -75,7 +75,6 @@
   const file = $derived(entry.file);
   const large = $derived(size === "large");
   const iconSize = $derived(large ? 44 : 30);
-
   const fileId = untrack(() => entry.file.id);
   const directory = untrack(() => entry.file.kind === "directory");
   const draggable = createDraggable({ id: fileId, type: "entry" });

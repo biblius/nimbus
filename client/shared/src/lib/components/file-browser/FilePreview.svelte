@@ -26,6 +26,7 @@
     isPdfFile,
     isTextFile,
     isVideoFile,
+    isXlsxFile,
     parsePreviewFilter,
     type FileFamily,
     type PreviewFilter,
@@ -122,8 +123,9 @@
   const isAudio = $derived(current != null && isAudioFile(current));
   const isText = $derived(current != null && isTextFile(current));
   const isPdf = $derived(current != null && isPdfFile(current));
+  const isXlsx = $derived(current != null && isXlsxFile(current));
   const fileName = $derived(current?.file.name ?? "");
-  /** Full-file blob URL for image / PDF / text fetches. */
+  /** Full-file blob URL for image / PDF / text / xlsx fetches. */
   const downloadUrl = $derived(
     current
       ? session.client.downloadUrl(rootId, current.file.id)
@@ -563,7 +565,7 @@
   <div
     class={cn(
       "absolute inset-0 flex px-14 py-20 sm:px-20 sm:py-24",
-      isText || isPdf
+      isText || isPdf || isXlsx
         ? "items-stretch justify-stretch"
         : "items-center justify-center",
     )}
@@ -588,6 +590,14 @@
         {autoplay}
         crossorigin="use-credentials"
       />
+    {:else if current && isXlsx}
+      {#await import("./preview/XlsxPreviewContent.svelte") then { default: XlsxPreviewContent }}
+        <XlsxPreviewContent
+          url={downloadUrl}
+          name={current.file.name}
+          credentials="include"
+        />
+      {/await}
     {:else if current && isText}
       {#await import("./preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}
         <TextPreviewContent

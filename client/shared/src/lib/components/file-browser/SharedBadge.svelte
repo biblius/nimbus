@@ -12,19 +12,19 @@
   } = $props();
 
   const badgeClass = $derived(
-    size === "sm" ? "size-3" : size === "lg" ? "size-4" : "size-3.5",
+    size === "sm" ? "size-4" : size === "lg" ? "size-6" : "size-5",
   );
-  const iconPx = $derived(size === "sm" ? 8 : size === "lg" ? 10 : 9);
+  const iconPx = $derived(size === "sm" ? 10 : size === "lg" ? 14 : 12);
 </script>
 
 <span
   class={cn(
-    "pointer-events-none absolute -right-0.5 -bottom-0.5 z-[1] flex items-center justify-center rounded-full bg-background text-primary shadow-sm ring-1 ring-primary/25",
+    "absolute -right-1 -bottom-1 z-[1] flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background",
     badgeClass,
     className,
   )}
-  title="Shared"
-  aria-label="Publicly shared"
+  title="This file is publicly available"
+  aria-label="This file is publicly available"
 >
-  <Link2 size={iconPx} strokeWidth={2.5} />
+  <Link2 size={iconPx} strokeWidth={2.75} aria-hidden="true" />
 </span>

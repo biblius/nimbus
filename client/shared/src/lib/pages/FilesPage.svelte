@@ -53,7 +53,7 @@
   <div
     class="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col overflow-hidden p-4 sm:p-6"
   >
-    <div class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+    <div class="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col">
       {#if viewingTrash && loaded}
         <TrashBrowser {roots} />
       {:else if selected}
