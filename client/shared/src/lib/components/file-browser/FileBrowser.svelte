@@ -953,7 +953,7 @@
       return;
     }
 
-    await copyLink(entry, "Public link created and copied");
+    await copyLink(entry, `Sharing ${entry.file.name}`);
   }
 
   async function unshareEntry(entry: FileView) {
@@ -966,7 +966,7 @@
         setShared(entry.file.id, false);
       }
 
-      toastSuccess("Stopped sharing");
+      toastSuccess(`Stopped sharing ${entry.file.name}`);
     } catch (cause) {
       toastError(
         cause instanceof TypeError
@@ -1001,7 +1001,7 @@
         setListedShared(true);
       }
 
-      await copyLocationLink("Public link created and copied");
+      await copyLocationLink(`Sharing ${entry.name}`);
     } catch (cause) {
       toastError(
         cause instanceof TypeError
@@ -1033,7 +1033,7 @@
         setListedShared(false);
       }
 
-      toastSuccess("Stopped sharing");
+      toastSuccess(`Stopped sharing ${entry.name}`);
       shareDirOpen = false;
     } catch (cause) {
       toastError(
