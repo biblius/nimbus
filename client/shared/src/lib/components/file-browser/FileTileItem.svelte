@@ -5,7 +5,6 @@
     Eye,
     Folder,
     Link as LinkIcon,
-    Link2,
     Link2Off,
     Share2,
     Trash,
@@ -21,6 +20,7 @@
   import MenuItem from "../ui/menu/menu-item.svelte";
   import Menu from "../ui/menu/menu.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
+  import SharedBadge from "./SharedBadge.svelte";
 
   const LONG_PRESS_MS = 480;
   /** Match parent PointerSensor drag distance so long-press cancels before drag starts. */
@@ -372,50 +372,63 @@
   </div>
 
   {#if file.kind === "directory"}
-    <button
-      type="button"
-      class="group relative flex aspect-square w-full cursor-pointer items-center justify-center overflow-hidden rounded-md bg-primary/10 text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      data-no-select
-      aria-label="Open {name}"
-      title="Open"
-      onclick={onIconClick}
-    >
-      <Folder size={iconSize} strokeWidth={1.75} />
-    </button>
-  {:else if previewable}
-    <button
-      type="button"
-      class="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-md bg-muted ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      data-no-select
-      aria-label="Preview {name}"
-      title="Preview"
-      onclick={onIconClick}
-    >
-      {#if showThumbnail && (thumbnailUrl ?? previewUrl)}
-        <img
-          src={thumbnailUrl ?? previewUrl}
-          alt=""
-          class="size-full object-cover"
-        />
-      {:else}
-        <span
-          class="flex size-full items-center justify-center text-muted-foreground"
-        >
-          <FileTypeIcon fileType={file.fileType} size={iconSize} />
-        </span>
-      {/if}
-      <span
-        class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-hover:opacity-100"
-        aria-hidden="true"
+    <span class="relative aspect-square w-full">
+      <button
+        type="button"
+        class="group flex size-full cursor-pointer items-center justify-center overflow-hidden rounded-md bg-primary/10 text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        data-no-select
+        aria-label="Open {name}"
+        title="Open"
+        onclick={onIconClick}
       >
-        <Eye size={large ? 22 : 18} strokeWidth={2} />
-      </span>
-    </button>
+        <Folder size={iconSize} strokeWidth={1.75} />
+      </button>
+      {#if file.shared}
+        <SharedBadge size={large ? "lg" : "md"} />
+      {/if}
+    </span>
+  {:else if previewable}
+    <span class="relative aspect-square w-full">
+      <button
+        type="button"
+        class="group relative size-full cursor-pointer overflow-hidden rounded-md bg-muted ring-1 ring-border/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        data-no-select
+        aria-label="Preview {name}"
+        title="Preview"
+        onclick={onIconClick}
+      >
+        {#if showThumbnail && (thumbnailUrl ?? previewUrl)}
+          <img
+            src={thumbnailUrl ?? previewUrl}
+            alt=""
+            class="size-full object-cover"
+          />
+        {:else}
+          <span
+            class="flex size-full items-center justify-center text-muted-foreground"
+          >
+            <FileTypeIcon fileType={file.fileType} size={iconSize} />
+          </span>
+        {/if}
+        <span
+          class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          aria-hidden="true"
+        >
+          <Eye size={large ? 22 : 18} strokeWidth={2} />
+        </span>
+      </button>
+      {#if file.shared}
+        <SharedBadge size={large ? "lg" : "md"} />
+      {/if}
+    </span>
   {:else}
     <span
-      class="flex aspect-square w-full items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
+      class="relative flex aspect-square w-full items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
     >
       <FileTypeIcon fileType={file.fileType} size={iconSize} />
+      {#if file.shared}
+        <SharedBadge size={large ? "lg" : "md"} />
+      {/if}
     </span>
   {/if}
 
@@ -434,13 +447,6 @@
       )}
     >
       {name}
-      {#if file.shared}
-        <Link2
-          size={12}
-          class="ml-1 inline shrink-0 text-muted-foreground"
-          aria-label="Publicly shared"
-        />
-      {/if}
     </span>
     {#if file.kind === "file"}
       <span class="text-[11px] text-muted-foreground tabular-nums">

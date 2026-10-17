@@ -5,7 +5,11 @@
     File as FileIcon,
     Folder,
     FolderInput,
+    Link as LinkIcon,
+    Link2,
+    Link2Off,
     Plus,
+    Share2,
     Trash,
     Upload,
     X,
@@ -34,6 +38,7 @@
   import PendingFileUpload from "./PendingFileUpload.svelte";
   import Button from "../ui/button/button.svelte";
   import ConfirmDialog from "../ui/confirm-dialog/confirm-dialog.svelte";
+  import Dialog from "../ui/dialog/dialog.svelte";
   import Input from "../ui/input/input.svelte";
   import MenuItem from "../ui/menu/menu-item.svelte";
   import Menu from "../ui/menu/menu.svelte";
@@ -177,6 +182,12 @@
 
   let ancestors = $state<Crumb[]>([]);
 
+  /** Current directory entry when browsing inside a folder; null at root. */
+  let locationEntry = $state<FileEntry | null>(null);
+
+  let shareDirOpen = $state(false);
+  let shareDirBusy = $state(false);
+
   let fileInput = $state<HTMLInputElement | undefined>();
   let folderInput = $state<HTMLInputElement | undefined>();
 
@@ -225,6 +236,12 @@
 
   const showParentDrop = $derived(location.id !== null);
 
+  const shareDirDescription = $derived(
+    locationEntry?.shared
+      ? "This folder is publicly shared. Anyone with the link can view it and its contents."
+      : "Create a public link so anyone can view this folder and its contents.",
+  );
+
   const deleteDescription = $derived.by(() => {
     if (pendingDelete.length === 1) {
       const entry = entries.find((item) => item.file.id === pendingDelete[0]);
@@ -264,19 +281,21 @@
     parent: string | null,
     currentLoad: number,
   ) {
+    if (parent === null) {
+      ancestors = [];
+      locationEntry = null;
+      return;
+    }
+
     // If the last ancestor is the current parent (dir), we're there
-    // (but only if the trail has unique ids)
+    // (but only if the trail has unique ids). Still refresh locationEntry
+    // when the cached entry does not match the open folder.
     const tipMatches = (ancestors.at(-1)?.id ?? null) === parent;
 
     const uniqueIds =
       new Set(ancestors.map((a) => a.id)).size === ancestors.length;
 
-    if (tipMatches && uniqueIds) {
-      return;
-    }
-
-    if (parent === null) {
-      ancestors = [];
+    if (tipMatches && uniqueIds && locationEntry?.id === parent) {
       return;
     }
 
@@ -291,12 +310,14 @@
         id: entry.id,
         name: entry.name,
       }));
+      locationEntry = chain.at(-1) ?? null;
     } catch (cause) {
       if (currentLoad !== latestLoad) {
         return;
       }
 
       ancestors = [];
+      locationEntry = null;
 
       toastError(
         cause instanceof TypeError
@@ -342,6 +363,15 @@
     selectionAnchor = null;
     selectMode = false;
     previewFileId = null;
+    shareDirOpen = false;
+    shareDirBusy = false;
+
+    if (parent === null) {
+      locationEntry = null;
+    } else if (locationEntry?.id !== parent) {
+      // Keep a matching cached entry (e.g. from openDirectory); clear stale ones.
+      locationEntry = null;
+    }
 
     loadAncestors(rootId, parent, currentLoad);
 
@@ -458,6 +488,7 @@
         name: entry.file.name,
       });
     }
+    locationEntry = entry.file;
     showDirectory(id);
   }
 
@@ -713,6 +744,7 @@
       uploadMenuOpen ||
       newMenuOpen ||
       deleteOpen ||
+      shareDirOpen ||
       previewFileId !== null ||
       drafting
     ) {
@@ -878,6 +910,10 @@
     if (index !== -1) {
       entries[index].file.shared = shared;
     }
+
+    if (locationEntry?.id === id) {
+      locationEntry.shared = shared;
+    }
   }
 
   async function copyLink(entry: FileView, message = "Public link copied") {
@@ -887,6 +923,14 @@
     } catch {
       toastError("Could not copy the public link");
     }
+  }
+
+  async function copyLocationLink(message = "Public link copied") {
+    if (!locationEntry) {
+      return;
+    }
+
+    await copyLink({ file: locationEntry, metadata: null }, message);
   }
 
   async function shareEntry(entry: FileView) {
@@ -929,6 +973,78 @@
           ? "The server could not be reached"
           : "Could not stop sharing",
       );
+    }
+  }
+
+  /** Cascade share flag onto every visible child after sharing the open folder. */
+  function setListedShared(shared: boolean) {
+    for (const item of entries) {
+      item.file.shared = shared;
+    }
+  }
+
+  async function shareCurrentDirectory() {
+    if (!locationEntry || shareDirBusy) {
+      return;
+    }
+
+    const entry = locationEntry;
+    const rootId = root.id;
+
+    shareDirBusy = true;
+
+    try {
+      await session.client.shareFile(rootId, entry.id);
+
+      if (root.id === rootId && locationEntry?.id === entry.id) {
+        locationEntry.shared = true;
+        setListedShared(true);
+      }
+
+      await copyLocationLink("Public link created and copied");
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not create a public link",
+      );
+    } finally {
+      if (root.id === rootId) {
+        shareDirBusy = false;
+      }
+    }
+  }
+
+  async function unshareCurrentDirectory() {
+    if (!locationEntry || shareDirBusy) {
+      return;
+    }
+
+    const entry = locationEntry;
+    const rootId = root.id;
+
+    shareDirBusy = true;
+
+    try {
+      await session.client.unshareFile(rootId, entry.id);
+
+      if (root.id === rootId && locationEntry?.id === entry.id) {
+        locationEntry.shared = false;
+        setListedShared(false);
+      }
+
+      toastSuccess("Stopped sharing");
+      shareDirOpen = false;
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : "Could not stop sharing",
+      );
+    } finally {
+      if (root.id === rootId) {
+        shareDirBusy = false;
+      }
     }
   }
 
@@ -1182,6 +1298,27 @@
             Directory
           </MenuItem>
         </Menu>
+      {/if}
+      {#if locationEntry}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          class={locationEntry.shared
+            ? "text-primary hover:text-primary"
+            : "text-muted-foreground"}
+          aria-label={locationEntry.shared
+            ? "Folder is shared — manage sharing"
+            : "Share this folder"}
+          title={locationEntry.shared ? "Shared" : "Share folder"}
+          onclick={() => (shareDirOpen = true)}
+        >
+          {#if locationEntry.shared}
+            <Link2 size={15} />
+          {:else}
+            <Share2 size={15} />
+          {/if}
+        </Button>
       {/if}
     </div>
   </div>
@@ -1480,6 +1617,60 @@
     }}
     onConfirm={confirmDelete}
   />
+
+  {#if locationEntry}
+    <Dialog
+      open={shareDirOpen}
+      title={locationEntry.shared ? "Shared folder" : "Share folder"}
+      description={shareDirDescription}
+      busy={shareDirBusy}
+      onCancel={() => {
+        if (!shareDirBusy) {
+          shareDirOpen = false;
+        }
+      }}
+    >
+      {#snippet footer()}
+        <Button
+          type="button"
+          variant="outline"
+          onclick={() => (shareDirOpen = false)}
+          disabled={shareDirBusy}
+        >
+          Close
+        </Button>
+        {#if locationEntry.shared}
+          <Button
+            type="button"
+            variant="outline"
+            onclick={() => copyLocationLink()}
+            disabled={shareDirBusy}
+          >
+            <LinkIcon size={15} />
+            Copy link
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            onclick={() => unshareCurrentDirectory()}
+            disabled={shareDirBusy}
+          >
+            <Link2Off size={15} />
+            Stop sharing
+          </Button>
+        {:else}
+          <Button
+            type="button"
+            onclick={() => shareCurrentDirectory()}
+            disabled={shareDirBusy}
+          >
+            <Share2 size={15} />
+            Create public link
+          </Button>
+        {/if}
+      {/snippet}
+    </Dialog>
+  {/if}
 </div>
 
 <DestinationPicker
