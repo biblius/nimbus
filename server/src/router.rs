@@ -135,6 +135,10 @@ pub fn router(state: AppState) -> Router {
         .route("/roots/{root_id}/users/all", get(folders::list_all_members))
         .route("/roots/{root_id}/usage", get(folders::usage))
         .route("/roots/{root_id}/download", get(files::download_root))
+        .route(
+            "/roots/{root_id}/files/download",
+            get(files::download_dir),
+        )
         .route("/roots/{root_id}", get(files::list))
         .route(
             "/roots/{root_id}",
@@ -173,8 +177,8 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/roots/{root_id}/files/{id}/preview", get(files::preview))
         .route(
-            "/roots/{root_id}/files/{id}/share",
-            post(files::share_file).delete(files::unshare_file),
+            "/roots/{root_id}/files/share",
+            post(files::share_files).delete(files::unshare_files),
         )
         .route("/roots/{root_id}/tree", get(files::tree))
         .route("/roots/{root_id}/trash", get(files::trash))

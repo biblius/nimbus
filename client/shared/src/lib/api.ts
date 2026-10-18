@@ -602,22 +602,33 @@ export class NimbusClient {
     });
   }
 
-  /** Mark a live file (and descendants, for directories) as publicly shared. */
-  shareFile(rootId: string, id: string, input: ShareFile): Promise<void> {
+  /** Mark live files (and descendants, for directories) as publicly shared. */
+  shareFiles(
+    rootId: string,
+    ids: string[],
+    input: ShareFile,
+  ): Promise<void> {
     return this.request<void>(
-      `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/share`,
+      `/roots/${encodeURIComponent(rootId)}/files/share`,
       {
         method: "POST",
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          ids,
+          sharingMode: input.sharingMode,
+          shareExpiresAt: input.shareExpiresAt,
+        }),
       },
     );
   }
 
-  /** Clear the public share flag on a live file and its descendants. */
-  unshareFile(rootId: string, id: string): Promise<void> {
+  /** Clear the public share flag on live files and their descendants. */
+  unshareFiles(rootId: string, ids: string[]): Promise<void> {
     return this.request<void>(
-      `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/share`,
-      { method: "DELETE" },
+      `/roots/${encodeURIComponent(rootId)}/files/share`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ ids }),
+      },
     );
   }
 
@@ -645,6 +656,12 @@ export class NimbusClient {
   /** Zip of every top-level entry in a root. */
   downloadRootUrl(rootId: string): string {
     return `${this.root}/roots/${encodeURIComponent(rootId)}/download`;
+  }
+
+  /** Zip of the given live file/directory ids. */
+  downloadDirUrl(rootId: string, ids: string[]): string {
+    const params = new URLSearchParams({ ids: ids.join(",") });
+    return `${this.root}/roots/${encodeURIComponent(rootId)}/files/download?${params}`;
   }
 
   /** Range-capable blob URL for streaming media (`<video>` / `<audio>` src). */
@@ -721,6 +738,15 @@ export class NimbusClient {
   /** Download the whole root as a zip archive. */
   async downloadRoot(rootId: string, name: string): Promise<void> {
     this.triggerDownload(this.downloadRootUrl(rootId), name);
+  }
+
+  /** Download selected live files/directories as one zip archive. */
+  async downloadDir(
+    rootId: string,
+    ids: string[],
+    name = "download.zip",
+  ): Promise<void> {
+    this.triggerDownload(this.downloadDirUrl(rootId, ids), name);
   }
 
   /** Fetch publicly shared file bytes for inline preview (allowed in view mode). */

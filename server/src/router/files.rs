@@ -3,8 +3,9 @@ use crate::{
     error::AppError,
     file::{
         model::{
-            CopyFiles, CreateDirectory, CreateTextFile, FileEntry, FileView, MoveFiles,
-            PreviewSize, RenameFile, RestoreFile, RootView, ShareFile, TrashFiles,
+            CopyFiles, CreateDirectory, CreateTextFile, DownloadFiles, FileEntry, FileView,
+            MoveFiles, PreviewSize, RenameFile, RestoreFile, RootView, ShareFiles, TrashFiles,
+            UnshareFiles,
         },
         queue::DeletionResult,
         tree::FileTree,
@@ -617,6 +618,44 @@ pub(crate) async fn download_root(
     body.into_response(name).await
 }
 
+#[derive(Deserialize)]
+pub struct DownloadFilesQuery {
+    /// Comma-separated live file ids.
+    ids: String,
+}
+
+#[utoipa::path(
+    get,
+    path = "/roots/{root_id}/files/download",
+    params(
+        ("root_id" = Uuid, Path, description = "Root id"),
+        ("ids" = String, Query, description = "Comma-separated live file ids to include in the zip")
+    ),
+    responses((status = 200, description = "Zip archive of the selected files"))
+)]
+pub(crate) async fn download_dir(
+    State(state): State<AppState>,
+    session: Session,
+    Path(root_id): Path<Uuid>,
+    Query(query): Query<DownloadFilesQuery>,
+) -> Result<Response, AppError> {
+    let ids = query
+        .ids
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| part.parse::<Uuid>())
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let (name, body) = state
+        .services
+        .files
+        .download_dir(&session.user, root_id, DownloadFiles { ids })
+        .await?;
+
+    body.into_response(name).await
+}
+
 #[utoipa::path(
     get,
     path = "/roots/{root_id}/files/{id}/blob/download",
@@ -896,46 +935,44 @@ pub(crate) async fn shared_preview(
 
 #[utoipa::path(
     post,
-    path = "/roots/{root_id}/files/{id}/share",
-    request_body = ShareFile,
-    params(
-        ("root_id" = Uuid, Path, description = "Root id"),
-        ("id" = Uuid, Path, description = "File id")
-    ),
-    responses((status = 204, description = "File shared publicly"))
+    path = "/roots/{root_id}/files/share",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    request_body = ShareFiles,
+    responses((status = 204, description = "Files shared publicly"))
 )]
-pub(crate) async fn share_file(
-    Path((root_id, id)): Path<(Uuid, Uuid)>,
+pub(crate) async fn share_files(
+    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
     session: Session,
-    Json(input): Json<ShareFile>,
+    Json(input): Json<ShareFiles>,
 ) -> Result<StatusCode, AppError> {
     state
         .services
         .files
-        .share_file(&session.user, root_id, id, input)
+        .share_files(&session.user, root_id, input)
         .await?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(
     delete,
-    path = "/roots/{root_id}/files/{id}/share",
-    params(
-        ("root_id" = Uuid, Path, description = "Root id"),
-        ("id" = Uuid, Path, description = "File id")
-    ),
-    responses((status = 204, description = "Public share removed"))
+    path = "/roots/{root_id}/files/share",
+    params(("root_id" = Uuid, Path, description = "Root id")),
+    request_body = UnshareFiles,
+    responses((status = 204, description = "Public shares removed"))
 )]
-pub(crate) async fn unshare_file(
-    Path((root_id, id)): Path<(Uuid, Uuid)>,
+pub(crate) async fn unshare_files(
+    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
     session: Session,
+    Json(input): Json<UnshareFiles>,
 ) -> Result<StatusCode, AppError> {
     state
         .services
         .files
-        .unshare_file(&session.user, root_id, id)
+        .unshare_files(&session.user, root_id, input)
         .await?;
+
     Ok(StatusCode::NO_CONTENT)
 }

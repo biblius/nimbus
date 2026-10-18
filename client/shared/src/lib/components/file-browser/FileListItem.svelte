@@ -53,6 +53,7 @@
     onMove,
     onRename,
     onDelete,
+    onPrepareAction,
     thumbnailUrl,
   }: {
     entry: FileView;
@@ -85,9 +86,12 @@
     onMove: () => void;
     onRename: (name: string) => void | Promise<void>;
     onDelete: () => void;
+    /** Prepare action target (e.g. lock multi-select) before opening menus. */
+    onPrepareAction?: () => void;
   } = $props();
 
   const file = $derived(entry.file);
+  const bulk = $derived(selected && multiSelected);
   const compact = $derived(density === "compact");
   const iconSize = $derived(compact ? 22 : 30);
   const eyeSize = $derived(compact ? 18 : 22);
@@ -320,6 +324,7 @@
 
     event.preventDefault();
     event.stopPropagation();
+    onPrepareAction?.();
     shareOpen = false;
     menuX = event.clientX;
     menuY = event.clientY;
@@ -620,10 +625,12 @@
         </span>
       {/if}
       {#if file.sharingMode}
-        <MenuItem onclick={onCopyLink}>
-          <LinkIcon size={16} />
-          Copy public link
-        </MenuItem>
+        {#if !bulk}
+          <MenuItem onclick={onCopyLink}>
+            <LinkIcon size={16} />
+            Copy public link
+          </MenuItem>
+        {/if}
         <MenuItem onclick={onUnshare}>
           <Link2Off size={16} />
           Stop sharing
@@ -651,12 +658,14 @@
 <ContextMenu bind:open={menuOpen} x={menuX} y={menuY} class="w-44">
   <MenuItem onclick={onDownload}>
     <Download size={16} />
-    Download
+    {bulk ? "Download as zip" : "Download"}
   </MenuItem>
-  <MenuItem onclick={() => beginRename()}>
-    <Pencil size={16} />
-    Rename
-  </MenuItem>
+  {#if !bulk}
+    <MenuItem onclick={() => beginRename()}>
+      <Pencil size={16} />
+      Rename
+    </MenuItem>
+  {/if}
   <MenuItem onclick={onMove}>
     <FolderInput size={16} />
     Move
@@ -702,10 +711,12 @@
           </span>
         {/if}
         {#if file.sharingMode}
-          <MenuItem onclick={onCopyLink}>
-            <LinkIcon size={16} />
-            Copy public link
-          </MenuItem>
+          {#if !bulk}
+            <MenuItem onclick={onCopyLink}>
+              <LinkIcon size={16} />
+              Copy public link
+            </MenuItem>
+          {/if}
           <MenuItem onclick={onUnshare}>
             <Link2Off size={16} />
             Stop sharing

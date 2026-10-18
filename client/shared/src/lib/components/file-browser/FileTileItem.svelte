@@ -45,6 +45,7 @@
     onUnshare,
     onCopyLink,
     onDelete,
+    onPrepareAction,
     thumbnailUrl,
   }: {
     entry: FileView;
@@ -73,9 +74,12 @@
     /** Copy the public link for an already-shared entry. */
     onCopyLink: () => void | Promise<void>;
     onDelete: () => void;
+    /** Prepare action target (e.g. lock multi-select) before opening menus. */
+    onPrepareAction?: () => void;
   } = $props();
 
   const file = $derived(entry.file);
+  const bulk = $derived(selected && multiSelected);
   const large = $derived(size === "large");
   const iconSize = $derived(large ? 44 : 30);
   const fileId = untrack(() => entry.file.id);
@@ -334,13 +338,17 @@
           class="bg-background/90 text-muted-foreground shadow-sm backdrop-blur-sm"
           aria-label="Actions for {name}"
           {...props}
+          onclick={(event) => {
+            onPrepareAction?.();
+            props.onclick?.(event);
+          }}
         >
           <EllipsisVertical size={16} />
         </Button>
       {/snippet}
       <MenuItem onclick={onDownload}>
         <Download size={16} />
-        Download
+        {bulk ? "Download as zip" : "Download"}
       </MenuItem>
       {#if canCopy}
         <MenuItem onclick={onCopy}>
@@ -362,10 +370,12 @@
         </span>
       {/if}
       {#if file.sharingMode}
-        <MenuItem onclick={onCopyLink}>
-          <LinkIcon size={16} />
-          Copy public link
-        </MenuItem>
+        {#if !bulk}
+          <MenuItem onclick={onCopyLink}>
+            <LinkIcon size={16} />
+            Copy public link
+          </MenuItem>
+        {/if}
         <MenuItem onclick={onUnshare}>
           <Link2Off size={16} />
           Stop sharing

@@ -32,6 +32,7 @@
   import { kv, type FilesViewMode } from "../../storage";
   import { UploadHandler } from "../../uploadHandler.svelte";
   import { isPreviewable } from "../../fileKind";
+  import { hasFinePointerHover } from "../../utils";
   import DestinationPicker, {
     type DestinationRequest,
   } from "./DestinationPicker.svelte";
@@ -89,8 +90,8 @@
    * Empty on component load, but after a user clicks a list item
    * always has at least one entry until they have deleted/moved it
    * in which case it becomes empty again.
-   * When this has length >= 2 the multiselect context for deleting
-   * and moving appears.
+   * When this has length >= 2 the multiselect toolbar appears, and
+   * right-click / action menus on a selected item apply to all of them.
    */
   let selected = $state<string[]>([]);
 
@@ -197,6 +198,8 @@
 
   /** Entry being shared, or null when sharing the open directory. */
   let shareTarget = $state<FileEntry | null>(null);
+  /** Extra IDs when sharing a multi-selection (includes `shareTarget.id`). */
+  let shareIds = $state<string[]>([]);
   let shareOpen = $state(false);
   let shareBusy = $state(false);
 
@@ -376,6 +379,7 @@
     shareOpen = false;
     shareBusy = false;
     shareTarget = null;
+    shareIds = [];
 
     if (parent === null) {
       locationEntry = null;
@@ -694,6 +698,7 @@
   /**
    * Selection:
    * - Click: select only this item (unless selectMode, then toggle)
+   * - Fine pointer + click outside selection (no Ctrl/Shift): select only that item, exit selectMode
    * - Ctrl/Cmd+Click: toggle and enter select mode while anything remains selected
    * - Shift+Click: contiguous range from anchor (desktop); enters select mode
    * - Long-press: enter select mode with only this item selected
@@ -725,6 +730,20 @@
         selectMode = true;
         return;
       }
+    }
+
+    // Mouse: plain click outside the current selection leaves select mode.
+    if (
+      selectMode &&
+      !additive &&
+      !range &&
+      hasFinePointerHover() &&
+      !selected.includes(id)
+    ) {
+      selected = [id];
+      selectionAnchor = id;
+      selectMode = false;
+      return;
     }
 
     if (additive || selectMode) {
@@ -793,11 +812,9 @@
       const gone = new Set(ids);
 
       entries = entries.filter((entry) => !gone.has(entry.file.id));
-      selected = selected.filter((id) => !gone.has(id));
-
       pendingDelete = [];
-
       deleteOpen = false;
+      clearSelection();
     } catch (cause) {
       const single =
         ids.length === 1
@@ -818,8 +835,29 @@
     }
   }
 
-  function dragIds(sourceId: string): string[] {
+  /**
+   * IDs acted on by drag or context-menu actions.
+   * If the source is already selected, the whole selection is used.
+   */
+  function actionIds(sourceId: string): string[] {
     return selected.includes(sourceId) ? selected.slice() : [sourceId];
+  }
+
+  function dragIds(sourceId: string): string[] {
+    return actionIds(sourceId);
+  }
+
+  /**
+   * Right-click / action-menu target: keep a multi-selection when the
+   * clicked item is already selected; otherwise select only that item.
+   */
+  function prepareActionTarget(id: string) {
+    if (selected.includes(id)) {
+      return;
+    }
+
+    selected = [id];
+    selectionAnchor = id;
   }
 
   function dragPreview(sourceId: string): {
@@ -935,6 +973,35 @@
     }
   }
 
+  /** One id uses the normal download; several become a single zip. */
+  async function downloadIds(ids: string[]) {
+    if (ids.length === 0) {
+      return;
+    }
+
+    if (ids.length === 1) {
+      const entry = entries.find((item) => item.file.id === ids[0]);
+
+      if (entry) {
+        await download(entry);
+        clearSelection();
+      }
+
+      return;
+    }
+
+    try {
+      await session.client.downloadDir(root.id, ids, "download.zip");
+      clearSelection();
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : `Could not download ${ids.length} items`,
+      );
+    }
+  }
+
   async function downloadCurrent() {
     try {
       if (locationEntry) {
@@ -988,8 +1055,9 @@
     }
   }
 
-  function openShareDialog(entry: FileEntry) {
+  function openShareDialog(entry: FileEntry, ids: string[] = [entry.id]) {
     shareTarget = entry;
+    shareIds = ids.slice();
     shareOpen = true;
   }
 
@@ -999,6 +1067,7 @@
     }
 
     shareTarget = null;
+    shareIds = [locationEntry.id];
     shareOpen = true;
   }
 
@@ -1009,6 +1078,7 @@
 
     shareOpen = false;
     shareTarget = null;
+    shareIds = [];
   }
 
   async function copyLink(entry: FileView, message = "Public link copied") {
@@ -1026,6 +1096,8 @@
     }
 
     const entry = shareSubject;
+    const ids =
+      shareIds.length > 0 ? shareIds.slice() : [entry.id];
     const rootId = root.id;
     const expiresAt = input.shareExpiresAt ?? null;
     const cascading = shareTarget == null;
@@ -1033,24 +1105,33 @@
     shareBusy = true;
 
     try {
-      await session.client.shareFile(rootId, entry.id, {
+      await session.client.shareFiles(rootId, ids, {
         sharingMode: input.sharingMode,
         shareExpiresAt: expiresAt,
       });
 
       if (root.id === rootId) {
-        applyShare(entry.id, input.sharingMode, expiresAt);
+        for (const id of ids) {
+          applyShare(id, input.sharingMode, expiresAt);
+        }
         if (cascading) {
           setListedShare(input.sharingMode, expiresAt);
         }
       }
 
-      await copyLink(
-        { file: entry, metadata: null },
-        `Sharing ${entry.name}`,
-      );
+      if (ids.length === 1) {
+        await copyLink(
+          { file: entry, metadata: null },
+          `Sharing ${entry.name}`,
+        );
+      } else {
+        toastSuccess(`Sharing ${ids.length} items`);
+      }
+
       shareOpen = false;
       shareTarget = null;
+      shareIds = [];
+      clearSelection();
     } catch (cause) {
       toastError(
         cause instanceof TypeError
@@ -1070,24 +1151,34 @@
     }
 
     const entry = shareSubject;
+    const ids =
+      shareIds.length > 0 ? shareIds.slice() : [entry.id];
     const rootId = root.id;
     const cascading = shareTarget == null;
 
     shareBusy = true;
 
     try {
-      await session.client.unshareFile(rootId, entry.id);
+      await session.client.unshareFiles(rootId, ids);
 
       if (root.id === rootId) {
-        applyShare(entry.id, null, null);
+        for (const id of ids) {
+          applyShare(id, null, null);
+        }
         if (cascading) {
           setListedShare(null, null);
         }
       }
 
-      toastSuccess(`Stopped sharing ${entry.name}`);
+      toastSuccess(
+        ids.length === 1
+          ? `Stopped sharing ${entry.name}`
+          : `Stopped sharing ${ids.length} items`,
+      );
       shareOpen = false;
       shareTarget = null;
+      shareIds = [];
+      clearSelection();
     } catch (cause) {
       toastError(
         cause instanceof TypeError
@@ -1600,12 +1691,17 @@
                   onLongSelect={() => longSelectEntry(entry.file.id)}
                   onOpen={() => openDirectory(entry)}
                   onPreview={() => (previewFileId = entry.file.id)}
-                  onDownload={() => download(entry)}
-                  onCopy={() => startCopy([entry.file.id])}
-                  onShare={() => openShareDialog(entry.file)}
-                  onUnshare={() => openShareDialog(entry.file)}
+                  onPrepareAction={() => prepareActionTarget(entry.file.id)}
+                  onDownload={() => downloadIds(actionIds(entry.file.id))}
+                  onCopy={() => startCopy(actionIds(entry.file.id))}
+                  onShare={() =>
+                    openShareDialog(entry.file, actionIds(entry.file.id))
+                  }
+                  onUnshare={() =>
+                    openShareDialog(entry.file, actionIds(entry.file.id))
+                  }
                   onCopyLink={() => copyLink(entry)}
-                  onDelete={() => startDelete([entry.file.id])}
+                  onDelete={() => startDelete(actionIds(entry.file.id))}
                 />
               {:else}
                 <FileListItem
@@ -1623,14 +1719,19 @@
                   onLongSelect={() => longSelectEntry(entry.file.id)}
                   onOpen={() => openDirectory(entry)}
                   onPreview={() => (previewFileId = entry.file.id)}
-                  onDownload={() => download(entry)}
-                  onCopy={() => startCopy([entry.file.id])}
-                  onShare={() => openShareDialog(entry.file)}
-                  onUnshare={() => openShareDialog(entry.file)}
+                  onPrepareAction={() => prepareActionTarget(entry.file.id)}
+                  onDownload={() => downloadIds(actionIds(entry.file.id))}
+                  onCopy={() => startCopy(actionIds(entry.file.id))}
+                  onShare={() =>
+                    openShareDialog(entry.file, actionIds(entry.file.id))
+                  }
+                  onUnshare={() =>
+                    openShareDialog(entry.file, actionIds(entry.file.id))
+                  }
                   onCopyLink={() => copyLink(entry)}
-                  onMove={() => startMove([entry.file.id])}
+                  onMove={() => startMove(actionIds(entry.file.id))}
                   onRename={(name) => renameEntry(entry, name)}
-                  onDelete={() => startDelete([entry.file.id])}
+                  onDelete={() => startDelete(actionIds(entry.file.id))}
                 />
               {/if}
             {/each}

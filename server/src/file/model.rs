@@ -282,6 +282,13 @@ pub struct TrashFiles {
     pub ids: Vec<Uuid>,
 }
 
+/// Live files/directories to include in a streamed zip download.
+#[derive(Debug, Deserialize, ToSchema, Validate)]
+pub struct DownloadFiles {
+    #[validate(length(min = 1, message = "At least 1 file must be provided"))]
+    pub ids: Vec<Uuid>,
+}
+
 /// Live files whose parent should change. `parent` is null to place them in the root.
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -311,13 +318,22 @@ pub struct RenameFile {
     pub name: String,
 }
 
-/// Public share settings applied to a live file and its descendants.
-#[derive(Debug, Deserialize, ToSchema)]
+/// Public share settings applied to live files (and their descendants).
+#[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct ShareFile {
+pub struct ShareFiles {
+    #[validate(length(min = 1, message = "At least 1 file must be provided"))]
+    pub ids: Vec<Uuid>,
     pub sharing_mode: SharingMode,
     /// Omit or null for a share that does not expire.
     pub share_expires_at: Option<DateTime<Utc>>,
+}
+
+/// Live files whose public share should be cleared (including descendants).
+#[derive(Debug, Deserialize, ToSchema, Validate)]
+pub struct UnshareFiles {
+    #[validate(length(min = 1, message = "At least 1 file must be provided"))]
+    pub ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize, Validify, ToSchema)]

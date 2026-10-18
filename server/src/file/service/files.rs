@@ -13,10 +13,10 @@ use crate::{
     file::{
         format::{FileType, TextFormat},
         model::{
-            CopyFiles, FileContentPreview, MAX_ANCESTOR_DEPTH, MoveFiles, PreviewSize, RenameFile,
-            RootView, ShareFile, TrashFiles,
+            CopyFiles, DownloadFiles, FileContentPreview, MAX_ANCESTOR_DEPTH, MoveFiles,
+            PreviewSize, RenameFile, RootView, ShareFiles, TrashFiles, UnshareFiles,
         },
-        tree::FileTree,
+        tree::{FileEntryTree, FileTree},
     },
     user::model::User,
 };
@@ -519,6 +519,60 @@ impl FileService {
         Ok((name, super::zip_directory_stream(tree, blob_paths)))
     }
 
+    /// Zip the given live files/directories into one streamed archive.
+    #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
+    pub async fn download_dir(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        input: DownloadFiles,
+    ) -> Result<(String, super::DownloadBody), AppError> {
+        input.validate()?;
+
+        self.accessible(user, root_id).await?;
+
+        let mut ids = Vec::with_capacity(input.ids.len());
+        let mut selected = HashSet::with_capacity(input.ids.len());
+
+        for id in input.ids {
+            if selected.insert(id) {
+                ids.push(id);
+            }
+        }
+
+        let subtree = self.files.list_with_subtrees(root_id, &ids).await?;
+
+        let entries = subtree
+            .into_iter()
+            .map(|entry| FileEntryTree {
+                query_root: selected.contains(&entry.id),
+                id: entry.id,
+                kind: entry.kind,
+                name: entry.name,
+                parent: entry.parent,
+                file_type: entry.file_type,
+                hash: entry.hash,
+                metadata: entry.metadata,
+            })
+            .collect::<Vec<_>>();
+
+        let blob_paths = super::blob_paths_for(&self.storage, &entries).await?;
+
+        let tree = FileTree {
+            id: Uuid::nil(),
+            name: "download".into(),
+            kind: FileKind::Directory,
+            file_type: None,
+            metadata: None,
+            children: FileTree::from_entries(entries),
+        };
+
+        Ok((
+            "download.zip".into(),
+            super::zip_directory_stream(tree, blob_paths),
+        ))
+    }
+
     /// Serve a generated preview image for a file, when one exists.
     ///
     /// Works for both live and trashed files so trash trees can show thumbnails.
@@ -777,20 +831,17 @@ impl FileService {
         })
     }
 
-    /// Mark a live file (and every descendant, for directories) as publicly shared.
-    #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id, file_id = %id, ?input.sharing_mode), err(Debug))]
-    pub async fn share_file(
+    /// Mark live files (and every descendant, for directories) as publicly shared.
+    #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id, ?input.sharing_mode), err(Debug))]
+    pub async fn share_files(
         &self,
         user: &User,
         root_id: Uuid,
-        id: Uuid,
-        input: ShareFile,
+        input: ShareFiles,
     ) -> Result<(), AppError> {
-        let file = self.readable(user, id).await?;
+        input.validate()?;
 
-        if file.root_id != root_id {
-            return Err(AppError::ResourceMissing("File does not exist".into()));
-        }
+        self.accessible(user, root_id).await?;
 
         if let Some(expires_at) = input.share_expires_at
             && expires_at <= Utc::now()
@@ -800,27 +851,48 @@ impl FileService {
             ));
         }
 
+        let mut ids = Vec::with_capacity(input.ids.len());
+        let mut seen = HashSet::with_capacity(input.ids.len());
+
+        for id in input.ids {
+            if seen.insert(id) {
+                ids.push(id);
+            }
+        }
+
         self.share
-            .set_sharing_subtree(
+            .set_sharing_subtrees(
                 root_id,
-                id,
+                &ids,
                 Some(input.sharing_mode),
                 input.share_expires_at,
             )
             .await
     }
 
-    /// Clear the public share on a live file and every descendant.
-    #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
-    pub async fn unshare_file(&self, user: &User, root_id: Uuid, id: Uuid) -> Result<(), AppError> {
-        let file = self.readable(user, id).await?;
+    /// Clear the public share on live files and every descendant.
+    #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
+    pub async fn unshare_files(
+        &self,
+        user: &User,
+        root_id: Uuid,
+        input: UnshareFiles,
+    ) -> Result<(), AppError> {
+        input.validate()?;
 
-        if file.root_id != root_id {
-            return Err(AppError::ResourceMissing("File does not exist".into()));
+        self.accessible(user, root_id).await?;
+
+        let mut ids = Vec::with_capacity(input.ids.len());
+        let mut seen = HashSet::with_capacity(input.ids.len());
+
+        for id in input.ids {
+            if seen.insert(id) {
+                ids.push(id);
+            }
         }
 
         self.share
-            .set_sharing_subtree(root_id, id, None, None)
+            .set_sharing_subtrees(root_id, &ids, None, None)
             .await
     }
 

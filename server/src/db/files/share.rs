@@ -201,31 +201,52 @@ impl ShareRepository {
         Ok(rows.into_iter().map(FileView::from).collect())
     }
 
-    /// Set share mode and expiry on `id` and every live descendant in `root_id`.
+    /// Set share mode and expiry on every id in `ids` and their live descendants.
     ///
     /// Pass `sharing_mode: None` (and typically `share_expires_at: None`) to clear
-    /// the public share on the whole subtree.
+    /// the public share on each subtree.
+    ///
+    /// `ids` must already be de-duplicated.
     #[instrument(
-        skip(self),
-        fields(root_id = %root_id, file_id = %id, ?sharing_mode, ?share_expires_at),
+        skip(self, ids),
+        fields(root_id = %root_id, ?sharing_mode, ?share_expires_at),
         err(Debug)
     )]
-    pub async fn set_sharing_subtree(
+    pub async fn set_sharing_subtrees(
         &self,
         root_id: Uuid,
-        id: Uuid,
+        ids: &[Uuid],
         sharing_mode: Option<SharingMode>,
         share_expires_at: Option<DateTime<Utc>>,
     ) -> Result<(), AppError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
         let now = Utc::now();
 
-        let result = sqlx::query!(
+        let mut query = QueryBuilder::<Db>::new(
             r#"
             WITH RECURSIVE tree AS (
                 SELECT id
                 FROM files
-                WHERE id = $1
-                  AND root_id = $2
+                WHERE root_id =
+            "#,
+        );
+
+        query.push_bind(root_id);
+        query.push(" AND id IN (");
+
+        {
+            let mut selected = query.separated(", ");
+            for id in ids {
+                selected.push_bind(*id);
+            }
+        }
+
+        query.push(
+            r#"
+                )
                 UNION ALL
                 SELECT child.id
                 FROM files child
@@ -233,23 +254,17 @@ impl ShareRepository {
             )
             UPDATE files
             SET
-                sharing_mode = $3,
-                share_expires_at = $4,
-                updated_at = $5
-            WHERE id IN (SELECT id FROM tree)
+                sharing_mode =
             "#,
-            id,
-            root_id,
-            sharing_mode as Option<SharingMode>,
-            share_expires_at,
-            now
-        )
-        .execute(&self.pool)
-        .await?;
+        );
+        query.push_bind(sharing_mode);
+        query.push(", share_expires_at = ");
+        query.push_bind(share_expires_at);
+        query.push(", updated_at = ");
+        query.push_bind(now);
+        query.push(" WHERE id IN (SELECT id FROM tree)");
 
-        if result.rows_affected() == 0 {
-            return Err(AppError::ResourceMissing("File does not exist".into()));
-        }
+        query.build().execute(&self.pool).await?;
 
         Ok(())
     }

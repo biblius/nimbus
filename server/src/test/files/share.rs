@@ -4,21 +4,24 @@ mod sharing {
     use super::super::{upload_in, user};
     use crate::{
         error::AppError,
-        file::model::{CreateDirectory, FileKind, ShareFile, SharingMode},
+        file::model::{CreateDirectory, FileKind, ShareFiles, SharingMode, UnshareFiles},
         test::{self, TestState},
     };
     use chrono::{Duration, Utc};
     use suitest::before_all;
+    use uuid::Uuid;
 
-    fn share_download() -> ShareFile {
-        ShareFile {
+    fn share_download(id: Uuid) -> ShareFiles {
+        ShareFiles {
+            ids: vec![id],
             sharing_mode: SharingMode::Download,
             share_expires_at: None,
         }
     }
 
-    fn share_view() -> ShareFile {
-        ShareFile {
+    fn share_view(id: Uuid) -> ShareFiles {
+        ShareFiles {
+            ids: vec![id],
             sharing_mode: SharingMode::View,
             share_expires_at: None,
         }
@@ -43,7 +46,7 @@ mod sharing {
         state
             .services
             .files
-            .share_file(&session.user, root, file.id, share_download())
+            .share_files(&session.user, root, share_download(file.id))
             .await
             .unwrap();
 
@@ -72,7 +75,7 @@ mod sharing {
         state
             .services
             .files
-            .share_file(&session.user, root, file.id, share_view())
+            .share_files(&session.user, root, share_view(file.id))
             .await
             .unwrap();
 
@@ -97,7 +100,7 @@ mod sharing {
         state
             .services
             .files
-            .share_file(&session.user, root, file.id, share_download())
+            .share_files(&session.user, root, share_download(file.id))
             .await
             .unwrap();
 
@@ -135,14 +138,20 @@ mod sharing {
         state
             .services
             .files
-            .share_file(&session.user, root, file.id, share_download())
+            .share_files(&session.user, root, share_download(file.id))
             .await
             .unwrap();
 
         state
             .services
             .files
-            .unshare_file(&session.user, root, file.id)
+            .unshare_files(
+                &session.user,
+                root,
+                UnshareFiles {
+                    ids: vec![file.id],
+                },
+            )
             .await
             .unwrap();
 
@@ -201,11 +210,11 @@ mod sharing {
         state
             .services
             .files
-            .share_file(
+            .share_files(
                 &session.user,
                 root,
-                dir.id,
-                ShareFile {
+                ShareFiles {
+                    ids: vec![dir.id],
                     sharing_mode: SharingMode::View,
                     share_expires_at: Some(expires_at),
                 },
@@ -252,7 +261,13 @@ mod sharing {
         state
             .services
             .files
-            .unshare_file(&session.user, root, dir.id)
+            .unshare_files(
+                &session.user,
+                root,
+                UnshareFiles {
+                    ids: vec![dir.id],
+                },
+            )
             .await
             .unwrap();
 
@@ -292,11 +307,11 @@ mod sharing {
         state
             .services
             .files
-            .share_file(
+            .share_files(
                 &session.user,
                 root,
-                dir.id,
-                ShareFile {
+                ShareFiles {
+                    ids: vec![dir.id],
                     sharing_mode: SharingMode::Download,
                     share_expires_at: Some(expires_at),
                 },
@@ -354,7 +369,7 @@ mod sharing {
         let denied = state
             .services
             .files
-            .share_file(&bob.user, root, file.id, share_download())
+            .share_files(&bob.user, root, share_download(file.id))
             .await
             .unwrap_err();
 
