@@ -31,10 +31,12 @@
       }}
       onLogout={logout}
     />
-    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {@render children()}
-    </div>
+    </main>
   </div>
 {:else}
-  <p class="p-8 text-sm text-muted-foreground">Loading…</p>
+  <main>
+    <p class="p-8 text-sm text-muted-foreground">Loading…</p>
+  </main>
 {/if}

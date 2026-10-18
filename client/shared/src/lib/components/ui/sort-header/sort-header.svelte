@@ -51,12 +51,12 @@
     sort.column === column ? sort.direction : undefined,
   );
 
-  const ariaSort = $derived(
+  const ariaLabel = $derived(
     direction === "asc"
-      ? "ascending"
+      ? `${label}, sorted ascending`
       : direction === "desc"
-        ? "descending"
-        : "none",
+        ? `${label}, sorted descending`
+        : `Sort by ${label}`,
   );
 
   function handleClick() {
@@ -65,13 +65,10 @@
   }
 </script>
 
-<div
-  role="columnheader"
-  aria-sort={ariaSort}
-  class={cn("flex h-full min-w-0 items-center", className)}
->
+<div class={cn("flex h-full min-w-0 items-center", className)}>
   <button
     type="button"
+    aria-label={ariaLabel}
     class={cn(
       "inline-flex h-full w-full min-w-0 items-center gap-1 hover:text-foreground",
       direction && "text-foreground",
