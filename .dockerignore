@@ -1,5 +1,16 @@
 target
-client
 data
+preview
 .git
+.env
 **/*.db
+**/node_modules
+**/dist
+client/app/src
+client/app/src-tauri
+client/app/index.html
+client/app/vite.config.ts
+client/app/svelte.config.js
+client/app/tsconfig.json
+*.md
+.npm-logs

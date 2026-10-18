@@ -1,7 +1,6 @@
 use crate::{
     auth::session::Session,
     error::AppError,
-    file::queue::DeletionResult,
     model::{List, PaginationSort},
     router::sse,
     state::AppState,
@@ -17,12 +16,6 @@ use futures::Stream;
 use std::convert::Infallible;
 use uuid::Uuid;
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/admin/users",
-    request_body = CreateUser,
-    responses((status = 201, description = "User and private folder created", body = UserView))
-))]
 pub(crate) async fn create_user(
     _session: Session,
     State(state): State<AppState>,
@@ -32,11 +25,6 @@ pub(crate) async fn create_user(
     Ok((StatusCode::CREATED, Json(user)))
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    get,
-    path = "/admin/users",
-    responses((status = 200, description = "Active users", body = List<UserView>))
-))]
 pub(crate) async fn list_users(
     _session: Session,
     State(state): State<AppState>,
@@ -45,13 +33,6 @@ pub(crate) async fn list_users(
     Ok(Json(state.services.users.list_users(pagination).await?))
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    patch,
-    path = "/admin/users/{id}",
-    params(("id" = Uuid, Path, description = "User id")),
-    request_body = UpdateUser,
-    responses((status = 200, description = "User updated", body = UserView))
-))]
 pub(crate) async fn update_user(
     _session: Session,
     State(state): State<AppState>,
@@ -63,12 +44,6 @@ pub(crate) async fn update_user(
     ))
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    delete,
-    path = "/admin/users/{id}",
-    params(("id" = Uuid, Path, description = "User id")),
-    responses((status = 200, description = "Deletion progress", body = DeletionResult))
-))]
 pub(crate) async fn delete_user(
     _session: Session,
     State(state): State<AppState>,

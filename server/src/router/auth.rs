@@ -31,16 +31,6 @@ use crate::{
     user::model::{UpdateSelf, UserView},
 };
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/login",
-    request_body = LoginCredentials,
-    responses(
-        (status = 200, description = "Session created or OTP verification required", body = LoginResult),
-        (status = 401, description = "Invalid credentials"),
-        (status = 422, description = "Validation error")
-    )
-))]
 pub(crate) async fn credentials_login(
     State(state): State<AppState>,
     RemoteAddress(remote_address): RemoteAddress,
@@ -58,17 +48,6 @@ pub(crate) async fn credentials_login(
     login_response(result, &state).await
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/login/otp",
-    request_body = Otp,
-    responses(
-        (status = 200, description = "Session created", body = LoginResult),
-        (status = 401, description = "Invalid OTP"),
-        (status = 404, description = "Missing, used, or expired login token"),
-        (status = 422, description = "Validation error")
-    )
-))]
 pub(crate) async fn otp_login(
     State(state): State<AppState>,
     RemoteAddress(remote_address): RemoteAddress,
@@ -86,12 +65,6 @@ pub(crate) async fn otp_login(
     login_response(result, &state).await
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/reset",
-    request_body = PasswordResetRequest,
-    responses((status = 204, description = "Reset email queued when the account exists"))
-))]
 pub(crate) async fn start_password_reset(
     State(state): State<AppState>,
     Json(data): Json<PasswordResetRequest>,
@@ -101,13 +74,6 @@ pub(crate) async fn start_password_reset(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/reset/{token}",
-    params(("token" = Uuid, Path, description = "Password-reset token")),
-    request_body = PasswordReset,
-    responses((status = 204, description = "Password reset"))
-))]
 pub(crate) async fn finish_password_reset(
     State(state): State<AppState>,
     Path(token): Path<Uuid>,
@@ -122,21 +88,10 @@ pub(crate) async fn finish_password_reset(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    get,
-    path = "/auth/me",
-    responses((status = 200, description = "Current user", body = UserView))
-))]
 pub(crate) async fn me(session: Session) -> Json<UserView> {
     Json(session.user.into())
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    patch,
-    path = "/auth/me",
-    request_body = UpdateSelf,
-    responses((status = 200, description = "Current user updated", body = UserView))
-))]
 pub(crate) async fn update_me(
     State(state): State<AppState>,
     session: Session,
@@ -151,11 +106,6 @@ pub(crate) async fn update_me(
     ))
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/logout",
-    responses((status = 204, description = "Session invalidated"))
-))]
 pub(crate) async fn logout(
     State(state): State<AppState>,
     session: Session,
@@ -168,13 +118,6 @@ pub(crate) async fn logout(
     ))
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    get,
-    path = "/auth/sessions",
-    responses(
-        (status = 200, description = "Live sessions for the current user", body = Vec<ActiveSessionView>)
-    )
-))]
 pub(crate) async fn list_sessions(
     State(state): State<AppState>,
     session: Session,
@@ -182,11 +125,6 @@ pub(crate) async fn list_sessions(
     Ok(Json(state.services.auth.list_sessions(&session).await?))
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    delete,
-    path = "/auth/sessions",
-    responses((status = 204, description = "All other live sessions expired"))
-))]
 pub(crate) async fn expire_other_sessions(
     State(state): State<AppState>,
     session: Session,
@@ -196,15 +134,6 @@ pub(crate) async fn expire_other_sessions(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    delete,
-    path = "/auth/sessions/{id}",
-    params(("id" = Uuid, Path, description = "Session id to expire")),
-    responses(
-        (status = 204, description = "Session expired"),
-        (status = 404, description = "Session missing or not owned")
-    )
-))]
 pub(crate) async fn expire_session(
     State(state): State<AppState>,
     session: Session,
@@ -247,12 +176,6 @@ fn clear_session_cookie(mut response: Response, config: &HttpConfiguration) -> R
     response
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/password",
-    request_body = PasswordChange,
-    responses((status = 204, description = "Password changed"))
-))]
 pub(crate) async fn change_password(
     State(state): State<AppState>,
     session: Session,
@@ -263,18 +186,6 @@ pub(crate) async fn change_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/otp/setup",
-    responses(
-        (
-            status = 200,
-            description = "TOTP QR code as SVG. Confirmation token is in the X-Otp-Token response header.",
-            content_type = "image/svg+xml",
-            body = String
-        )
-    )
-))]
 pub(crate) async fn start_otp_setup(
     State(state): State<AppState>,
     session: Session,
@@ -303,12 +214,6 @@ pub(crate) async fn start_otp_setup(
     Ok(response)
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/otp/setup/confirm",
-    request_body = Otp,
-    responses((status = 204, description = "TOTP enabled"))
-))]
 pub(crate) async fn finish_otp_setup(
     State(state): State<AppState>,
     session: Session,
@@ -319,16 +224,6 @@ pub(crate) async fn finish_otp_setup(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/otp/disable",
-    request_body = DisableOtp,
-    responses(
-        (status = 204, description = "TOTP disabled"),
-        (status = 401, description = "Invalid OTP"),
-        (status = 422, description = "2FA is not enabled")
-    )
-))]
 pub(crate) async fn disable_otp(
     State(state): State<AppState>,
     session: Session,
@@ -339,11 +234,6 @@ pub(crate) async fn disable_otp(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    get,
-    path = "/auth/passkeys",
-    responses((status = 200, description = "Registered passkeys", body = Vec<UserPasskeyView>))
-))]
 pub(crate) async fn list_passkeys(
     State(state): State<AppState>,
     session: Session,
@@ -351,15 +241,6 @@ pub(crate) async fn list_passkeys(
     Ok(Json(state.services.auth.list_passkeys(&session).await?))
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    delete,
-    path = "/auth/passkeys/{id}",
-    params(("id" = i64, Path, description = "Passkey id to remove")),
-    responses(
-        (status = 204, description = "Passkey removed"),
-        (status = 404, description = "Passkey missing or not owned")
-    )
-))]
 pub(crate) async fn delete_passkey(
     State(state): State<AppState>,
     session: Session,
@@ -392,15 +273,6 @@ pub(crate) async fn finish_passkey_setup(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/login/passkey",
-    request_body = StartPasskeyLogin,
-    responses(
-        (status = 200, description = "Discoverable WebAuthn authentication challenge"),
-        (status = 404, description = "Missing, used, or expired ceremony token")
-    )
-))]
 pub(crate) async fn start_passkey_login(
     State(state): State<AppState>,
     Json(data): Json<StartPasskeyLogin>,
@@ -436,15 +308,6 @@ pub(crate) async fn start_native_passkey_login(
 }
 
 /// Desktop half of native passkey login: exchange the pickup token for a session cookie.
-#[cfg_attr(feature = "openapi", utoipa::path(
-    post,
-    path = "/auth/login/native",
-    request_body = FinishNativeLogin,
-    responses(
-        (status = 200, description = "Session created", body = LoginResult),
-        (status = 404, description = "Pickup not ready, used, or expired"),
-    )
-))]
 pub(crate) async fn finish_native_login(
     State(state): State<AppState>,
     RemoteAddress(remote_address): RemoteAddress,

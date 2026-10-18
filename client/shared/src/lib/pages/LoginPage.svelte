@@ -223,7 +223,7 @@
       });
 
       await session.openExternalUrl(
-        `${challenge.frontendUrl}/login/passkey?token=${encodeURIComponent(challenge.token)}`,
+        `${challenge.nimbusOrigin}/login/passkey?token=${encodeURIComponent(challenge.token)}`,
       );
 
       while (!controller.signal.aborted) {

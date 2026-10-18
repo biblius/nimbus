@@ -13,7 +13,6 @@ pub const SNIFF_LEN: usize = 8192;
 /// `infer::Infer` inside [`FileType::infer`]. Anything that does not map to a variant is
 /// [`FileType::Other`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum FileType {
     App(AppFormat),
@@ -39,7 +38,6 @@ macro_rules! formats {
         }
     ) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
         pub enum $name {
             $(
                 $variant

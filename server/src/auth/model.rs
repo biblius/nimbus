@@ -10,7 +10,6 @@ use webauthn_rs::prelude::{
 
 /// Successful password check: either a real session, or OTP still required.
 #[derive(Debug, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(
     tag = "status",
     rename_all = "camelCase",
@@ -28,7 +27,6 @@ pub enum LoginResult {
 }
 
 #[derive(Debug, Clone, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LoginCredentials {
     #[modify(trim, lowercase)]
     #[validate(length(min = 1, message = "Username cannot be empty"))]
@@ -62,7 +60,6 @@ pub const OTP_TOKEN_HEADER: &str = "x-otp-token";
 
 /// Finish a TOTP login using the pending-login token from [`LoginResult::TwoFactorRequired`].
 #[derive(Debug, Clone, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Otp {
     /// One-shot token from the password login step.
@@ -76,7 +73,6 @@ pub struct Otp {
 
 /// Disable 2FA by proving possession of the current authenticator.
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DisableOtp {
     /// The OTP 6 digit code from the currently registered authenticator.
@@ -86,7 +82,6 @@ pub struct DisableOtp {
 }
 
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PasswordResetRequest {
     #[modify(lowercase, trim)]
     #[validate(email(message = "Not a valid email"))]
@@ -94,7 +89,6 @@ pub struct PasswordResetRequest {
 }
 
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PasswordReset {
     #[validate(length(min = 1, message = "Password cannot be empty"))]
@@ -103,7 +97,6 @@ pub struct PasswordReset {
 }
 
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PasswordChange {
     #[validate(length(min = 1, message = "Password cannot be empty"))]
@@ -139,7 +132,6 @@ pub struct UserPasskey {
 
 /// Client-facing passkey row (no public-key / attestation material).
 #[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UserPasskeyView {
     pub id: i64,
@@ -197,7 +189,6 @@ pub struct FinishPasskeySetup {
 
 /// Start a discoverable (usernameless) passkey login ceremony.
 #[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StartPasskeyLogin {
     /// When set, restart the ceremony for an existing token (native browser bridge).
@@ -224,7 +215,7 @@ pub struct PasskeyLoginChallenge {
     pub challenge: RequestChallengeResponse,
 
     /// Web app origin for native passkey browser handoff.
-    pub frontend_url: String,
+    pub nimbus_origin: String,
 }
 
 /// Finish discoverable passkey login: ceremony token plus the authenticator assertion.
@@ -237,7 +228,6 @@ pub struct FinishPasskeyLogin {
 
 /// Exchange a native passkey pickup token for a real session.
 #[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FinishNativeLogin {
     pub token: Uuid,

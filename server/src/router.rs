@@ -2,8 +2,7 @@ pub mod auth;
 pub mod files;
 pub mod folders;
 pub mod middleware;
-#[cfg(feature = "openapi")]
-pub mod openapi;
+mod web;
 pub mod users;
 
 use axum::{
@@ -219,25 +218,15 @@ pub fn router(state: AppState) -> Router {
             middleware::session_check,
         ));
 
-    let router = Router::new()
+    let api = Router::new()
         .merge(public)
         .merge(session)
-        .nest("/admin", admin)
-        .route("/_health", get(health));
+        .nest("/admin", admin);
 
-    #[cfg(feature = "openapi")]
-    let router = {
-        use utoipa::OpenApi;
-        use utoipa_swagger_ui::SwaggerUi;
-
-        use self::openapi::ApiDoc;
-
-        router.merge(
-            SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()),
-        )
-    };
-
-    router
+    Router::new()
+        .route("/_health", get(health))
+        .nest("/api", api)
+        .fallback(web::static_handler)
         .layer(cors)
         .layer(
             TraceLayer::new_for_http()

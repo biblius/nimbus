@@ -37,7 +37,6 @@ impl User {
 
 /// The view of the currently logged in user.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UserView {
     pub id: Uuid,
@@ -64,7 +63,6 @@ impl From<User> for UserView {
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[sqlx(type_name = "text", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
@@ -103,7 +101,6 @@ search_column! {
 }
 
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUser {
     #[modify(trim, lowercase)]
@@ -126,7 +123,6 @@ pub struct CreateUser {
 /// Fields an admin can change on an existing account.
 /// Omit `password` to keep the current one.
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUser {
     #[modify(trim, lowercase)]
@@ -150,7 +146,6 @@ pub struct UpdateUser {
 /// Omit `password` to keep the current one. Role cannot be changed here.
 /// When setting `password`, `current_password` must match the existing hash.
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSelf {
     #[modify(trim, lowercase)]
@@ -173,7 +168,6 @@ pub struct UpdateSelf {
 }
 
 #[derive(Debug, Deserialize, Validate)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SetQuota {
     /// `0` means the folder is unlimited.
@@ -182,7 +176,6 @@ pub struct SetQuota {
 }
 
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSharedFolder {
     #[validate(length(min = 1, message = "Name cannot be empty"))]
@@ -200,7 +193,6 @@ pub struct CreateSharedFolder {
 /// Name, quota, and members of an existing root.
 /// Members apply only to a shared root. A private root cannot gain members.
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRoot {
     #[validate(length(min = 1, message = "Name cannot be empty"))]
@@ -217,7 +209,6 @@ pub struct UpdateRoot {
 
 /// A user assigned to a shared root.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Member {
     pub id: Uuid,

@@ -3,7 +3,7 @@ use serde::Serialize;
 use sqlx::FromRow;
 use uuid::Uuid;
 
-use crate::user::model::{User, UserView};
+use crate::user::model::User;
 
 #[derive(Debug, Clone, FromRow)]
 pub struct SessionRecord {
@@ -21,10 +21,6 @@ pub struct SessionRecord {
 #[derive(Debug, Clone)]
 pub struct Session {
     pub id: Uuid,
-    pub remote_address: Option<String>,
-    pub user_agent: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
     pub user: User,
 }
@@ -33,10 +29,6 @@ impl Session {
     pub fn from_record(record: SessionRecord, user: User) -> Self {
         Self {
             id: record.id,
-            remote_address: record.remote_address,
-            user_agent: record.user_agent,
-            created_at: record.created_at,
-            updated_at: record.updated_at,
             expires_at: record.expires_at,
             user,
         }
@@ -48,37 +40,8 @@ impl Session {
     }
 }
 
-/// Client-facing session.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct SessionView {
-    pub id: Uuid,
-    pub remote_address: Option<String>,
-    pub user_agent: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>,
-    pub user: UserView,
-}
-
-impl From<Session> for SessionView {
-    fn from(session: Session) -> Self {
-        Self {
-            id: session.id,
-            remote_address: session.remote_address,
-            user_agent: session.user_agent,
-            created_at: session.created_at,
-            updated_at: session.updated_at,
-            expires_at: session.expires_at,
-            user: session.user.into(),
-        }
-    }
-}
-
 /// A live session row for the account settings list (no nested user).
 #[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveSessionView {
     pub id: Uuid,

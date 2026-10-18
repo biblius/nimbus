@@ -82,17 +82,16 @@ pub struct StartArgs {
     #[arg(long)]
     mail_from_name: Option<String>,
 
-    /// Public web URL used in email links.
+    /// Public UI origin (scheme + host + optional port). Used for email links,
+    /// WebAuthn RP origin, and native passkey handoff. Not the `/api` prefix.
     #[arg(long)]
-    frontend_url: Option<String>,
+    nimbus_origin: Option<String>,
 
-    /// WebAuthn relying party ID (effective domain of the origin).
+    /// Optional WebAuthn RP ID override. Defaults to the host of `NIMBUS_ORIGIN`.
+    /// Must be an effective domain of that origin (e.g. `example.com` for
+    /// `https://nimbus.example.com`).
     #[arg(long)]
     webauthn_rp_id: Option<String>,
-
-    /// WebAuthn relying party origin (scheme + host + optional port).
-    #[arg(long)]
-    webauthn_rp_origin: Option<String>,
 }
 
 /// Implement a getter method on [StartArgs], using the `$var` environment variable as a fallback
@@ -231,13 +230,8 @@ arg!(
 arg!(gmail_address, "GMAIL_ADDRESS", default String::new());
 arg!(gmail_app_password, "GMAIL_APP_PASSWORD", default String::new());
 arg!(mail_from_name, "MAIL_FROM_NAME", default "Nimbus".to_string());
-arg!(frontend_url, "FRONTEND_URL", default "http://localhost:5173".to_string());
-arg!(webauthn_rp_id, "WEBAUTHN_RP_ID", default "localhost".to_string());
-arg!(
-    webauthn_rp_origin,
-    "WEBAUTHN_RP_ORIGIN",
-    default "http://localhost:5173".to_string()
-);
+arg!(nimbus_origin, "NIMBUS_ORIGIN", default "http://localhost:5173".to_string());
+arg!(webauthn_rp_id, "WEBAUTHN_RP_ID", default String::new());
 
 /// Shows every resolved setting (CLI argument, environment variable, or default), so the
 /// effective configuration can be logged on startup. Secrets are redacted.
@@ -295,8 +289,16 @@ impl fmt::Display for StartArgs {
             redact(&self.gmail_app_password())
         )?;
         writeln!(f, "mail_from_name: {}", self.mail_from_name())?;
-        writeln!(f, "frontend_url: {}", self.frontend_url())?;
-        writeln!(f, "webauthn_rp_id: {}", self.webauthn_rp_id())?;
-        write!(f, "webauthn_rp_origin: {}", self.webauthn_rp_origin())
+        writeln!(f, "nimbus_origin: {}", self.nimbus_origin())?;
+        let rp_id = self.webauthn_rp_id();
+        write!(
+            f,
+            "webauthn_rp_id: {}",
+            if rp_id.is_empty() {
+                "<from nimbus_origin host>"
+            } else {
+                &rp_id
+            }
+        )
     }
 }

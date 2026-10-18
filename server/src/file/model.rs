@@ -20,7 +20,6 @@ pub(crate) const MAX_ANCESTOR_DEPTH: i64 = 1024;
 /// Application native model. `parent` is null for entries that sit directly in a root.
 /// Corresponds to the `files` / `trashed_files` SQL rows.
 #[derive(Debug, Clone, Serialize, FromRow)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub id: Uuid,
@@ -46,7 +45,6 @@ pub struct FileEntry {
 
 /// How a publicly shared file may be accessed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum SharingMode {
     /// Preview/stream in the UI; attachment download is denied.
@@ -98,7 +96,6 @@ impl<'r> Decode<'r, Db> for SharingMode {
 /// Columns are selected via `LEFT JOIN file_metadata` and flattened onto
 /// [`FileEntry`] / [`FileEntryTree`](crate::file::tree::FileEntryTree).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default, FromRow)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FileMetadata {
     /// Content hash of the 64×64 WebP preview blob.
@@ -146,7 +143,6 @@ impl PreviewSize {
 
 /// A file entry with metadata lifted out for client listings.
 #[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FileView {
     pub file: FileEntry,
@@ -165,7 +161,6 @@ impl From<FileEntry> for FileView {
 
 /// Public share listing row: omits private identifiers (`root_id`, `created_by`, `hash`).
 #[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SharedFileEntry {
     pub id: Uuid,
@@ -182,7 +177,6 @@ pub struct SharedFileEntry {
 
 /// Public share view returned by unauthenticated share routes.
 #[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SharedFileView {
     pub file: SharedFileEntry,
@@ -244,7 +238,6 @@ pub struct FileRef {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum FileKind {
     File,
@@ -291,7 +284,6 @@ impl<'r> Decode<'r, Db> for FileKind {
 
 /// A private or shared root folder. `owner` is set only for a private root.
 #[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Root {
     pub id: Uuid,
@@ -305,7 +297,6 @@ pub struct Root {
 
 /// A root as returned to a client. `owner` is set only for a private root.
 #[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RootView {
     pub id: Uuid,
@@ -325,7 +316,6 @@ pub struct RootAssignment {
 
 /// Where a trashed item should be put back. If `parent` is null, the file is stored directly in root.
 #[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RestoreFile {
     pub parent: Option<Uuid>,
@@ -333,7 +323,6 @@ pub struct RestoreFile {
 
 /// Files to move to the trash in one request.
 #[derive(Debug, Deserialize, Validate)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TrashFiles {
     #[validate(length(min = 1, message = "At least 1 file must be provided"))]
     pub ids: Vec<Uuid>,
@@ -341,7 +330,6 @@ pub struct TrashFiles {
 
 /// Live files/directories to include in a streamed zip download.
 #[derive(Debug, Deserialize, Validate)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DownloadFiles {
     #[validate(length(min = 1, message = "At least 1 file must be provided"))]
     pub ids: Vec<Uuid>,
@@ -349,7 +337,6 @@ pub struct DownloadFiles {
 
 /// Live files whose parent should change. `parent` is null to place them in the root.
 #[derive(Debug, Deserialize, Validate)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct MoveFiles {
     #[validate(length(min = 1, message = "At least 1 file must be provided"))]
@@ -360,7 +347,6 @@ pub struct MoveFiles {
 /// Live files (or directory trees) to copy into another accessible root.
 /// `parent` is null to place the copies directly in the target root.
 #[derive(Debug, Deserialize, Validate)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CopyFiles {
     #[validate(length(min = 1, message = "At least 1 file must be provided"))]
@@ -371,7 +357,6 @@ pub struct CopyFiles {
 
 /// New display name for a live file or directory.
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RenameFile {
     #[modify(trim)]
     #[validate(length(min = 1, message = "File name cannot be empty"))]
@@ -381,7 +366,6 @@ pub struct RenameFile {
 
 /// Public share settings applied to live files (and their descendants).
 #[derive(Debug, Deserialize, Validate)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ShareFiles {
     #[validate(length(min = 1, message = "At least 1 file must be provided"))]
@@ -393,14 +377,12 @@ pub struct ShareFiles {
 
 /// Live files whose public share should be cleared (including descendants).
 #[derive(Debug, Deserialize, Validate)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UnshareFiles {
     #[validate(length(min = 1, message = "At least 1 file must be provided"))]
     pub ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateDirectory {
     /// Used internally, clients do not send this.
     #[serde(skip)]
@@ -416,7 +398,6 @@ pub struct CreateDirectory {
 }
 
 #[derive(Debug, Deserialize, Validify)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateTextFile {
     #[modify(trim)]
     #[validate(length(min = 1, message = "File name cannot be empty"))]

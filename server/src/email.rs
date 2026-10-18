@@ -100,7 +100,7 @@ impl EmailQueue {
 #[derive(Clone)]
 pub struct EmailSender {
     queue: EmailQueueHandle,
-    frontend_url: String,
+    nimbus_origin: String,
     #[cfg(debug_assertions)]
     mailer_configured: bool,
 }
@@ -110,7 +110,7 @@ impl EmailSender {
         address: String,
         app_password: String,
         from_name: String,
-        frontend_url: String,
+        nimbus_origin: String,
     ) -> Self {
         let parsed = if address.is_empty() {
             "nimbus@localhost".parse()
@@ -150,7 +150,7 @@ impl EmailSender {
 
         Self {
             queue,
-            frontend_url: frontend_url.trim_end_matches('/').to_string(),
+            nimbus_origin: nimbus_origin.trim_end_matches('/').to_string(),
             #[cfg(debug_assertions)]
             mailer_configured,
         }
@@ -171,7 +171,7 @@ impl EmailSender {
         username: &str,
         token: Uuid,
     ) -> Result<(), AppError> {
-        let link = format!("{}/reset-password/{token}", self.frontend_url);
+        let link = format!("{}/reset-password/{token}", self.nimbus_origin);
 
         let username = escape(username);
 

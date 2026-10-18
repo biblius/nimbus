@@ -28,7 +28,8 @@ if [[ " $* " == *" -c "* ]]; then
 	unset GMAIL_ADDRESS
 	unset GMAIL_APP_PASSWORD
 	unset MAIL_FROM_NAME
-	unset FRONTEND_URL
+	unset NIMBUS_ORIGIN
+	unset WEBAUTHN_RP_ID
 	echo "Cleaned up environment variables."
 	docker compose down --volumes
 	return 0 2>/dev/null || exit 0

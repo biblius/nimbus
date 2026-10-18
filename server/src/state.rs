@@ -66,13 +66,22 @@ impl AppState {
         #[cfg(feature = "memory-cache")]
         let cache = Cache::new();
 
-        let rp_id = &args.webauthn_rp_id();
-        let rp_origin = &args.webauthn_rp_origin();
+        let nimbus_origin = args.nimbus_origin();
+        let rp_origin = webauthn_rs::prelude::Url::parse(&nimbus_origin).unwrap_or_else(|error| {
+            panic!("invalid NIMBUS_ORIGIN `{nimbus_origin}`: {error}")
+        });
 
-        let rp_origin = webauthn_rs::prelude::Url::parse(rp_origin)
-            .unwrap_or_else(|error| panic!("invalid WEBAUTHN_RP_ORIGIN `{rp_origin}`: {error}"));
+        let rp_id_override = args.webauthn_rp_id();
+        let rp_id = if rp_id_override.is_empty() {
+            rp_origin
+                .host_str()
+                .unwrap_or_else(|| panic!("NIMBUS_ORIGIN `{nimbus_origin}` has no host"))
+                .to_string()
+        } else {
+            rp_id_override
+        };
 
-        let webauthn = webauthn_rs::prelude::WebauthnBuilder::new(rp_id, &rp_origin)
+        let webauthn = webauthn_rs::prelude::WebauthnBuilder::new(&rp_id, &rp_origin)
             .unwrap_or_else(|error| {
                 panic!(
                     "invalid WebAuthn configuration (RP_ID={rp_id}, RP_ORIGIN={rp_origin}): {error}"
@@ -92,7 +101,7 @@ impl AppState {
             args.gmail_address(),
             args.gmail_app_password(),
             args.mail_from_name(),
-            args.frontend_url(),
+            nimbus_origin.clone(),
         );
 
         let repository = Repository::new(db.clone());
@@ -107,7 +116,7 @@ impl AppState {
             login_attempts,
             email.clone(),
             webauthn,
-            args.frontend_url(),
+            nimbus_origin,
         );
 
         let user_service = UserService::new(

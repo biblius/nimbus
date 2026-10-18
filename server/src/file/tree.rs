@@ -9,7 +9,6 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 #[derive(Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FileTree {
     pub id: Uuid,
@@ -19,8 +18,6 @@ pub struct FileTree {
     pub file_type: Option<FileType>,
     /// Preview hashes from `file_metadata`, when present.
     pub metadata: Option<FileMetadata>,
-    /// OpenAPI cannot expand this field; the value is the same `FileTree` shape.
-    #[cfg_attr(feature = "openapi", schema(no_recursion))]
     pub children: Vec<FileTree>,
 }
 

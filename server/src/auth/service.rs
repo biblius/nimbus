@@ -53,7 +53,7 @@ pub struct AuthenticationService {
     login_attempts: LoginAttemptStore,
     email: EmailSender,
     webauthn: Webauthn,
-    frontend_url: String,
+    nimbus_origin: String,
 }
 
 impl AuthenticationService {
@@ -63,7 +63,7 @@ impl AuthenticationService {
         login_attempts: LoginAttemptStore,
         email: EmailSender,
         webauthn: Webauthn,
-        frontend_url: String,
+        nimbus_origin: String,
     ) -> Self {
         Self {
             repo,
@@ -71,7 +71,7 @@ impl AuthenticationService {
             login_attempts,
             email,
             webauthn,
-            frontend_url: frontend_url.trim_end_matches('/').to_string(),
+            nimbus_origin: nimbus_origin.trim_end_matches('/').to_string(),
         }
     }
 
@@ -620,7 +620,7 @@ impl AuthenticationService {
         Ok(PasskeyLoginChallenge {
             token,
             challenge,
-            frontend_url: self.frontend_url.clone(),
+            nimbus_origin: self.nimbus_origin.clone(),
         })
     }
 

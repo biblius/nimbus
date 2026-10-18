@@ -78,7 +78,7 @@ export type PasskeyLoginChallenge = {
   /** webauthn-rs `RequestChallengeResponse` (`{ publicKey: ... }`). */
   challenge: import("./webauthn").RequestChallengeResponse;
   /** Web app origin for native passkey browser handoff. */
-  frontendUrl: string;
+  nimbusOrigin: string;
 };
 
 export type LoginResult =
