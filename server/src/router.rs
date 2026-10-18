@@ -135,10 +135,7 @@ pub fn router(state: AppState) -> Router {
         .route("/roots/{root_id}/users/all", get(folders::list_all_members))
         .route("/roots/{root_id}/usage", get(folders::usage))
         .route("/roots/{root_id}/download", get(files::download_root))
-        .route(
-            "/roots/{root_id}/files/download",
-            get(files::download_dir),
-        )
+        .route("/roots/{root_id}/files/download", get(files::download_dir))
         .route("/roots/{root_id}", get(files::list))
         .route(
             "/roots/{root_id}",
@@ -278,13 +275,36 @@ impl DownloadBody {
                 let file = File::open(&path).await?;
                 let len = file.metadata().await?.len();
 
+                let essence = mime
+                    .split_once(';')
+                    .map(|(type_, _)| type_.trim())
+                    .unwrap_or(mime);
+
+                let safe_mime = match essence {
+                    "text/html"
+                    | "application/xhtml+xml"
+                    | "text/xml"
+                    | "application/xml"
+                    | "text/javascript"
+                    | "application/javascript"
+                    | "text/jscript"
+                    | "text/css"
+                    | "image/svg+xml" => "text/plain; charset=utf-8",
+                    _ => mime,
+                };
+
                 Response::builder()
-                    .header(header::CONTENT_TYPE, mime)
+                    .header(header::CONTENT_TYPE, safe_mime)
                     .header(
                         header::CONTENT_DISPOSITION,
                         content_disposition(&name, false),
                     )
                     .header(header::CONTENT_LENGTH, len.to_string())
+                    .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+                    .header(
+                        header::CONTENT_SECURITY_POLICY,
+                        "default-src 'none'; sandbox",
+                    )
                     .body(Body::from_stream(ReaderStream::new(file)))
                     .map_err(|error| {
                         tracing::error!(%error, "building download response");
@@ -296,6 +316,11 @@ impl DownloadBody {
                 .header(
                     header::CONTENT_DISPOSITION,
                     content_disposition(&name, false),
+                )
+                .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+                .header(
+                    header::CONTENT_SECURITY_POLICY,
+                    "default-src 'none'; sandbox",
                 )
                 .body(Body::from_stream(ReaderStream::new(reader)))
                 .map_err(|error| {
@@ -310,6 +335,10 @@ impl DownloadBody {
 ///
 /// Without a Range header the whole file is returned with `Accept-Ranges: bytes`.
 /// With a Range header the first satisfiable byte range is served as `206`.
+///
+/// Active document types (`text/html`, scripts, …) are rewritten to plain text
+/// and forced to `attachment` so a top-level navigation cannot execute user
+/// content on the API origin. Media and PDF stay inline with their real MIME.
 pub(crate) async fn chunked_download(
     path: &Path,
     name: &str,
@@ -319,16 +348,44 @@ pub(crate) async fn chunked_download(
     let mut file = File::open(path).await?;
     let file_bytes = file.metadata().await?.len();
 
-    // Inline so media elements can play from this URL instead of downloading.
-    let disposition = content_disposition(name, true);
+    // Neutralize browser-executable types; keep media/PDF inline for players.
+    let essence = mime
+        .split_once(';')
+        .map(|(type_, _)| type_.trim())
+        .unwrap_or(mime);
+    let (safe_mime, inline) = match essence {
+        "text/html"
+        | "application/xhtml+xml"
+        | "text/xml"
+        | "application/xml"
+        | "text/javascript"
+        | "application/javascript"
+        | "text/jscript"
+        | "text/css"
+        | "image/svg+xml" => ("text/plain; charset=utf-8", false),
+        m if m.starts_with("image/")
+            || m.starts_with("video/")
+            || m.starts_with("audio/")
+            || m == "application/pdf" =>
+        {
+            (mime, true)
+        }
+        _ => (mime, false),
+    };
+    let disposition = content_disposition(name, inline);
 
     let Some(TypedHeader(range)) = range else {
         return Response::builder()
             .status(StatusCode::OK)
             .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::CONTENT_TYPE, mime)
+            .header(header::CONTENT_TYPE, safe_mime)
             .header(header::CONTENT_DISPOSITION, &disposition)
             .header(header::CONTENT_LENGTH, file_bytes.to_string())
+            .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; sandbox",
+            )
             .body(Body::from_stream(ReaderStream::new(file)))
             .map_err(|error| {
                 tracing::error!(%error, "building chunk download response");
@@ -380,12 +437,17 @@ pub(crate) async fn chunked_download(
     Response::builder()
         .status(StatusCode::PARTIAL_CONTENT)
         .header(header::ACCEPT_RANGES, "bytes")
-        .header(header::CONTENT_TYPE, mime)
+        .header(header::CONTENT_TYPE, safe_mime)
         .header(header::CONTENT_DISPOSITION, &disposition)
         .header(header::CONTENT_LENGTH, len.to_string())
         .header(
             header::CONTENT_RANGE,
             format!("bytes {start}-{end}/{file_bytes}"),
+        )
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'none'; sandbox",
         )
         .body(Body::from_stream(ReaderStream::new(chunk)))
         .map_err(|error| {
@@ -413,4 +475,86 @@ pub(crate) fn content_disposition(name: &str, inline: bool) -> String {
     let kind = if inline { "inline" } else { "attachment" };
 
     format!("{kind}; filename=\"{name}\"")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn html_chunk_response_is_plain_attachment_with_security_headers() {
+        let path =
+            std::env::temp_dir().join(format!("nimbus-safe-mime-{}.html", uuid::Uuid::new_v4()));
+        tokio::fs::write(&path, b"<script>alert(1)</script>")
+            .await
+            .unwrap();
+
+        let response = chunked_download(&path, "evil.html", "text/html", None)
+            .await
+            .unwrap();
+
+        let _ = tokio::fs::remove_file(&path).await;
+
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/plain; charset=utf-8"
+        );
+        let disposition = response
+            .headers()
+            .get(header::CONTENT_DISPOSITION)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            disposition.starts_with("attachment;"),
+            "disposition={disposition}"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::X_CONTENT_TYPE_OPTIONS)
+                .unwrap(),
+            "nosniff"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_SECURITY_POLICY)
+                .unwrap(),
+            "default-src 'none'; sandbox"
+        );
+
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], b"<script>alert(1)</script>");
+    }
+
+    #[tokio::test]
+    async fn png_chunk_response_stays_inline() {
+        let path =
+            std::env::temp_dir().join(format!("nimbus-safe-mime-{}.png", uuid::Uuid::new_v4()));
+        tokio::fs::write(&path, b"\x89PNG").await.unwrap();
+
+        let response = chunked_download(&path, "shot.png", "image/png", None)
+            .await
+            .unwrap();
+
+        let _ = tokio::fs::remove_file(&path).await;
+
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/png"
+        );
+        let disposition = response
+            .headers()
+            .get(header::CONTENT_DISPOSITION)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            disposition.starts_with("inline;"),
+            "disposition={disposition}"
+        );
+    }
 }
