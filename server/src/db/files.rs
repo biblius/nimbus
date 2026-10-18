@@ -6,11 +6,11 @@ use crate::{
 use sqlx::QueryBuilder;
 use uuid::Uuid;
 
-mod files;
+mod live;
 mod share;
 mod trash;
 
-pub use files::FileRepository;
+pub use live::FileRepository;
 pub use share::ShareRepository;
 pub use trash::TrashRepository;
 
