@@ -1,3 +1,4 @@
+#[cfg(feature = "openapi")]
 use utoipa::OpenApi;
 
 use crate::{

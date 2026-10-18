@@ -2,6 +2,7 @@ pub mod auth;
 pub mod files;
 pub mod folders;
 pub mod middleware;
+#[cfg(feature = "openapi")]
 pub mod openapi;
 pub mod users;
 
@@ -31,10 +32,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing::Span;
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
-use self::openapi::ApiDoc;
 use crate::{error::AppError, file::service::DownloadBody, state::AppState};
 
 pub fn router(state: AppState) -> Router {
@@ -221,12 +219,25 @@ pub fn router(state: AppState) -> Router {
             middleware::session_check,
         ));
 
-    Router::new()
+    let router = Router::new()
         .merge(public)
         .merge(session)
         .nest("/admin", admin)
-        .route("/_health", get(health))
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .route("/_health", get(health));
+
+    #[cfg(feature = "openapi")]
+    let router = {
+        use utoipa::OpenApi;
+        use utoipa_swagger_ui::SwaggerUi;
+
+        use self::openapi::ApiDoc;
+
+        router.merge(
+            SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()),
+        )
+    };
+
+    router
         .layer(cors)
         .layer(
             TraceLayer::new_for_http()

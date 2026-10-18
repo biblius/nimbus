@@ -39,11 +39,11 @@ pub struct PreviewQuery {
     size: Option<u32>,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots",
     responses((status = 200, description = "Roots the caller can use", body = Vec<RootView>))
-)]
+))]
 pub(crate) async fn roots(
     State(state): State<AppState>,
     session: Session,
@@ -57,7 +57,7 @@ pub(crate) async fn roots(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}",
     params(
@@ -65,7 +65,7 @@ pub(crate) async fn roots(
         ("parent" = Option<Uuid>, Query, description = "Directory to list. Omit to list the root itself.")
     ),
     responses((status = 200, description = "Children of the directory", body = Vec<FileView>))
-)]
+))]
 pub(crate) async fn list(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -81,12 +81,12 @@ pub(crate) async fn list(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}/tree",
     params(("root_id" = Uuid, Path, description = "Root id")),
     responses((status = 200, description = "Live file tree", body = FileTree))
-)]
+))]
 pub(crate) async fn tree(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -101,12 +101,12 @@ pub(crate) async fn tree(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}/trash",
     params(("root_id" = Uuid, Path, description = "Root id")),
     responses((status = 200, description = "Trash tree", body = FileTree))
-)]
+))]
 pub(crate) async fn trash(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -121,7 +121,7 @@ pub(crate) async fn trash(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     delete,
     path = "/roots/{root_id}/trash/{id}",
     params(
@@ -129,7 +129,7 @@ pub(crate) async fn trash(
         ("id" = Uuid, Path, description = "Trashed file id")
     ),
     responses((status = 200, description = "Deletion progress", body = DeletionResult))
-)]
+))]
 pub(crate) async fn delete_trash(
     Path((root_id, id)): Path<(Uuid, Uuid)>,
     State(state): State<AppState>,
@@ -153,7 +153,7 @@ pub(crate) async fn delete_trash(
     }))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/roots/{root_id}/trash/{id}/restore",
     params(
@@ -162,7 +162,7 @@ pub(crate) async fn delete_trash(
     ),
     request_body = RestoreFile,
     responses((status = 204, description = "File restored"))
-)]
+))]
 pub(crate) async fn restore_file(
     Path((root_id, id)): Path<(Uuid, Uuid)>,
     State(state): State<AppState>,
@@ -178,13 +178,13 @@ pub(crate) async fn restore_file(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/roots/{root_id}/trash/restore",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = RestoreFile,
     responses((status = 204, description = "All trashed files restored"))
-)]
+))]
 pub(crate) async fn restore_all(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -200,12 +200,12 @@ pub(crate) async fn restore_all(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/roots/{root_id}/directories",
     request_body = CreateDirectory,
     responses((status = 201, description = "Directory created", body = FileEntry))
-)]
+))]
 pub(crate) async fn create_directory(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -221,13 +221,13 @@ pub(crate) async fn create_directory(
     Ok((StatusCode::CREATED, Json(entry)))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/roots/{root_id}/files",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = CreateTextFile,
     responses((status = 201, description = "Empty text file created", body = FileEntry))
-)]
+))]
 pub(crate) async fn create_text_file(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -243,12 +243,12 @@ pub(crate) async fn create_text_file(
     Ok((StatusCode::CREATED, Json(entry)))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/roots/{root_id}",
     params(("root_id" = Uuid, Path, description = "Root id")),
     responses((status = 200, description = "Stored files", body = Vec<FileEntry>))
-)]
+))]
 pub(crate) async fn upload(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -338,12 +338,12 @@ pub(crate) async fn upload(
 /// Each `file` field's filename is a relative path
 /// (e.g. `Photos/2024/pic.jpg`, set by webkitdirectory).
 /// Intermediate directories are created as needed.
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/roots/{root_id}/upload/dir",
     params(("root_id" = Uuid, Path, description = "Root id")),
     responses((status = 200, description = "Created directories and stored files", body = Vec<FileEntry>))
-)]
+))]
 pub(crate) async fn upload_dir(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -482,7 +482,7 @@ fn split_relative_path(path: &str) -> Result<(Vec<&str>, &str), AppError> {
     Ok((parts, name))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}/files/{file_id}/ancestors",
     params(
@@ -494,7 +494,7 @@ fn split_relative_path(path: &str) -> Result<(Vec<&str>, &str), AppError> {
         description = "Directories from the root down to this file, including this file",
         body = Vec<FileEntry>
     ))
-)]
+))]
 pub(crate) async fn ancestors(
     State(state): State<AppState>,
     session: Session,
@@ -509,7 +509,7 @@ pub(crate) async fn ancestors(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}/files/{id}",
     params(
@@ -517,7 +517,7 @@ pub(crate) async fn ancestors(
         ("id" = Uuid, Path, description = "File id")
     ),
     responses((status = 200, description = "File metadata", body = FileEntry))
-)]
+))]
 pub(crate) async fn metadata(
     State(state): State<AppState>,
     session: Session,
@@ -532,7 +532,7 @@ pub(crate) async fn metadata(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     put,
     path = "/roots/{root_id}/files/{id}/overwrite",
     params(
@@ -540,7 +540,7 @@ pub(crate) async fn metadata(
         ("id" = Uuid, Path, description = "File id")
     ),
     responses((status = 200, description = "Updated file", body = FileEntry))
-)]
+))]
 pub(crate) async fn overwrite(
     Path((root_id, file_id)): Path<(Uuid, Uuid)>,
     State(state): State<AppState>,
@@ -598,12 +598,12 @@ pub(crate) async fn overwrite(
     Ok(Json(new))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}/download",
     params(("root_id" = Uuid, Path, description = "Root id")),
     responses((status = 200, description = "Zip archive of the root"))
-)]
+))]
 pub(crate) async fn download_root(
     State(state): State<AppState>,
     session: Session,
@@ -624,7 +624,7 @@ pub struct DownloadFilesQuery {
     ids: String,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}/files/download",
     params(
@@ -632,7 +632,7 @@ pub struct DownloadFilesQuery {
         ("ids" = String, Query, description = "Comma-separated live file ids to include in the zip")
     ),
     responses((status = 200, description = "Zip archive of the selected files"))
-)]
+))]
 pub(crate) async fn download_dir(
     State(state): State<AppState>,
     session: Session,
@@ -656,7 +656,7 @@ pub(crate) async fn download_dir(
     body.into_response(name).await
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}/files/{id}/blob/download",
     params(
@@ -664,7 +664,7 @@ pub(crate) async fn download_dir(
         ("id" = Uuid, Path, description = "File id")
     ),
     responses((status = 200, description = "Full file bytes or zip archive for directories"))
-)]
+))]
 pub(crate) async fn download(
     State(state): State<AppState>,
     session: Session,
@@ -679,7 +679,7 @@ pub(crate) async fn download(
     body.into_response(name).await
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}/files/{id}/blob/chunk",
     params(
@@ -690,7 +690,7 @@ pub(crate) async fn download(
         (status = 200, description = "Full file bytes (when no Range header)"),
         (status = 206, description = "Partial content for Range requests"),
     )
-)]
+))]
 pub(crate) async fn download_chunk(
     State(state): State<AppState>,
     session: Session,
@@ -706,7 +706,7 @@ pub(crate) async fn download_chunk(
     chunked_download(&path, &name, mime, range).await
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/roots/{root_id}/files/{id}/preview",
     params(
@@ -715,7 +715,7 @@ pub(crate) async fn download_chunk(
         ("size" = Option<u32>, Query, description = "Preview edge length: 64 (default) or 256")
     ),
     responses((status = 200, description = "Preview image bytes"))
-)]
+))]
 pub(crate) async fn preview(
     State(state): State<AppState>,
     session: Session,
@@ -740,7 +740,7 @@ pub(crate) async fn preview(
         })
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     patch,
     path = "/roots/{root_id}/files/{id}",
     params(
@@ -749,7 +749,7 @@ pub(crate) async fn preview(
     ),
     request_body = RenameFile,
     responses((status = 204, description = "File renamed"))
-)]
+))]
 pub(crate) async fn rename_file(
     Path((root_id, id)): Path<(Uuid, Uuid)>,
     State(state): State<AppState>,
@@ -764,13 +764,13 @@ pub(crate) async fn rename_file(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/roots/{root_id}/move",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = MoveFiles,
     responses((status = 204, description = "Files moved"))
-)]
+))]
 pub(crate) async fn move_files(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -785,13 +785,13 @@ pub(crate) async fn move_files(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/roots/{root_id}/copy",
     params(("root_id" = Uuid, Path, description = "Source root id")),
     request_body = CopyFiles,
     responses((status = 204, description = "Files copied"))
-)]
+))]
 pub(crate) async fn copy_files(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -806,7 +806,7 @@ pub(crate) async fn copy_files(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     delete,
     path = "/roots/{root_id}/files/{id}",
     params(
@@ -814,7 +814,7 @@ pub(crate) async fn copy_files(
         ("id" = Uuid, Path, description = "File id")
     ),
     responses((status = 204, description = "File moved to trash"))
-)]
+))]
 pub(crate) async fn delete_file(
     State(state): State<AppState>,
     session: Session,
@@ -824,13 +824,13 @@ pub(crate) async fn delete_file(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     delete,
     path = "/roots/{root_id}/files",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = TrashFiles,
     responses((status = 204, description = "Files moved to trash"))
-)]
+))]
 pub(crate) async fn delete_files(
     State(state): State<AppState>,
     session: Session,
@@ -845,12 +845,12 @@ pub(crate) async fn delete_files(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/files/shared/{file_id}",
     params(("file_id" = Uuid, Path, description = "Shared file id")),
     responses((status = 200, description = "Shared file entry", body = SharedFileView))
-)]
+))]
 pub(crate) async fn shared_file(
     State(state): State<AppState>,
     Path(file_id): Path<Uuid>,
@@ -858,12 +858,12 @@ pub(crate) async fn shared_file(
     Ok(Json(state.services.share.get(file_id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/files/shared/{file_id}/children",
     params(("file_id" = Uuid, Path, description = "Shared directory id")),
     responses((status = 200, description = "Shared directory children", body = Vec<SharedFileView>))
-)]
+))]
 pub(crate) async fn shared_children(
     State(state): State<AppState>,
     Path(file_id): Path<Uuid>,
@@ -871,12 +871,12 @@ pub(crate) async fn shared_children(
     Ok(Json(state.services.share.list(file_id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/files/shared/{file_id}/blob/download",
     params(("file_id" = Uuid, Path, description = "Shared file id")),
     responses((status = 200, description = "Full file bytes"))
-)]
+))]
 pub(crate) async fn shared_download(
     State(state): State<AppState>,
     Path(file_id): Path<Uuid>,
@@ -886,7 +886,7 @@ pub(crate) async fn shared_download(
     body.into_response(name).await
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/files/shared/{file_id}/blob/chunk",
     params(("file_id" = Uuid, Path, description = "Shared file id")),
@@ -894,7 +894,7 @@ pub(crate) async fn shared_download(
         (status = 200, description = "Full file bytes (when no Range header)"),
         (status = 206, description = "Partial content for Range requests"),
     )
-)]
+))]
 pub(crate) async fn shared_download_chunk(
     State(state): State<AppState>,
     Path(file_id): Path<Uuid>,
@@ -905,7 +905,7 @@ pub(crate) async fn shared_download_chunk(
     chunked_download(&path, &entry.name, mime, range).await
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     get,
     path = "/files/shared/{file_id}/preview",
     params(
@@ -913,7 +913,7 @@ pub(crate) async fn shared_download_chunk(
         ("size" = Option<u32>, Query, description = "Preview edge length: 64 (default) or 256")
     ),
     responses((status = 200, description = "Preview image bytes"))
-)]
+))]
 pub(crate) async fn shared_preview(
     State(state): State<AppState>,
     Path(file_id): Path<Uuid>,
@@ -933,13 +933,13 @@ pub(crate) async fn shared_preview(
         })
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/roots/{root_id}/files/share",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = ShareFiles,
     responses((status = 204, description = "Files shared publicly"))
-)]
+))]
 pub(crate) async fn share_files(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -955,13 +955,13 @@ pub(crate) async fn share_files(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "openapi", utoipa::path(
     delete,
     path = "/roots/{root_id}/files/share",
     params(("root_id" = Uuid, Path, description = "Root id")),
     request_body = UnshareFiles,
     responses((status = 204, description = "Public shares removed"))
-)]
+))]
 pub(crate) async fn unshare_files(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,

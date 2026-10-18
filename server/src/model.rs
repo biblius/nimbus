@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
-use utoipa::ToSchema;
 use validify::{Validate, ValidationError, field_err};
 
 /// Used to obtain paginated lists with a total number of items in
 /// the tables.
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(bound = "T: utoipa::ToSchema"))]
 #[serde(rename_all = "camelCase")]
 pub struct List<T> {
     pub total: usize,
@@ -33,7 +34,8 @@ impl<T> std::iter::IntoIterator for List<T> {
 /// `page` defaults to 1 (which results in offset 0).
 /// `per_page` defaults to 10.
 #[serde_as]
-#[derive(Debug, Clone, Copy, Deserialize, Validate, utoipa::ToSchema, utoipa::IntoParams)]
+#[derive(Debug, Clone, Copy, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema, utoipa::IntoParams))]
 #[serde(rename_all = "camelCase")]
 pub struct Pagination {
     /// The limit.
@@ -72,9 +74,14 @@ impl Default for Pagination {
 }
 
 /// Used to paginate queries and sort the rows.
-#[derive(Debug, Clone, Deserialize, Validate, ToSchema, utoipa::IntoParams)]
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(
+    feature = "openapi",
+    schema(bound = "Srt: utoipa::ToSchema, Srch: utoipa::ToSchema")
+)]
 #[serde(rename_all = "camelCase")]
-pub struct PaginationSort<Srt: ToSchema, Srch: ToSchema = ()> {
+pub struct PaginationSort<Srt, Srch = ()> {
     /// See [Pagination].
     #[validate]
     #[serde(flatten)]
@@ -91,7 +98,7 @@ pub struct PaginationSort<Srt: ToSchema, Srch: ToSchema = ()> {
     pub search: Option<Search<Srch>>,
 }
 
-impl<Srt: ToSchema, Srch: ToSchema> PaginationSort<Srt, Srch> {
+impl<Srt, Srch> PaginationSort<Srt, Srch> {
     /// See [Pagination::to_limit_offset].
     pub fn limit_offset(&self) -> (i64, i64) {
         self.pagination
@@ -100,7 +107,7 @@ impl<Srt: ToSchema, Srch: ToSchema> PaginationSort<Srt, Srch> {
     }
 }
 
-impl<Srt: ToSchema + ToSortColumn, Srch: ToSchema> PaginationSort<Srt, Srch> {
+impl<Srt: ToSortColumn, Srch> PaginationSort<Srt, Srch> {
     /// Returns a tuple whose first element is the sort column and
     /// second the sort direction ASC/DESC.
     pub fn sort(&self) -> (&str, &str) {
@@ -111,7 +118,7 @@ impl<Srt: ToSchema + ToSortColumn, Srch: ToSchema> PaginationSort<Srt, Srch> {
     }
 }
 
-impl<Srt: ToSchema, Srch: ToSchema> Default for PaginationSort<Srt, Srch> {
+impl<Srt, Srch> Default for PaginationSort<Srt, Srch> {
     fn default() -> Self {
         Self {
             pagination: Some(Pagination::default()),
@@ -122,7 +129,9 @@ impl<Srt: ToSchema, Srch: ToSchema> Default for PaginationSort<Srt, Srch> {
 }
 
 /// Struct used for search functionality when querying various models.
-#[derive(Debug, Clone, Validate, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Validate, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(bound = "T: utoipa::ToSchema"))]
 #[serde(rename_all = "camelCase")]
 pub struct Sort<T> {
     #[serde(rename = "sortColumn", alias = "sort.by", alias = "sort.column")]
@@ -154,7 +163,8 @@ impl Default for Sort<DefaultSort> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum SortDirection {
     #[serde(rename = "asc")]
     Asc,
@@ -172,7 +182,9 @@ impl SortDirection {
 }
 
 /// Struct used for search functionality when querying various models.
-#[derive(Debug, Clone, Validate, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Validate, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(bound = "T: utoipa::ToSchema"))]
 #[serde(rename_all = "camelCase")]
 pub struct Search<T> {
     #[validate(length(max = 255, message = "Search value too long"))]
@@ -216,7 +228,8 @@ pub trait ToSortColumn {
 #[macro_export]
 macro_rules! sort_column {
     ($name:ident, $($variant:ident => $column:literal),+ $(,)?) => {
-        #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+        #[derive(Debug, serde::Deserialize)]
+        #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
         #[cfg_attr(test, derive(Clone))]
         #[serde(rename_all = "camelCase")]
         pub enum $name {
@@ -237,7 +250,8 @@ macro_rules! sort_column {
 #[macro_export]
 macro_rules! search_column {
     ($name:ident, $($variant:ident => $column:literal),+ $(,)?) => {
-        #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+        #[derive(Debug, serde::Deserialize)]
+        #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
         #[cfg_attr(test, derive(Clone))]
         #[serde(rename_all = "camelCase")]
         pub enum $name {

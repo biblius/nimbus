@@ -5,11 +5,15 @@ edition = "2024"
 publish = false
 
 [features]
-default = ["postgres", "valkey"]
+# `openapi` is on by default for local/dev (`cargo run` / `cargo check`).
+# Production/release builds must omit it, e.g.:
+#   cargo build --release --no-default-features --features postgres,valkey
+default = ["postgres", "valkey", "openapi"]
 postgres = ["sqlx/postgres", "sqlx/tls-rustls-aws-lc-rs"]
 sqlite = ["sqlx/sqlite"]
 valkey = ["dep:deadpool-redis"]
 memory-cache = []
+openapi = ["dep:utoipa", "dep:utoipa-swagger-ui"]
 
 [dependencies]
 tokio = { version = "1.53.3", features = [
@@ -30,8 +34,6 @@ tracing-error = "0.2.1"
 axum = { version = "0.8.9", features = ["multipart", "query", "macros"] }
 axum-extra = { version = "0.12.6", features = ["cookie", "typed-header"] }
 tower-http = { version = "0.7.1", features = ["trace", "cors"] }
-utoipa = { version = "5.5.0", features = ["axum_extras", "uuid", "chrono"] }
-utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 validify = "2.0.0"
@@ -75,6 +77,10 @@ async_zip = { version = "0.0.19", default-features = false, features = [
   "tokio",
   "deflate",
 ] }
+# OpenAPI / Swagger UI — only compiled when the `openapi` feature is enabled
+# (default for debug; stripped from release Docker builds).
+utoipa = { version = "5.5.0", optional = true, features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "9.0.2", optional = true, features = ["axum"] }
 
 [dev-dependencies]
 suitest = "0.1.4"

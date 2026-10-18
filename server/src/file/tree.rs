@@ -6,10 +6,10 @@ use crate::file::{
 };
 use serde::Serialize;
 use sqlx::FromRow;
-use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FileTree {
     pub id: Uuid,
@@ -20,7 +20,7 @@ pub struct FileTree {
     /// Preview hashes from `file_metadata`, when present.
     pub metadata: Option<FileMetadata>,
     /// OpenAPI cannot expand this field; the value is the same `FileTree` shape.
-    #[schema(no_recursion)]
+    #[cfg_attr(feature = "openapi", schema(no_recursion))]
     pub children: Vec<FileTree>,
 }
 

@@ -1,7 +1,6 @@
 use serde::Serialize;
 use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError};
 use std::sync::OnceLock;
-use utoipa::ToSchema;
 
 use crate::db::Db;
 
@@ -13,7 +12,8 @@ pub const SNIFF_LEN: usize = 8192;
 /// Built-in variants are the types `infer` recognizes. Extra byte matchers are registered on the
 /// `infer::Infer` inside [`FileType::infer`]. Anything that does not map to a variant is
 /// [`FileType::Other`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum FileType {
     App(AppFormat),
@@ -38,7 +38,8 @@ macro_rules! formats {
             $(,)?
         }
     ) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
         pub enum $name {
             $(
                 $variant

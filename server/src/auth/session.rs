@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::FromRow;
-use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::user::model::{User, UserView};
@@ -50,7 +49,8 @@ impl Session {
 }
 
 /// Client-facing session.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SessionView {
     pub id: Uuid,
@@ -77,7 +77,8 @@ impl From<Session> for SessionView {
 }
 
 /// A live session row for the account settings list (no nested user).
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveSessionView {
     pub id: Uuid,

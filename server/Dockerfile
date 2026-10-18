@@ -3,7 +3,7 @@ FROM rust:1.98-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY server ./server
-RUN cargo build --release -p nimbus-server --features postgres,valkey
+RUN cargo build --release -p nimbus-server --no-default-features --features postgres,valkey
 
 FROM debian:bookworm-slim
 

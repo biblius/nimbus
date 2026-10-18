@@ -17,11 +17,11 @@ use tokio::{
     time::{MissedTickBehavior, interval},
 };
 use tracing::instrument;
-use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// One file the worker finished attempting.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeletionResult {
     pub request_id: Uuid,
