@@ -3,7 +3,7 @@ use thotp::encoding::data_encoding::BASE32;
 use crate::error::{AppError, AuthFailure};
 
 pub fn verify_otp(secret: &[u8], code: &str) -> Result<(), AppError> {
-    let (result, drift) = match thotp::verify_totp(code, secret, 0) {
+    let (result, _drift) = match thotp::verify_totp(code, secret, 0) {
         Ok((result, drift)) => (result, drift),
         Err(error) => {
             tracing::error!(%error, "error verifying TOTP");
@@ -12,7 +12,7 @@ pub fn verify_otp(secret: &[u8], code: &str) -> Result<(), AppError> {
     };
 
     #[cfg(debug_assertions)]
-    tracing::debug!(%result, %drift, "validated OTP");
+    tracing::debug!(%result, %_drift, "validated OTP");
 
     if !result {
         return Err(AppError::Auth(AuthFailure::InvalidCredentials));
