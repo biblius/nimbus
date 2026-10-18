@@ -88,6 +88,11 @@ export type LoginResult =
       token: string;
     };
 
+/** `AuthFailure::LoginBackoff` payload inside an `ErrorBody`. */
+export type LoginBackoffBody = {
+  unlockAt: string;
+};
+
 export type Root = {
   id: string;
   name: string;

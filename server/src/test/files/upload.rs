@@ -232,7 +232,10 @@ mod upload {
             .await
             .unwrap();
         assert_eq!(listed.len(), 2);
-        let names: Vec<_> = listed.iter().map(|entry| entry.file.name.as_str()).collect();
+        let names: Vec<_> = listed
+            .iter()
+            .map(|entry| entry.file.name.as_str())
+            .collect();
         assert!(names.contains(&"a.txt"));
         assert!(names.contains(&"b.txt"));
     }

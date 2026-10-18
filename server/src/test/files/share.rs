@@ -147,13 +147,7 @@ mod sharing {
         state
             .services
             .files
-            .unshare_files(
-                &session.user,
-                root,
-                UnshareFiles {
-                    ids: vec![file.id],
-                },
-            )
+            .unshare_files(&session.user, root, UnshareFiles { ids: vec![file.id] })
             .await
             .unwrap();
 
@@ -263,13 +257,7 @@ mod sharing {
         state
             .services
             .files
-            .unshare_files(
-                &session.user,
-                root,
-                UnshareFiles {
-                    ids: vec![dir.id],
-                },
-            )
+            .unshare_files(&session.user, root, UnshareFiles { ids: vec![dir.id] })
             .await
             .unwrap();
 

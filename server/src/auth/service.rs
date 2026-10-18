@@ -1,5 +1,6 @@
 use super::{
     crypto::{decode_otp_secret, hash_password, verify_otp, verify_password},
+    login_attempt::LoginAttemptStore,
     model::{
         DisableOtp, FinishPasskeyLogin, FinishPasskeySetup, GeneratedOtp, LoginCredentials,
         LoginResult, Otp, PasskeyLoginChallenge, PasskeySetupChallenge, PasswordChange,
@@ -49,6 +50,7 @@ struct PasskeyLoginCeremony {
 pub struct AuthenticationService {
     repo: Repository,
     tokens: TokenStore,
+    login_attempts: LoginAttemptStore,
     email: EmailSender,
     webauthn: Webauthn,
     frontend_url: String,
@@ -58,6 +60,7 @@ impl AuthenticationService {
     pub fn new(
         repo: Repository,
         tokens: TokenStore,
+        login_attempts: LoginAttemptStore,
         email: EmailSender,
         webauthn: Webauthn,
         frontend_url: String,
@@ -65,6 +68,7 @@ impl AuthenticationService {
         Self {
             repo,
             tokens,
+            login_attempts,
             email,
             webauthn,
             frontend_url: frontend_url.trim_end_matches('/').to_string(),
@@ -75,6 +79,10 @@ impl AuthenticationService {
     ///
     /// No session is created until login actually succeeds.
     /// Users with 2FA enabled get [`LoginResult::TwoFactorRequired`].
+    ///
+    /// Failed attempts are counted per username. Every 5th failure sets a
+    /// backoff of `(attempts / 10) * 10` minutes. A successful login clears
+    /// both the attempt counter and any backoff.
     #[instrument(skip(self, credentials), fields(username = %credentials.username), err(Debug))]
     pub async fn login(
         &self,
@@ -84,15 +92,34 @@ impl AuthenticationService {
     ) -> Result<LoginResult, AppError> {
         credentials.validify()?;
 
-        let user = self
+        self.login_attempts
+            .ensure_allowed(&credentials.username)
+            .await?;
+
+        let user = match self
             .repo
             .users
             .get_by_username(&credentials.username)
             .await?
-            .ok_or(AppError::Auth(AuthFailure::InvalidCredentials))?;
+        {
+            Some(user) => user,
+            None => {
+                self.login_attempts
+                    .record_failure(&credentials.username)
+                    .await?;
+                return Err(AppError::Auth(AuthFailure::InvalidCredentials));
+            }
+        };
 
-        self.validate_password(&user, &credentials.password)?;
+        if !verify_password(&credentials.password, &user.password) {
+            self.login_attempts
+                .record_failure(&credentials.username)
+                .await?;
+            return Err(AppError::Auth(AuthFailure::InvalidCredentials));
+        }
 
+        // 2FA still required: keep attempt state so OTP failures continue the
+        // same counter. Clear only when a session is actually created.
         if user
             .otp_secret
             .as_deref()
@@ -117,6 +144,8 @@ impl AuthenticationService {
             });
         }
 
+        self.login_attempts.clear(&credentials.username).await?;
+
         let session = self
             .create_session(
                 user,
@@ -139,6 +168,10 @@ impl AuthenticationService {
     }
 
     /// Finish a TOTP login using the pending-login token from [`Self::login`].
+    ///
+    /// Wrong codes use the same per-username attempt / backoff counters as
+    /// password login. The pending token is kept until verification succeeds
+    /// so retries can accumulate toward lockout.
     #[instrument(skip(self, otp), err(Debug))]
     pub async fn login_with_otp(
         &self,
@@ -150,7 +183,7 @@ impl AuthenticationService {
 
         let pending: PendingLogin = self
             .tokens
-            .consume(OneShotToken::PendingLogin, otp.token)
+            .get(OneShotToken::PendingLogin, otp.token)
             .await?;
 
         let user = self
@@ -160,13 +193,25 @@ impl AuthenticationService {
             .await
             .map_err(|_| AppError::Auth(AuthFailure::InvalidCredentials))?;
 
+        self.login_attempts.ensure_allowed(&user.username).await?;
+
         let encoded = user
             .otp_secret
             .as_deref()
             .filter(|secret| !secret.is_empty())
             .ok_or(AppError::Auth(AuthFailure::InvalidCredentials))?;
 
-        verify_otp(&decode_otp_secret(encoded)?, &otp.otp_code)?;
+        if verify_otp(&decode_otp_secret(encoded)?, &otp.otp_code).is_err() {
+            self.login_attempts.record_failure(&user.username).await?;
+            return Err(AppError::Auth(AuthFailure::InvalidCredentials));
+        }
+
+        let pending: PendingLogin = self
+            .tokens
+            .consume(OneShotToken::PendingLogin, otp.token)
+            .await?;
+
+        self.login_attempts.clear(&user.username).await?;
 
         let session = self
             .create_session(

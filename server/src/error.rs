@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 /// HTTP error body matching the cerebro API shape.
@@ -19,11 +20,18 @@ pub enum AuthFailure {
     SessionCookieNotFound,
     SessionNotFound,
     InvalidCredentials,
+    /// Too many failed password logins; retries allowed after `unlock_at`.
+    LoginBackoff { unlock_at: DateTime<Utc> },
 }
 
 impl std::fmt::Display for AuthFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            Self::SessionCookieNotFound => write!(f, "SessionCookieNotFound"),
+            Self::SessionNotFound => write!(f, "SessionNotFound"),
+            Self::InvalidCredentials => write!(f, "InvalidCredentials"),
+            Self::LoginBackoff { .. } => write!(f, "LoginBackoff"),
+        }
     }
 }
 
@@ -77,6 +85,11 @@ impl AppError {
 
     fn into_body(self) -> ErrorBody {
         match self {
+            AppError::Auth(AuthFailure::LoginBackoff { unlock_at }) => ErrorBody {
+                message: Some("Too many failed login attempts".into()),
+                code: 1,
+                body: Some(serde_json::json!({ "unlockAt": unlock_at })),
+            },
             AppError::Auth(cause) => ErrorBody {
                 message: Some(cause.to_string()),
                 code: 1,

@@ -4,7 +4,7 @@ use tracing_error::ErrorLayer;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt};
 
 use crate::{
-    auth::{service::AuthenticationService, token::TokenStore},
+    auth::{login_attempt::LoginAttemptStore, service::AuthenticationService, token::TokenStore},
     cache::Cache,
     config::StartArgs,
     db::{self, Repository, Transactor},
@@ -96,13 +96,15 @@ impl AppState {
         );
 
         let repository = Repository::new(db.clone());
-        let tokens = TokenStore::new(cache);
+        let tokens = TokenStore::new(cache.clone());
+        let login_attempts = LoginAttemptStore::new(cache);
 
         let transactor = Transactor::new(db);
 
         let auth = AuthenticationService::new(
             repository.clone(),
             tokens,
+            login_attempts,
             email.clone(),
             webauthn,
             args.frontend_url(),

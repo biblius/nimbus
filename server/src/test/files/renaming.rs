@@ -107,9 +107,7 @@ mod renaming {
                 &session.user,
                 root,
                 file.id,
-                RenameFile {
-                    name: "   ".into(),
-                },
+                RenameFile { name: "   ".into() },
             )
             .await
             .unwrap_err();

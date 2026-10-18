@@ -27,7 +27,7 @@ pub enum LoginResult {
     },
 }
 
-#[derive(Debug, Deserialize, Validify, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Validify, ToSchema)]
 pub struct LoginCredentials {
     #[modify(trim, lowercase)]
     #[validate(length(min = 1, message = "Username cannot be empty"))]
@@ -60,7 +60,7 @@ pub struct GeneratedOtp {
 pub const OTP_TOKEN_HEADER: &str = "x-otp-token";
 
 /// Finish a TOTP login using the pending-login token from [`LoginResult::TwoFactorRequired`].
-#[derive(Debug, Deserialize, Validify, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Otp {
     /// One-shot token from the password login step.

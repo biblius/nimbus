@@ -14,7 +14,7 @@ mod smoke;
 mod users;
 
 use crate::{
-    auth::{service::AuthenticationService, token::TokenStore},
+    auth::{login_attempt::LoginAttemptStore, service::AuthenticationService, token::TokenStore},
     cache::Cache,
     db::{self, DbPool, Repository, Transactor},
     email::EmailSender,
@@ -209,7 +209,8 @@ async fn build_services(
 
     let auth = AuthenticationService::new(
         repository.clone(),
-        TokenStore::new(cache),
+        TokenStore::new(cache.clone()),
+        LoginAttemptStore::new(cache.clone()),
         email.clone(),
         webauthn,
         "http://localhost:5173".into(),

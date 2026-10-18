@@ -1,8 +1,14 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { ArrowLeft, KeyRound } from "@lucide/svelte";
-  import { ApiError, ValidationError } from "../api";
+  import { onDestroy, onMount } from "svelte";
+  import { ArrowLeft, KeyRound, ShieldAlert } from "@lucide/svelte";
+  import {
+    ApiError,
+    ValidationError,
+    isLoginBackoff,
+    loginBackoffUnlockAt,
+  } from "../api";
   import { toastError } from "../toast";
+  import Banner from "../components/ui/banner/banner.svelte";
   import Button from "../components/ui/button/button.svelte";
   import Card from "../components/ui/card/card.svelte";
   import Checkbox from "../components/ui/checkbox/checkbox.svelte";
@@ -26,6 +32,17 @@
   let draft = $state(session.endpoint ?? "");
   let serverExpanded = $state(session.endpoint == null);
   let passkeyAbort: AbortController | null = null;
+  /** When set, password login is locked until this instant. */
+  let loginLockedUntil = $state<Date | null>(null);
+  let unlockTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const loginLocked = $derived(loginLockedUntil !== null);
+
+  const lockMessage = $derived(
+    loginLockedUntil
+      ? `Too many failed attempts. Try again ${formatUnlockRelative(loginLockedUntil)} (${loginLockedUntil.toLocaleString()}).`
+      : null,
+  );
 
   onMount(async () => {
     if (session.native && !session.endpoint) {
@@ -41,6 +58,54 @@
       checking = false;
     }
   });
+
+  onDestroy(() => {
+    clearUnlockTimer();
+  });
+
+  function clearUnlockTimer() {
+    if (unlockTimer !== null) {
+      clearTimeout(unlockTimer);
+      unlockTimer = null;
+    }
+  }
+
+  function clearLoginLock() {
+    clearUnlockTimer();
+    loginLockedUntil = null;
+  }
+
+  function applyLoginLock(until: Date) {
+    clearUnlockTimer();
+
+    const delay = until.getTime() - Date.now();
+    if (delay <= 0) {
+      loginLockedUntil = null;
+      return;
+    }
+
+    loginLockedUntil = until;
+    unlockTimer = setTimeout(() => {
+      loginLockedUntil = null;
+      unlockTimer = null;
+    }, delay);
+  }
+
+  function formatUnlockRelative(until: Date): string {
+    const seconds = Math.max(0, Math.ceil((until.getTime() - Date.now()) / 1000));
+
+    if (seconds < 60) {
+      return seconds <= 1 ? "in 1 second" : `in ${seconds} seconds`;
+    }
+
+    const minutes = Math.ceil(seconds / 60);
+    if (minutes < 60) {
+      return minutes === 1 ? "in 1 minute" : `in ${minutes} minutes`;
+    }
+
+    const hours = Math.ceil(minutes / 60);
+    return hours === 1 ? "in 1 hour" : `in ${hours} hours`;
+  }
 
   function normalizeEndpoint(url: string): string {
     return url.trim().replace(/\/$/, "");
@@ -247,6 +312,10 @@
   async function submitCredentials(event: SubmitEvent) {
     event.preventDefault();
 
+    if (loginLocked) {
+      return;
+    }
+
     validation = undefined;
     busy = true;
 
@@ -259,6 +328,8 @@
         remember: session.native ? false : remember,
         permanent: session.native,
       });
+
+      clearLoginLock();
 
       if (result.status === "twoFactorRequired") {
         pendingToken = result.token;
@@ -280,6 +351,15 @@
         validation = cause;
         return;
       }
+
+      if (isLoginBackoff(cause)) {
+        const until = loginBackoffUnlockAt(cause);
+        if (until) {
+          applyLoginLock(until);
+        }
+        return;
+      }
+
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
@@ -293,6 +373,10 @@
   async function submitOtp(event: SubmitEvent) {
     event.preventDefault();
 
+    if (loginLocked) {
+      return;
+    }
+
     if (!pendingToken) {
       return;
     }
@@ -302,6 +386,8 @@
 
     try {
       const result = await session.client.loginOtp(pendingToken, otp);
+
+      clearLoginLock();
 
       if (result.status !== "session") {
         toastError("Sign-in failed");
@@ -315,6 +401,15 @@
         validation = cause;
         return;
       }
+
+      if (isLoginBackoff(cause)) {
+        const until = loginBackoffUnlockAt(cause);
+        if (until) {
+          applyLoginLock(until);
+        }
+        return;
+      }
+
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
@@ -392,12 +487,20 @@
             </div>
           {/if}
 
+          {#if lockMessage}
+            <Banner tone="warning">
+              {#snippet icon()}<ShieldAlert />{/snippet}
+              {lockMessage}
+            </Banner>
+          {/if}
+
           <Field
             label="Username"
             id="username"
             bind:value={username}
             error={validation?.field("username")}
             autocomplete="username"
+            disabled={busy || loginLocked}
           />
           <Field
             label="Password"
@@ -406,16 +509,19 @@
             bind:value={password}
             error={validation?.field("password")}
             autocomplete="current-password"
+            disabled={busy || loginLocked}
           />
 
           {#if !session.native}
             <label class="flex cursor-pointer items-center gap-2 text-sm">
-              <Checkbox bind:checked={remember} />
+              <Checkbox bind:checked={remember} disabled={busy || loginLocked} />
               Remember this session
             </label>
           {/if}
 
-          <Button type="submit" class="w-full" disabled={busy}>Sign in</Button>
+          <Button type="submit" class="w-full" disabled={busy || loginLocked}
+            >Sign in</Button
+          >
 
           <div class="relative py-1">
             <div class="absolute inset-0 flex items-center" aria-hidden="true">
@@ -517,6 +623,13 @@
             </p>
           </div>
 
+          {#if lockMessage}
+            <Banner tone="warning">
+              {#snippet icon()}<ShieldAlert />{/snippet}
+              {lockMessage}
+            </Banner>
+          {/if}
+
           <Field
             label="Code"
             id="otp"
@@ -525,9 +638,12 @@
             inputmode="numeric"
             autocomplete="one-time-code"
             maxlength={6}
+            disabled={busy || loginLocked}
           />
 
-          <Button type="submit" class="w-full" disabled={busy}>Verify</Button>
+          <Button type="submit" class="w-full" disabled={busy || loginLocked}
+            >Verify</Button
+          >
         </form>
       {/if}
     </Card>

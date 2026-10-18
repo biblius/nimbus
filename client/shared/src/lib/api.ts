@@ -6,6 +6,7 @@ import type {
   FileEntry,
   FileTree,
   FileView,
+  LoginBackoffBody,
   LoginResult,
   SharedFileView,
   Member,
@@ -63,6 +64,41 @@ export class ApiError extends Error {
   ) {
     super(body?.message ?? `HTTP ${status}`);
   }
+}
+
+/** `AppError::Auth` (including login backoff). */
+const AUTH_CODE = 1;
+
+type LoginBackoffError = ApiError & {
+  body: ErrorBody<LoginBackoffBody> & { body: LoginBackoffBody };
+};
+
+/**
+ * True when `error` is a 401 login backoff with a parseable `unlockAt`.
+ * Distinguishes `AuthFailure::LoginBackoff` from other auth 401s (same code).
+ */
+export function isLoginBackoff(error: unknown): error is LoginBackoffError {
+  if (!(error instanceof ApiError) || error.status !== 401) {
+    return false;
+  }
+
+  const payload = error.body;
+  if (!payload || payload.code !== AUTH_CODE || payload.body == null) {
+    return false;
+  }
+
+  const unlockAt = (payload.body as LoginBackoffBody).unlockAt;
+  return typeof unlockAt === "string" && unlockAt.length > 0;
+}
+
+/** Parsed `unlockAt` from a login-backoff `ApiError`, or `null` if missing/invalid. */
+export function loginBackoffUnlockAt(error: unknown): Date | null {
+  if (!isLoginBackoff(error)) {
+    return null;
+  }
+
+  const date = new Date(error.body.body.unlockAt);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /** `AppError::Validation`: code 4 with a list of field errors. */

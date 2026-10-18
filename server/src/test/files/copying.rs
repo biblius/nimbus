@@ -119,11 +119,18 @@ mod copying {
             .list(&session.user, private, None)
             .await
             .unwrap();
-        let names: Vec<_> = listed.iter().map(|entry| entry.file.name.as_str()).collect();
+        let names: Vec<_> = listed
+            .iter()
+            .map(|entry| entry.file.name.as_str())
+            .collect();
         assert!(names.contains(&"a.txt"));
         assert!(names.contains(&"b.txt"));
         assert_eq!(listed.len(), 2);
-        assert!(listed.iter().all(|entry| entry.file.id != first.id && entry.file.id != second.id));
+        assert!(
+            listed
+                .iter()
+                .all(|entry| entry.file.id != first.id && entry.file.id != second.id)
+        );
     }
 
     #[test]

@@ -2,9 +2,9 @@
 #[suitest::suite_cfg(sequential = true)]
 mod auth_service {
     use crate::{
-        auth::model::{LoginResult, PasswordChange},
+        auth::model::{LoginCredentials, LoginResult, PasswordChange},
         db::DbPool,
-        error::AppError,
+        error::{AppError, AuthFailure},
         test::TestState,
         user::model::{CreateUser, Role, UpdateUser},
     };
@@ -62,6 +62,240 @@ mod auth_service {
             .unwrap();
         assert_eq!(admin.user.role, Role::Admin);
         assert!(!admin.user.password.is_empty());
+    }
+
+    #[test]
+    async fn login_backoff_after_ten_failures_clears_on_success(state: TestState) {
+        state
+            .services
+            .users
+            .create_user(CreateUser {
+                username: "ada-backoff".into(),
+                password: "temporary".into(),
+                email: None,
+                role: Role::User,
+            })
+            .await
+            .unwrap();
+
+        let wrong = LoginCredentials {
+            username: "ada-backoff".into(),
+            password: "wrong-password".into(),
+            remember: false,
+            permanent: false,
+        };
+
+        // 5 failures: attempts % 5 == 0 sets backoff of (5/10)*10 = 0 minutes (no lock).
+        for _ in 0..5 {
+            let err = state
+                .services
+                .auth
+                .login(wrong.clone(), None, None)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                AppError::Auth(AuthFailure::InvalidCredentials)
+            ));
+        }
+
+        let still_open = state
+            .services
+            .auth
+            .login(wrong.clone(), None, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            still_open,
+            AppError::Auth(AuthFailure::InvalidCredentials)
+        ));
+
+        // Failures 7..10 (4 more) → 10 total; (10/10)*10 = 10 minute backoff.
+        for _ in 0..3 {
+            let err = state
+                .services
+                .auth
+                .login(wrong.clone(), None, None)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                AppError::Auth(AuthFailure::InvalidCredentials)
+            ));
+        }
+
+        let locked = state
+            .services
+            .auth
+            .login(wrong.clone(), None, None)
+            .await
+            .unwrap_err();
+        // 10th failure records then returns InvalidCredentials; next attempt is locked.
+        assert!(matches!(
+            locked,
+            AppError::Auth(AuthFailure::InvalidCredentials)
+        ));
+
+        let backoff = state
+            .services
+            .auth
+            .login(wrong.clone(), None, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            backoff,
+            AppError::Auth(AuthFailure::LoginBackoff { .. })
+        ));
+
+        // Correct password is also blocked while locked.
+        let blocked_correct = state
+            .services
+            .auth
+            .login(
+                LoginCredentials {
+                    username: "ada-backoff".into(),
+                    password: "temporary".into(),
+                    remember: false,
+                    permanent: false,
+                },
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            blocked_correct,
+            AppError::Auth(AuthFailure::LoginBackoff { .. })
+        ));
+
+        // Expire the backoff entry so we can verify a successful login clears throttle.
+        state.cache.del("login:backoff:ada-backoff").await.unwrap();
+
+        let ok = state
+            .services
+            .auth
+            .login(
+                LoginCredentials {
+                    username: "ada-backoff".into(),
+                    password: "temporary".into(),
+                    remember: false,
+                    permanent: false,
+                },
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(ok, LoginResult::Session { .. }));
+
+        // After success, failures start from zero again (no immediate lock).
+        for _ in 0..5 {
+            let err = state
+                .services
+                .auth
+                .login(wrong.clone(), None, None)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                AppError::Auth(AuthFailure::InvalidCredentials)
+            ));
+        }
+    }
+
+    #[test]
+    async fn otp_failures_share_login_backoff(state: TestState) {
+        use crate::auth::model::Otp;
+        use crate::db::UserRepository;
+
+        let user = state
+            .services
+            .users
+            .create_user(CreateUser {
+                username: "ada-otp-backoff".into(),
+                password: "temporary".into(),
+                email: None,
+                role: Role::User,
+            })
+            .await
+            .unwrap();
+
+        UserRepository::new(state.pool.clone())
+            .update_otp_secret(user.id, "JBSWY3DPEHPK3PXP")
+            .await
+            .unwrap();
+
+        let login = state
+            .services
+            .auth
+            .login(
+                LoginCredentials {
+                    username: "ada-otp-backoff".into(),
+                    password: "temporary".into(),
+                    remember: false,
+                    permanent: false,
+                },
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let LoginResult::TwoFactorRequired { token } = login else {
+            panic!("expected two-factor challenge");
+        };
+        let token: Uuid = token.parse().unwrap();
+
+        let wrong = Otp {
+            token,
+            otp_code: "000000".into(),
+        };
+
+        for _ in 0..10 {
+            let err = state
+                .services
+                .auth
+                .login_with_otp(wrong.clone(), None, None)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                AppError::Auth(AuthFailure::InvalidCredentials)
+                    | AppError::Auth(AuthFailure::LoginBackoff { .. })
+            ));
+        }
+
+        let backoff = state
+            .services
+            .auth
+            .login_with_otp(wrong, None, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            backoff,
+            AppError::Auth(AuthFailure::LoginBackoff { .. })
+        ));
+
+        // Password login is locked on the same counter.
+        let password_locked = state
+            .services
+            .auth
+            .login(
+                LoginCredentials {
+                    username: "ada-otp-backoff".into(),
+                    password: "temporary".into(),
+                    remember: false,
+                    permanent: false,
+                },
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            password_locked,
+            AppError::Auth(AuthFailure::LoginBackoff { .. })
+        ));
     }
 
     #[test]
@@ -340,18 +574,8 @@ mod auth_service {
         .unwrap();
 
         assert!(is_passkey_enabled(&state.pool, user.id).await);
-        assert!(
-            users
-                .get_by_id(user.id)
-                .await
-                .unwrap()
-                .otp_secret
-                .is_some()
-        );
-        assert_eq!(
-            sessions.list_live_for_user(user.id).await.unwrap().len(),
-            1
-        );
+        assert!(users.get_by_id(user.id).await.unwrap().otp_secret.is_some());
+        assert_eq!(sessions.list_live_for_user(user.id).await.unwrap().len(), 1);
 
         let token = Uuid::new_v4();
         TokenStore::new(state.cache.clone())
