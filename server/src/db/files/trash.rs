@@ -320,6 +320,46 @@ impl TrashRepository {
         Ok(restored)
     }
 
+    /// Delete every trashed row in `root_id`. Returns the removed rows.
+    ///
+    /// Does not touch `file_metadata` because the same IDs are reused on restore.
+    #[instrument(skip(self, executor), err(Debug))]
+    pub async fn delete_all<'e, E>(
+        &self,
+        executor: E,
+        root_id: Uuid,
+    ) -> Result<Vec<FileEntry>, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        sqlx::query_as::<_, FileEntry>(
+            r#"
+            DELETE FROM trashed_files
+            WHERE root_id = $1
+            RETURNING
+                id,
+                root_id,
+                created_by,
+                "type" AS kind,
+                name,
+                parent,
+                format AS file_type,
+                hash,
+                size_bytes,
+                NULL AS sharing_mode,
+                NULL AS share_expires_at,
+                NULL AS preview_64,
+                NULL AS preview_256,
+                created_at,
+                updated_at
+            "#,
+        )
+        .bind(root_id)
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)
+    }
+
     /// Delete trashed rows for `ids`. Returns the ids that were actually removed.
     ///
     /// Also removes matching `file_metadata` rows (hard delete).

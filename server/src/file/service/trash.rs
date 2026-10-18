@@ -140,18 +140,6 @@ impl TrashFileService {
 
         self.validate_restore_parent(root_id, target.parent).await?;
 
-        let trash = self.trash.list_trash(root_id).await?;
-
-        let root_ids: Vec<Uuid> = trash
-            .iter()
-            .filter(|entry| entry.query_root)
-            .map(|entry| entry.id)
-            .collect();
-
-        if root_ids.is_empty() {
-            return Ok(());
-        }
-
         let quota = self.files.root_quota(root_id).await?;
 
         let used = if quota > 0 {
@@ -161,19 +149,13 @@ impl TrashFileService {
         };
 
         let mut tx = self.tx.begin().await?;
-        let mut restored = Vec::new();
 
-        for id in root_ids {
-            let mut tree = self.trash.delete_tree(&mut *tx, root_id, id).await?;
+        let mut restored = self.trash.delete_all(&mut *tx, root_id).await?;
 
-            for file in tree.iter_mut() {
-                if file.id == id {
-                    file.parent = target.parent;
-                    break;
-                }
-            }
+        if restored.is_empty() {
+            tx.commit().await?;
 
-            restored.append(&mut tree);
+            return Ok(());
         }
 
         let bytes: i64 = restored
@@ -184,6 +166,13 @@ impl TrashFileService {
 
         if quota > 0 && used.saturating_add(bytes) > quota {
             return Err(AppError::QuotaExceeded);
+        }
+
+        // Trash roots have a null parent, point them at the restore target.
+        for file in restored.iter_mut() {
+            if file.parent.is_none() {
+                file.parent = target.parent;
+            }
         }
 
         self.files.insert_many(&mut tx, &restored).await?;
