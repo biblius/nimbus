@@ -11,6 +11,7 @@
   GlobalWorkerOptions.workerSrc = workerUrl;
 
   const THUMB_WIDTH = 96;
+  const MAX_PAGE_WIDTH = 720;
   const DEFAULT_PAGE_ASPECT = "1 / 1.414";
   const LAZY_ROOT_MARGIN = "100% 0px";
 
@@ -37,6 +38,9 @@
 
   const pageNumbers = $derived(
     Array.from({ length: pageCount }, (_, i) => i + 1),
+  );
+  const pageWidth = $derived(
+    containerWidth > 0 ? Math.min(containerWidth, MAX_PAGE_WIDTH) : 0,
   );
 
   $effect(() => {
@@ -433,9 +437,9 @@
           {#each pageNumbers as pageNum (pageNum)}
             <div
               data-page={pageNum}
-              class="w-full"
+              class="w-full max-w-[45rem]"
               style:aspect-ratio={pageAspect}
-              {@attach pageAttach(pageNum, pdfDoc, containerWidth)}
+              {@attach pageAttach(pageNum, pdfDoc, pageWidth)}
             >
               <canvas
                 class="mx-auto block bg-white shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)]"
