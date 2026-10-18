@@ -114,7 +114,7 @@ impl ShareService {
                     name: file.name,
                     kind: file.kind,
                     file_type: file.file_type,
-                    metadata: file.metadata.map(|m| m.0),
+                    metadata: file.metadata.into_option(),
                     children: FileTree::from_entries(children),
                 };
 
@@ -176,14 +176,13 @@ impl ShareService {
             ));
         }
 
-        let meta = file
-            .metadata
-            .as_ref()
-            .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
+        if file.metadata.is_empty() {
+            return Err(AppError::ResourceMissing("Preview does not exist".into()));
+        }
 
         let hash = match size {
-            PreviewSize::Icon => meta.preview_64.as_deref(),
-            PreviewSize::Tile => meta.preview_256.as_deref(),
+            PreviewSize::Icon => file.metadata.preview_64.as_deref(),
+            PreviewSize::Tile => file.metadata.preview_256.as_deref(),
         }
         .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
 

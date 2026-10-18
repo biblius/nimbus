@@ -6,7 +6,7 @@ use crate::file::{
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{FromRow, types::Json};
+use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -18,7 +18,7 @@ pub struct FileTree {
     pub kind: FileKind,
     /// Detected format for files; null for directories.
     pub file_type: Option<FileType>,
-    /// Preview hashes from the row's `metadata` column, when present.
+    /// Preview hashes from `file_metadata`, when present.
     pub metadata: Option<FileMetadata>,
     /// OpenAPI cannot expand this field; the value is the same `FileTree` shape.
     #[schema(no_recursion)]
@@ -75,7 +75,7 @@ impl From<FileEntryTree> for FileTree {
             name: value.name,
             kind: value.kind,
             file_type: value.file_type,
-            metadata: value.metadata.map(|json| json.0),
+            metadata: value.metadata.into_option(),
             children: vec![],
         }
     }
@@ -91,7 +91,8 @@ pub struct FileEntryTree {
     pub file_type: Option<FileType>,
     pub hash: Option<String>,
     pub size_bytes: i64,
-    pub metadata: Option<Json<FileMetadata>>,
+    #[sqlx(flatten)]
+    pub metadata: FileMetadata,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub query_root: bool,
@@ -100,7 +101,7 @@ pub struct FileEntryTree {
 #[cfg(test)]
 mod tests {
     use super::{FileEntryTree, FileTree};
-    use crate::file::model::FileKind;
+    use crate::file::model::{FileKind, FileMetadata};
     use chrono::Utc;
     use uuid::Uuid;
 
@@ -121,7 +122,7 @@ mod tests {
             file_type: None,
             hash: None,
             size_bytes: 0,
-            metadata: None,
+            metadata: FileMetadata::default(),
             created_at: now,
             updated_at: now,
             query_root,

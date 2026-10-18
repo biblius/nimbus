@@ -2,13 +2,16 @@ use crate::{
     db::{Repository, files::FileTable},
     error::AppError,
     file::{
-        model::{Cleanup, FileKind, FileRef},
+        model::{Cleanup, FileEntry, FileKind, FileRef},
         storage::Storage,
     },
 };
 use chrono::{Duration, Utc};
 use serde::Serialize;
-use std::{collections::HashMap, time::Duration as StdDuration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration as StdDuration,
+};
 use tokio::{
     sync::mpsc,
     time::{MissedTickBehavior, interval},
@@ -154,7 +157,6 @@ impl DeletionQueue {
                         self.listeners.remove(&request_id);
                     },
                     _ = tick.tick() => {
-                        tracing::debug!("running expired trash sweep");
                         if let Err(e) = self.sweep_expired().await {
                             tracing::error!(error=%e, "error sweeping expired trash");
                         }
@@ -174,6 +176,8 @@ impl DeletionQueue {
             return Ok(());
         }
 
+        tracing::debug!("running expired trash sweep for {} items", expired.len());
+
         let files = PendingDeletion::from_refs(FileTable::Trashed, &expired);
         self.delete_files(None, files, None).await
     }
@@ -189,129 +193,133 @@ impl DeletionQueue {
     ) -> Result<(), AppError> {
         let mut failed = false;
 
-        for entry in files {
-            let file = match entry.origin {
-                FileTable::Live => self.repository.files.get_live(entry.file_id).await?,
-                FileTable::Trashed => self.repository.trash.get_trashed(entry.file_id).await?,
-            };
+        let mut live_ids = Vec::new();
+        let mut trash_ids = Vec::new();
 
-            let Some(file) = file else {
+        for entry in files.iter() {
+            match entry.origin {
+                FileTable::Live => live_ids.push(entry.file_id),
+                FileTable::Trashed => trash_ids.push(entry.file_id),
+            }
+        }
+
+        let live = self.repository.files.get_live_many(&live_ids).await?;
+        let trashed = self.repository.trash.get_trashed_many(&trash_ids).await?;
+
+        let mut by_id: HashMap<Uuid, FileEntry> =
+            HashMap::with_capacity(live.len() + trashed.len());
+
+        for file in live.into_iter().chain(trashed.into_iter()) {
+            by_id.insert(file.id, file);
+        }
+
+        let deleted_live = self.repository.files.delete_many(&live_ids).await?;
+
+        let deleted_trash = self.repository.trash.delete_many(&trash_ids).await?;
+
+        let deleted: HashSet<Uuid> = deleted_live.into_iter().chain(deleted_trash).collect();
+
+        let mut content_hashes = HashSet::new();
+        let mut preview_hashes = HashSet::new();
+
+        for entry in &files {
+            let Some(file) = by_id.get(&entry.file_id) else {
                 tracing::debug!(?entry, "file is missing");
                 failed = true;
                 continue;
             };
 
-            let result = match entry.origin {
-                FileTable::Live => self.repository.files.delete_live(file.id).await,
-                FileTable::Trashed => self.repository.trash.delete_trashed(file.id).await,
-            };
-
             // If DB entry was successfully deleted, clients can consider this a success
             // since it is no longer accessible through the API.
+            let success = deleted.contains(&file.id);
 
-            match result {
-                Ok(()) => {
-                    if let Some(request_id) = request_id {
-                        self.send_result(DeletionResult {
-                            request_id,
-                            file_id: file.id,
-                            name: file.name.clone(),
-                            success: true,
-                        })
-                        .await;
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(file=%file.id, error=%e, "failed to delete file row");
-                    failed = true;
+            if !success {
+                tracing::error!(file=%file.id, "failed to delete file row");
+                failed = true;
+            }
 
-                    if let Some(request_id) = request_id {
-                        self.send_result(DeletionResult {
-                            request_id,
-                            file_id: file.id,
-                            name: file.name,
-                            success: false,
-                        })
-                        .await;
-                    }
+            if let Some(request_id) = request_id {
+                self.send_result(DeletionResult {
+                    request_id,
+                    file_id: file.id,
+                    name: file.name.clone(),
+                    success,
+                })
+                .await;
+            }
 
-                    continue;
-                }
-            };
-
-            if file.kind == FileKind::Directory {
+            if !success || file.kind == FileKind::Directory {
                 continue;
             }
 
-            let Some(hash) = file.hash else {
+            let Some(hash) = file.hash.as_ref() else {
                 tracing::error!(file=%file.id, "file has no hash");
                 failed = true;
                 continue;
             };
 
-            // Counts are after the row delete, so this file is already excluded.
-            let remaining = match self.repository.files.count_hash(&hash).await {
-                Ok(count) => count,
-                Err(e) => {
-                    tracing::error!(file=%file.id, error=%e, "cannot count remaining hash, will not delete BLOB");
-                    failed = true;
-                    continue;
-                }
-            };
+            content_hashes.insert(hash.clone());
+
+            if let Some(preview) = file.metadata.preview_64.clone() {
+                preview_hashes.insert(preview);
+            }
+            if let Some(preview) = file.metadata.preview_256.clone() {
+                preview_hashes.insert(preview);
+            }
+        }
+
+        // Counts are after the row deletes, so this batch is already excluded.
+        let content_hashes: Vec<String> = content_hashes.into_iter().collect();
+        let preview_hashes: Vec<String> = preview_hashes.into_iter().collect();
+
+        let hash_counts = match self.repository.files.count_hashes(&content_hashes).await {
+            Ok(counts) => counts,
+            Err(e) => {
+                tracing::error!(error=%e, "cannot count remaining hashes, will not delete BLOBs");
+                failed = true;
+                HashMap::new()
+            }
+        };
+
+        for hash in content_hashes.iter() {
+            let remaining = hash_counts.get(hash).copied().unwrap_or(0);
 
             if remaining > 0 {
-                tracing::debug!(%remaining, file=%file.id, "file hash still in use");
-            } else {
-                match self.storage.remove(&hash).await {
-                    Ok(()) => tracing::info!(file=%file.id, "deleted BLOB {hash}"),
-                    Err(e) => {
-                        tracing::error!(file=%file.id, error=%e, "failed to delete file BLOB");
-                        failed = true;
-                    }
-                }
+                tracing::debug!(%remaining, %hash, "file hash still in use");
+                continue;
             }
 
-            let preview_hashes = file
-                .metadata
-                .as_ref()
-                .map(|meta| {
-                    [
-                        meta.preview_64.clone(),
-                        meta.preview_256.clone(),
-                    ]
-                })
-                .into_iter()
-                .flatten()
-                .flatten()
-                .collect::<Vec<_>>();
+            match self.storage.remove(hash).await {
+                Ok(()) => tracing::info!(%hash, "deleted BLOB"),
+                Err(e) => {
+                    tracing::error!(error=%e, %hash, "failed to delete file BLOB");
+                    failed = true;
+                }
+            }
+        }
 
-            for preview_hash in preview_hashes {
-                let remaining = match self.repository.files.count_preview(&preview_hash).await {
-                    Ok(count) => count,
-                    Err(e) => {
-                        tracing::error!(file=%file.id, error=%e, "cannot count remaining preview, will not delete preview BLOB");
-                        failed = true;
-                        break;
-                    }
-                };
+        let preview_counts = match self.repository.files.count_previews(&preview_hashes).await {
+            Ok(counts) => counts,
+            Err(e) => {
+                tracing::error!(error=%e, "cannot count remaining previews, will not delete preview BLOBs");
+                failed = true;
+                HashMap::new()
+            }
+        };
 
-                if remaining > 0 {
-                    tracing::debug!(%remaining, file=%file.id, "preview hash still in use");
-                } else {
-                    match self.storage.remove_preview(&preview_hash).await {
-                        Ok(()) => {
-                            tracing::info!(
-                                file=%file.id,
-                                preview=%preview_hash,
-                                "deleted preview BLOB"
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(file=%file.id, error=%e, "failed to delete preview BLOB");
-                            failed = true;
-                            break;
-                        }
-                    }
+        for preview in preview_hashes.iter() {
+            let remaining = preview_counts.get(preview).copied().unwrap_or(0);
+
+            if remaining > 0 {
+                tracing::debug!(%remaining, %preview, "preview hash still in use");
+                continue;
+            }
+
+            match self.storage.remove_preview(preview).await {
+                Ok(()) => tracing::info!(%preview, "deleted preview BLOB"),
+                Err(e) => {
+                    tracing::error!(error=%e, %preview, "failed to delete preview BLOB");
+                    failed = true;
                 }
             }
         }

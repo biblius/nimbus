@@ -6,7 +6,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{
     Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError, prelude::FromRow,
-    types::Json,
 };
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -37,10 +36,10 @@ pub struct FileEntry {
     pub sharing_mode: Option<SharingMode>,
     /// When set, public share routes treat the entry as missing after this instant.
     pub share_expires_at: Option<DateTime<Utc>>,
-    /// Generated artifacts (preview hashes, etc.). Omitted from JSON when null.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Option<FileMetadata>)]
-    pub metadata: Option<Json<FileMetadata>>,
+    /// Generated artifacts (preview hashes, etc.). Omitted from JSON when empty.
+    #[serde(skip_serializing_if = "FileMetadata::is_empty")]
+    #[sqlx(flatten)]
+    pub metadata: FileMetadata,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -93,8 +92,11 @@ impl<'r> Decode<'r, Db> for SharingMode {
     }
 }
 
-/// Generated preview hashes stored in the `metadata` JSONB column.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, Default)]
+/// Generated preview hashes stored in `file_metadata`.
+///
+/// Columns are selected via `LEFT JOIN file_metadata` and flattened onto
+/// [`FileEntry`] / [`FileEntryTree`](crate::file::tree::FileEntryTree).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, Default, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct FileMetadata {
     /// Content hash of the 64×64 WebP preview blob.
@@ -103,6 +105,20 @@ pub struct FileMetadata {
     /// Content hash of the 256×256 WebP preview blob.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_256: Option<String>,
+}
+
+impl FileMetadata {
+    pub fn is_empty(&self) -> bool {
+        self.preview_64.is_none() && self.preview_256.is_none()
+    }
+
+    pub fn into_option(self) -> Option<Self> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(self)
+        }
+    }
 }
 
 /// Square preview edge length requested by clients.
@@ -136,7 +152,7 @@ pub struct FileView {
 
 impl From<FileEntry> for FileView {
     fn from(mut entry: FileEntry) -> Self {
-        let metadata = entry.metadata.take().map(|json| json.0);
+        let metadata = std::mem::take(&mut entry.metadata).into_option();
         Self {
             file: entry,
             metadata,

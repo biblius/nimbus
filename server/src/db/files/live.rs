@@ -6,18 +6,27 @@ use crate::{
     error::AppError,
     file::{
         format::FileType,
-        model::{
-            FileEntry, FileKind, FileMetadata, FileRef, FileView, MAX_ANCESTOR_DEPTH, Root,
-            RootView, SharingMode,
-        },
+        model::{FileEntry, FileMetadata, FileRef, FileView, MAX_ANCESTOR_DEPTH, Root, RootView},
         tree::FileEntryTree,
     },
 };
 use chrono::Utc;
-use sqlx::{Executor, QueryBuilder, types::Json};
-use std::collections::HashSet;
+use sqlx::{Executor, FromRow, QueryBuilder};
+use std::collections::{HashMap, HashSet};
 use tracing::instrument;
 use uuid::Uuid;
+
+#[derive(Debug, FromRow)]
+struct HashCount {
+    hash: String,
+    count: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct PreviewCount {
+    preview: String,
+    count: i64,
+}
 
 #[derive(Clone)]
 pub struct FileRepository {
@@ -276,6 +285,53 @@ impl FileRepository {
         self.get_live_with(&self.pool, id).await
     }
 
+    /// Live rows for every id in `ids`. Missing ids are omitted.
+    #[instrument(skip(self, ids), err(Debug))]
+    pub async fn get_live_many(&self, ids: &[Uuid]) -> Result<Vec<FileEntry>, AppError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query = QueryBuilder::<Db>::new(format!(
+            r#"
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.sharing_mode,
+                f.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
+            WHERE f.id IN (
+            "#
+        ));
+
+        {
+            let mut selected = query.separated(", ");
+            for id in ids {
+                selected.push_bind(*id);
+            }
+        }
+
+        query.push(")");
+
+        query
+            .build_query_as::<FileEntry>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)
+    }
+
     /// Ancestors of `id` in `root_id`, ordered root → … → `id` (inclusive).
     ///
     /// Empty when `id` is missing or not in `root_id`. Walks at most
@@ -301,7 +357,6 @@ impl FileRepository {
                     size_bytes,
                     sharing_mode,
                     share_expires_at,
-                    metadata,
                     created_at,
                     updated_at,
                     0 AS depth
@@ -326,7 +381,6 @@ impl FileRepository {
                     p.size_bytes,
                     p.sharing_mode,
                     p.share_expires_at,
-                    p.metadata,
                     p.created_at,
                     p.updated_at,
                     t.depth + 1
@@ -341,22 +395,24 @@ impl FileRepository {
             r#"
             )
             SELECT
-                id,
-                root_id,
-                created_by,
-                "type" AS kind,
-                name,
-                parent,
-                format AS file_type,
-                hash,
-                size_bytes,
-                sharing_mode,
-                share_expires_at,
-                metadata,
-                created_at,
-                updated_at
-            FROM tree
-            ORDER BY depth DESC
+                t.id,
+                t.root_id,
+                t.created_by,
+                t."type" AS kind,
+                t.name,
+                t.parent,
+                t.format AS file_type,
+                t.hash,
+                t.size_bytes,
+                t.sharing_mode,
+                t.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                t.created_at,
+                t.updated_at
+            FROM tree t
+            LEFT JOIN file_metadata m ON m.file_id = t.id
+            ORDER BY t.depth DESC
             "#,
         );
 
@@ -376,29 +432,30 @@ impl FileRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        sqlx::query_as!(
-            FileEntry,
+        sqlx::query_as::<_, FileEntry>(
             r#"
             SELECT
-                id,
-                root_id,
-                created_by AS "created_by?",
-                "type" AS "kind: FileKind",
-                name,
-                parent,
-                format AS "file_type: FileType",
-                hash,
-                size_bytes,
-                sharing_mode AS "sharing_mode: SharingMode",
-                share_expires_at,
-                metadata AS "metadata: Json<FileMetadata>",
-                created_at,
-                updated_at
-            FROM files
-            WHERE id = $1
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.sharing_mode,
+                f.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
+            WHERE f.id = $1
             "#,
-            id
         )
+        .bind(id)
         .fetch_optional(executor)
         .await
         .map_err(AppError::from)
@@ -416,70 +473,88 @@ impl FileRepository {
     {
         let now = Utc::now();
 
-        sqlx::query_as!(
-            FileEntry,
+        sqlx::query_as::<_, FileEntry>(
             r#"
-            INSERT INTO files (
-                id,
-                root_id,
-                created_by,
-                "type",
-                name,
-                parent,
-                format,
-                hash,
-                size_bytes,
-                sharing_mode,
-                share_expires_at,
-                metadata,
-                created_at,
-                updated_at
+            WITH inserted AS (
+                INSERT INTO files (
+                    id,
+                    root_id,
+                    created_by,
+                    "type",
+                    name,
+                    parent,
+                    format,
+                    hash,
+                    size_bytes,
+                    sharing_mode,
+                    share_expires_at,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                    (SELECT p.sharing_mode FROM files p WHERE p.id = $6),
+                    (SELECT p.share_expires_at FROM files p WHERE p.id = $6),
+                    $10, $11
+                )
+                RETURNING
+                    id,
+                    root_id,
+                    created_by,
+                    "type",
+                    name,
+                    parent,
+                    format,
+                    hash,
+                    size_bytes,
+                    sharing_mode,
+                    share_expires_at,
+                    created_at,
+                    updated_at
             )
-            VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9,
-                (SELECT p.sharing_mode FROM files p WHERE p.id = $6),
-                (SELECT p.share_expires_at FROM files p WHERE p.id = $6),
-                NULL, $10, $11
-            )
-            RETURNING
-                id,
-                root_id,
-                created_by AS "created_by?",
-                "type" AS "kind: FileKind",
-                name,
-                parent,
-                format AS "file_type: FileType",
-                hash,
-                size_bytes,
-                sharing_mode AS "sharing_mode: SharingMode",
-                share_expires_at,
-                metadata AS "metadata: Json<FileMetadata>",
-                created_at,
-                updated_at
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.sharing_mode,
+                f.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM inserted f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
             "#,
-            file.id,
-            file.root_id,
-            file.created_by,
-            file.kind as _,
-            file.name,
-            file.parent,
-            file.file_type as _,
-            file.hash,
-            file.size_bytes,
-            now,
-            now
         )
+        .bind(file.id)
+        .bind(file.root_id)
+        .bind(file.created_by)
+        .bind(file.kind)
+        .bind(&file.name)
+        .bind(file.parent)
+        .bind(file.file_type.clone())
+        .bind(&file.hash)
+        .bind(file.size_bytes)
+        .bind(now)
+        .bind(now)
         .fetch_one(executor)
         .await
         .map_err(AppError::from)
     }
 
     /// Insert every row in one statement. Parents and children may appear in any order.
-    #[instrument(skip(self, executor, files), err(Debug))]
-    pub async fn insert_many<'e, E>(&self, executor: E, files: &[FileEntry]) -> Result<(), AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
+    #[instrument(skip(self, conn, files), err(Debug))]
+    pub async fn insert_many(
+        &self,
+        conn: &mut <Db as sqlx::Database>::Connection,
+        files: &[FileEntry],
+    ) -> Result<(), AppError> {
         if files.is_empty() {
             return Ok(());
         }
@@ -498,7 +573,6 @@ impl FileRepository {
                 size_bytes,
                 sharing_mode,
                 share_expires_at,
-                metadata,
                 created_at,
                 updated_at
             )
@@ -517,14 +591,53 @@ impl FileRepository {
                 .push_bind(file.size_bytes)
                 .push_bind(file.sharing_mode)
                 .push_bind(file.share_expires_at)
-                .push_bind(&file.metadata)
                 .push_bind(file.created_at)
                 .push_bind(file.updated_at);
         });
 
         insert
             .build()
-            .execute(executor)
+            .execute(&mut *conn)
+            .await
+            .map_err(AppError::from)?;
+
+        let file_metadata: Vec<_> = files
+            .iter()
+            .filter(|file| !file.metadata.is_empty())
+            .map(|file| {
+                (
+                    file.id,
+                    file.metadata.preview_64.as_deref(),
+                    file.metadata.preview_256.as_deref(),
+                )
+            })
+            .collect();
+
+        if file_metadata.is_empty() {
+            return Ok(());
+        }
+
+        let mut upsert = QueryBuilder::<Db>::new(
+            "INSERT INTO file_metadata (file_id, preview_64, preview_256) ",
+        );
+
+        upsert.push_values(file_metadata, |mut row, (id, preview_64, preview_256)| {
+            row.push_bind(id)
+                .push_bind(preview_64)
+                .push_bind(preview_256);
+        });
+
+        upsert.push(
+            r#"
+                ON CONFLICT (file_id) DO UPDATE SET
+                    preview_64 = EXCLUDED.preview_64,
+                    preview_256 = EXCLUDED.preview_256
+                "#,
+        );
+
+        upsert
+            .build()
+            .execute(&mut *conn)
             .await
             .map_err(AppError::from)?;
 
@@ -565,10 +678,12 @@ impl FileRepository {
                 f.size_bytes,
                 f.sharing_mode,
                 f.share_expires_at,
-                f.metadata,
+                m.preview_64,
+                m.preview_256,
                 f.created_at,
                 f.updated_at
             FROM files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
             WHERE
                 f.root_id =
             "#,
@@ -630,16 +745,14 @@ impl FileRepository {
         metadata: &FileMetadata,
     ) -> Result<(), AppError> {
         let now = Utc::now();
-        let metadata = Json(metadata.clone());
 
         let result = sqlx::query!(
             r#"
             UPDATE files
-            SET metadata = $2, updated_at = $3
+            SET updated_at = $2
             WHERE id = $1
             "#,
             file_id,
-            metadata as Json<FileMetadata>,
             now
         )
         .execute(&self.pool)
@@ -648,6 +761,21 @@ impl FileRepository {
         if result.rows_affected() == 0 {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         }
+
+        sqlx::query!(
+            r#"
+            INSERT INTO file_metadata (file_id, preview_64, preview_256)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (file_id) DO UPDATE SET
+                preview_64 = EXCLUDED.preview_64,
+                preview_256 = EXCLUDED.preview_256
+            "#,
+            file_id,
+            metadata.preview_64,
+            metadata.preview_256
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -669,28 +797,47 @@ impl FileRepository {
 
         sqlx::query_as::<_, FileEntry>(
             r#"
-            UPDATE files
-            SET
-                hash = $2,
-                size_bytes = $3,
-                format = $4,
-                updated_at = $5
-            WHERE id = $1
-            RETURNING
-                id,
-                root_id,
-                created_by,
-                "type" AS kind,
-                name,
-                parent,
-                format AS file_type,
-                hash,
-                size_bytes,
-                sharing_mode,
-                share_expires_at,
-                metadata,
-                created_at,
-                updated_at
+            WITH updated AS (
+                UPDATE files
+                SET
+                    hash = $2,
+                    size_bytes = $3,
+                    format = $4,
+                    updated_at = $5
+                WHERE id = $1
+                RETURNING
+                    id,
+                    root_id,
+                    created_by,
+                    "type",
+                    name,
+                    parent,
+                    format,
+                    hash,
+                    size_bytes,
+                    sharing_mode,
+                    share_expires_at,
+                    created_at,
+                    updated_at
+            )
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.sharing_mode,
+                f.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM updated f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
             "#,
         )
         .bind(id)
@@ -710,26 +857,45 @@ impl FileRepository {
 
         sqlx::query_as::<_, FileEntry>(
             r#"
-            UPDATE files
-            SET
-                name = $2,
-                updated_at = $3
-            WHERE id = $1
-            RETURNING
-                id,
-                root_id,
-                created_by,
-                "type" AS kind,
-                name,
-                parent,
-                format AS file_type,
-                hash,
-                size_bytes,
-                sharing_mode,
-                share_expires_at,
-                metadata,
-                created_at,
-                updated_at
+            WITH updated AS (
+                UPDATE files
+                SET
+                    name = $2,
+                    updated_at = $3
+                WHERE id = $1
+                RETURNING
+                    id,
+                    root_id,
+                    created_by,
+                    "type",
+                    name,
+                    parent,
+                    format,
+                    hash,
+                    size_bytes,
+                    sharing_mode,
+                    share_expires_at,
+                    created_at,
+                    updated_at
+            )
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.sharing_mode,
+                f.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM updated f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
             "#,
         )
         .bind(id)
@@ -764,35 +930,126 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    #[instrument(skip(self), err(Debug))]
-    pub async fn count_preview(&self, preview: &str) -> Result<i64, AppError> {
-        self.count_preview_with(&self.pool, preview).await
+    /// Remaining live+trashed references for each content hash.
+    /// Hashes with zero references are omitted from the map.
+    #[instrument(skip(self, hashes), err(Debug))]
+    pub async fn count_hashes(&self, hashes: &[String]) -> Result<HashMap<String, i64>, AppError> {
+        if hashes.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut query = QueryBuilder::<Db>::new(
+            r#"
+            SELECT hash, COUNT(*)::bigint AS count
+            FROM (
+                SELECT hash FROM files WHERE hash IN (
+            "#,
+        );
+
+        {
+            let mut selected = query.separated(", ");
+            for hash in hashes {
+                selected.push_bind(hash);
+            }
+        }
+
+        query.push(
+            r#"
+                )
+                UNION ALL
+                SELECT hash FROM trashed_files WHERE hash IN (
+            "#,
+        );
+
+        {
+            let mut selected = query.separated(", ");
+            for hash in hashes {
+                selected.push_bind(hash);
+            }
+        }
+
+        query.push(
+            r#"
+                )
+            ) AS refs
+            WHERE hash IS NOT NULL
+            GROUP BY hash
+            "#,
+        );
+
+        let rows = query
+            .build_query_as::<HashCount>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+
+        Ok(rows.into_iter().map(|row| (row.hash, row.count)).collect())
     }
 
-    /// How many live/trashed rows still point at this preview blob.
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn count_preview_with<'e, E>(
+    /// Remaining references for each preview hash across `file_metadata`.
+    /// Previews with zero references are omitted from the map.
+    #[instrument(skip(self, hashes), err(Debug))]
+    pub async fn count_previews(
         &self,
-        executor: E,
-        preview: &str,
-    ) -> Result<i64, AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
-        sqlx::query_scalar!(
+        hashes: &[String],
+    ) -> Result<HashMap<String, i64>, AppError> {
+        if hashes.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut query = QueryBuilder::<Db>::new(
             r#"
-            SELECT (
-                (SELECT COUNT(*) FROM files WHERE metadata ->> 'preview64' = $1) +
-                (SELECT COUNT(*) FROM files WHERE metadata ->> 'preview256' = $1) +
-                (SELECT COUNT(*) FROM trashed_files WHERE metadata ->> 'preview64' = $1) +
-                (SELECT COUNT(*) FROM trashed_files WHERE metadata ->> 'preview256' = $1)
-            ) AS "count!"
+            SELECT preview, COUNT(*)::bigint AS count
+            FROM (
+                SELECT preview_64 AS preview
+                FROM file_metadata
+                WHERE preview_64 IN (
             "#,
-            preview
-        )
-        .fetch_one(executor)
-        .await
-        .map_err(AppError::from)
+        );
+
+        {
+            let mut selected = query.separated(", ");
+            for preview in hashes {
+                selected.push_bind(preview);
+            }
+        }
+
+        query.push(
+            r#"
+                )
+                UNION ALL
+                SELECT preview_256
+                FROM file_metadata
+                WHERE preview_256 IN (
+            "#,
+        );
+
+        {
+            let mut selected = query.separated(", ");
+            for preview in hashes {
+                selected.push_bind(preview);
+            }
+        }
+
+        query.push(
+            r#"
+                )
+            ) AS refs
+            WHERE preview IS NOT NULL
+            GROUP BY preview
+            "#,
+        );
+
+        let rows = query
+            .build_query_as::<PreviewCount>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.preview, row.count))
+            .collect())
     }
 
     /// List files in `ids` and all of their descendants in `root_id`.
@@ -825,7 +1082,6 @@ impl FileRepository {
                     size_bytes,
                     sharing_mode,
                     share_expires_at,
-                    metadata,
                     created_at,
                     updated_at
                 FROM files
@@ -859,28 +1115,29 @@ impl FileRepository {
                     child.size_bytes,
                     child.sharing_mode,
                     child.share_expires_at,
-                    child.metadata,
                     child.created_at,
                     child.updated_at
                 FROM files child
                 JOIN tree t ON child.parent = t.id
             )
             SELECT
-                id,
-                root_id,
-                created_by,
-                "type" AS kind,
-                name,
-                parent,
-                format AS file_type,
-                hash,
-                size_bytes,
-                sharing_mode,
-                share_expires_at,
-                metadata,
-                created_at,
-                updated_at
-            FROM tree
+                t.id,
+                t.root_id,
+                t.created_by,
+                t."type" AS kind,
+                t.name,
+                t.parent,
+                t.format AS file_type,
+                t.hash,
+                t.size_bytes,
+                t.sharing_mode,
+                t.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                t.created_at,
+                t.updated_at
+            FROM tree t
+            LEFT JOIN file_metadata m ON m.file_id = t.id
             "#,
         );
 
@@ -940,21 +1197,47 @@ impl FileRepository {
         Ok(())
     }
 
-    #[instrument(skip(self), err(Debug))]
-    pub async fn delete_live(&self, id: Uuid) -> Result<(), AppError> {
-        self.delete_live_with(&self.pool, id).await
-    }
+    /// Delete rows for `ids`. Returns the ids that were actually removed.
+    ///
+    /// Also removes matching `file_metadata` rows (hard delete).
+    #[instrument(skip(self, ids), err(Debug))]
+    pub async fn delete_many(&self, ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
 
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn delete_live_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
-        sqlx::query!(r#"DELETE FROM files WHERE id = $1"#, id)
-            .execute(executor)
-            .await?;
+        let mut tx = self.pool.begin().await?;
 
-        Ok(())
+        let mut query = QueryBuilder::<Db>::new("DELETE FROM files WHERE id IN (");
+        {
+            let mut selected = query.separated(", ");
+            for id in ids {
+                selected.push_bind(*id);
+            }
+        }
+        query.push(") RETURNING id");
+
+        let deleted = query
+            .build_query_scalar::<Uuid>()
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(AppError::from)?;
+
+        if !deleted.is_empty() {
+            let mut meta = QueryBuilder::<Db>::new("DELETE FROM file_metadata WHERE file_id IN (");
+            {
+                let mut selected = meta.separated(", ");
+                for id in &deleted {
+                    selected.push_bind(*id);
+                }
+            }
+            meta.push(")");
+            meta.build().execute(&mut *tx).await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(deleted)
     }
 
     pub async fn delete_root(&self, id: Uuid) -> Result<(), AppError> {
@@ -966,9 +1249,21 @@ impl FileRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        let result = sqlx::query!(r#"DELETE FROM roots WHERE id = $1"#, id)
-            .execute(executor)
-            .await?;
+        // `file_metadata` has no FK; clear any rows still tied to this root first.
+        let result = sqlx::query!(
+            r#"
+            WITH deleted_meta AS (
+                DELETE FROM file_metadata
+                WHERE file_id IN (SELECT id FROM files WHERE root_id = $1)
+                   OR file_id IN (SELECT id FROM trashed_files WHERE root_id = $1)
+                RETURNING file_id
+            )
+            DELETE FROM roots WHERE id = $1
+            "#,
+            id
+        )
+        .execute(executor)
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::ResourceMissing("Root does not exist".into()));

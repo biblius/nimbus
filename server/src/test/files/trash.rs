@@ -693,7 +693,7 @@ mod trash {
                 matches!(
                     files.get_live(file.id).await,
                     Ok(Some(row))
-                        if row.metadata.as_ref().is_some_and(|meta| meta.preview_64.is_some())
+                        if row.metadata.preview_64.is_some()
                 )
             }
         })
@@ -705,8 +705,6 @@ mod trash {
             .unwrap()
             .expect("live row")
             .metadata
-            .expect("metadata")
-            .0
             .preview_64
             .expect("preview_64 hash");
 

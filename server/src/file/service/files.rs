@@ -262,7 +262,7 @@ impl FileService {
                 size_bytes: 0,
                 sharing_mode,
                 share_expires_at,
-                metadata: None,
+                metadata: Default::default(),
                 created_at: now,
                 updated_at: now,
             })
@@ -280,7 +280,7 @@ impl FileService {
             size_bytes: file.size,
             sharing_mode,
             share_expires_at,
-            metadata: None,
+            metadata: Default::default(),
             created_at: now,
             updated_at: now,
         }));
@@ -477,7 +477,7 @@ impl FileService {
                     name: file.name,
                     kind: file.kind,
                     file_type: file.file_type,
-                    metadata: file.metadata.map(|m| m.0),
+                    metadata: file.metadata.into_option(),
                     children: FileTree::from_entries(children),
                 };
 
@@ -512,7 +512,7 @@ impl FileService {
             name: root.name,
             kind: FileKind::Directory,
             file_type: None,
-            metadata: None,
+            metadata: Default::default(),
             children: FileTree::from_entries(children),
         };
 
@@ -537,14 +537,13 @@ impl FileService {
             ));
         }
 
-        let meta = file
-            .metadata
-            .as_ref()
-            .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
+        if file.metadata.is_empty() {
+            return Err(AppError::ResourceMissing("Preview does not exist".into()));
+        }
 
         let hash = match size {
-            PreviewSize::Icon => meta.preview_64.as_deref(),
-            PreviewSize::Tile => meta.preview_256.as_deref(),
+            PreviewSize::Icon => file.metadata.preview_64.as_deref(),
+            PreviewSize::Tile => file.metadata.preview_256.as_deref(),
         }
         .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
 
@@ -773,7 +772,7 @@ impl FileService {
             name: String::new(),
             kind: FileKind::Directory,
             file_type: None,
-            metadata: None,
+            metadata: Default::default(),
             children: FileTree::from_entries(files),
         })
     }

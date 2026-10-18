@@ -63,7 +63,6 @@ pub(crate) async fn list_descendants_in(
                 f.format AS file_type,
                 f.hash,
                 f.size_bytes,
-                f.metadata,
                 f.created_at,
                 f.updated_at,
                 TRUE AS query_root
@@ -93,7 +92,6 @@ pub(crate) async fn list_descendants_in(
                 child.format,
                 child.hash,
                 child.size_bytes,
-                child.metadata,
                 child.created_at,
                 child.updated_at,
                 FALSE AS query_root
@@ -101,20 +99,22 @@ pub(crate) async fn list_descendants_in(
             JOIN tree t ON child.parent = t.id
         )
         SELECT
-            id,
-            root_id,
-            kind,
-            name,
-            parent,
-            file_type,
-            hash,
-            size_bytes,
-            metadata,
-            created_at,
-            updated_at,
-            query_root
-        FROM tree
-        ORDER BY CASE WHEN kind = 'd' THEN 0 ELSE 1 END, name, created_at, id
+            t.id,
+            t.root_id,
+            t.kind,
+            t.name,
+            t.parent,
+            t.file_type,
+            t.hash,
+            t.size_bytes,
+            m.preview_64,
+            m.preview_256,
+            t.created_at,
+            t.updated_at,
+            t.query_root
+        FROM tree t
+        LEFT JOIN file_metadata m ON m.file_id = t.id
+        ORDER BY CASE WHEN t.kind = 'd' THEN 0 ELSE 1 END, t.name, t.created_at, t.id
         "#
     ));
 

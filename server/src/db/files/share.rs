@@ -2,13 +2,12 @@ use crate::{
     db::{Db, DbPool},
     error::AppError,
     file::{
-        format::FileType,
-        model::{FileEntry, FileKind, FileMetadata, FileView, SharingMode},
+        model::{FileEntry, FileView, SharingMode},
         tree::FileEntryTree,
     },
 };
 use chrono::{DateTime, Utc};
-use sqlx::{QueryBuilder, types::Json};
+use sqlx::QueryBuilder;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -32,32 +31,33 @@ impl ShareRepository {
     pub async fn get_shared(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
         let now = Utc::now();
 
-        sqlx::query_as!(
-            FileEntry,
+        sqlx::query_as::<_, FileEntry>(
             r#"
             SELECT
-                id,
-                root_id,
-                created_by AS "created_by?",
-                "type" AS "kind: FileKind",
-                name,
-                parent,
-                format AS "file_type: FileType",
-                hash,
-                size_bytes,
-                sharing_mode AS "sharing_mode: SharingMode",
-                share_expires_at,
-                metadata AS "metadata: Json<FileMetadata>",
-                created_at,
-                updated_at
-            FROM files
-            WHERE id = $1
-              AND sharing_mode IS NOT NULL
-              AND (share_expires_at IS NULL OR share_expires_at > $2)
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.sharing_mode,
+                f.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
+            WHERE f.id = $1
+              AND f.sharing_mode IS NOT NULL
+              AND (f.share_expires_at IS NULL OR f.share_expires_at > $2)
             "#,
-            id,
-            now
         )
+        .bind(id)
+        .bind(now)
         .fetch_optional(&self.pool)
         .await
         .map_err(AppError::from)
@@ -84,7 +84,6 @@ impl ShareRepository {
                     f.format AS file_type,
                     f.hash,
                     f.size_bytes,
-                    f.metadata,
                     f.created_at,
                     f.updated_at,
                     TRUE AS query_root
@@ -115,7 +114,6 @@ impl ShareRepository {
                 child.format,
                 child.hash,
                 child.size_bytes,
-                child.metadata,
                 child.created_at,
                 child.updated_at,
                 FALSE AS query_root
@@ -126,27 +124,29 @@ impl ShareRepository {
             "#,
         );
         query.push_bind(now);
-        query.push(
+        query.push(format!(
             r#"
               )
             )
             SELECT
-                id,
-                root_id,
-                kind,
-                name,
-                parent,
-                file_type,
-                hash,
-                size_bytes,
-                metadata,
-                created_at,
-                updated_at,
-                query_root
-            FROM tree
-            ORDER BY CASE WHEN kind = 'd' THEN 0 ELSE 1 END, name, created_at, id
-            "#,
-        );
+                t.id,
+                t.root_id,
+                t.kind,
+                t.name,
+                t.parent,
+                t.file_type,
+                t.hash,
+                t.size_bytes,
+                m.preview_64,
+                m.preview_256,
+                t.created_at,
+                t.updated_at,
+                t.query_root
+            FROM tree t
+            LEFT JOIN file_metadata m ON m.file_id = t.id
+            ORDER BY CASE WHEN t.kind = 'd' THEN 0 ELSE 1 END, t.name, t.created_at, t.id
+            "#
+        ));
 
         query
             .build_query_as::<FileEntryTree>()
@@ -160,7 +160,7 @@ impl ShareRepository {
     pub async fn list_shared_children(&self, parent: Uuid) -> Result<Vec<FileView>, AppError> {
         let now = Utc::now();
 
-        let mut query = QueryBuilder::new(
+        let mut query = QueryBuilder::new(format!(
             r#"
             SELECT
                 f.id,
@@ -174,14 +174,16 @@ impl ShareRepository {
                 f.size_bytes,
                 f.sharing_mode,
                 f.share_expires_at,
-                f.metadata,
+                m.preview_64,
+                m.preview_256,
                 f.created_at,
                 f.updated_at
             FROM files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
             WHERE f.sharing_mode IS NOT NULL
               AND (f.share_expires_at IS NULL OR f.share_expires_at > 
-            "#,
-        );
+            "#
+        ));
 
         query.push_bind(now);
         query.push(") AND f.parent = ");

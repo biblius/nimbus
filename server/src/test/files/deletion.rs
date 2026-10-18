@@ -262,9 +262,7 @@ mod deletion {
                 matches!(
                     files.get_live(file_id).await,
                     Ok(Some(row))
-                        if row.metadata.as_ref().is_some_and(|meta| {
-                            meta.preview_64.is_some() && meta.preview_256.is_some()
-                        })
+                        if row.metadata.preview_64.is_some() && row.metadata.preview_256.is_some()
                 )
             }
         })
@@ -275,9 +273,7 @@ mod deletion {
             .await
             .unwrap()
             .expect("file row")
-            .metadata
-            .expect("metadata")
-            .0;
+            .metadata;
 
         (
             meta.preview_64.expect("preview_64 hash"),

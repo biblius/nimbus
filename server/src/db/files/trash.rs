@@ -7,13 +7,12 @@ use crate::{
     },
     error::AppError,
     file::{
-        format::FileType,
-        model::{FileEntry, FileKind, FileMetadata, FileRef, SharingMode},
+        model::{FileEntry, FileRef},
         tree::FileEntryTree,
     },
 };
 use chrono::{DateTime, Utc};
-use sqlx::{Executor, QueryBuilder, types::Json};
+use sqlx::{Executor, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -41,32 +40,80 @@ impl TrashRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        sqlx::query_as!(
-            FileEntry,
+        sqlx::query_as::<_, FileEntry>(
             r#"
             SELECT
-                id,
-                root_id,
-                created_by AS "created_by?",
-                "type" AS "kind: FileKind",
-                name,
-                parent,
-                format AS "file_type: FileType",
-                hash,
-                size_bytes,
-                NULL AS "sharing_mode: SharingMode",
-                NULL AS "share_expires_at: DateTime<Utc>",
-                metadata AS "metadata: Json<FileMetadata>",
-                created_at,
-                updated_at
-            FROM trashed_files
-            WHERE id = $1
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                NULL AS sharing_mode,
+                NULL AS share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM trashed_files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
+            WHERE f.id = $1
             "#,
-            id
         )
+        .bind(id)
         .fetch_optional(executor)
         .await
         .map_err(AppError::from)
+    }
+
+    /// Trashed rows for every id in `ids`. Missing ids are omitted.
+    #[instrument(skip(self, ids), err(Debug))]
+    pub async fn get_trashed_many(&self, ids: &[Uuid]) -> Result<Vec<FileEntry>, AppError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query = QueryBuilder::<Db>::new(format!(
+            r#"
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                NULL AS sharing_mode,
+                NULL AS share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM trashed_files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
+            WHERE f.id IN (
+            "#
+        ));
+
+        {
+            let mut selected = query.separated(", ");
+            for id in ids {
+                selected.push_bind(*id);
+            }
+        }
+
+        query.push(")");
+
+        query
+            .build_query_as::<FileEntry>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)
     }
 
     /// Trash for a root. Directly trashed rows have a null parent, so they are the roots.
@@ -77,6 +124,7 @@ impl TrashRepository {
     /// Move `ids` and every descendant out of `files` and into `trashed_files`.
     ///
     /// A moved row whose parent was not moved becomes a trash root.
+    /// Preview metadata stays in `file_metadata` (same file id).
     #[instrument(skip(self), err(Debug))]
     pub async fn trash(
         &self,
@@ -129,7 +177,8 @@ impl TrashRepository {
                 size_bytes,
                 sharing_mode,
                 share_expires_at,
-                metadata,
+                NULL AS preview_64,
+                NULL AS preview_256,
                 created_at,
                 updated_at
             "#,
@@ -162,7 +211,6 @@ impl TrashRepository {
                 format,
                 hash,
                 size_bytes,
-                metadata,
                 created_at,
                 updated_at,
                 trashed_at
@@ -187,7 +235,6 @@ impl TrashRepository {
                 .push_bind(file.file_type.clone())
                 .push_bind(&file.hash)
                 .push_bind(file.size_bytes)
-                .push_bind(&file.metadata)
                 .push_bind(file.created_at)
                 .push_bind(now)
                 .push_bind(now);
@@ -217,8 +264,10 @@ impl TrashRepository {
     }
 
     /// Delete `id` and its descendants from `trashed_files`. Returns the removed rows.
+    ///
+    /// Does not touch `file_metadata` because the same IDs are reused on restore.
     #[instrument(skip(self, executor), err(Debug))]
-    pub async fn delete_trashed_tree<'e, E>(
+    pub async fn delete_tree<'e, E>(
         &self,
         executor: E,
         root_id: Uuid,
@@ -227,8 +276,7 @@ impl TrashRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        let restored = sqlx::query_as!(
-            FileEntry,
+        let restored = sqlx::query_as::<_, FileEntry>(
             r#"
             WITH RECURSIVE tree AS (
                 SELECT id
@@ -245,22 +293,23 @@ impl TrashRepository {
             RETURNING
                 id,
                 root_id,
-                created_by AS "created_by?",
-                "type" AS "kind: FileKind",
+                created_by,
+                "type" AS kind,
                 name,
                 parent,
-                format AS "file_type: FileType",
+                format AS file_type,
                 hash,
                 size_bytes,
-                NULL AS "sharing_mode: SharingMode",
-                NULL AS "share_expires_at: DateTime<Utc>",
-                metadata AS "metadata: Json<FileMetadata>",
+                NULL AS sharing_mode,
+                NULL AS share_expires_at,
+                NULL AS preview_64,
+                NULL AS preview_256,
                 created_at,
                 updated_at
             "#,
-            id,
-            root_id
         )
+        .bind(id)
+        .bind(root_id)
         .fetch_all(executor)
         .await?;
 
@@ -271,21 +320,47 @@ impl TrashRepository {
         Ok(restored)
     }
 
-    #[instrument(skip(self), err(Debug))]
-    pub async fn delete_trashed(&self, id: Uuid) -> Result<(), AppError> {
-        self.delete_trashed_with(&self.pool, id).await
-    }
+    /// Delete trashed rows for `ids`. Returns the ids that were actually removed.
+    ///
+    /// Also removes matching `file_metadata` rows (hard delete).
+    #[instrument(skip(self, ids), err(Debug))]
+    pub async fn delete_many(&self, ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
 
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn delete_trashed_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
-        sqlx::query!(r#"DELETE FROM trashed_files WHERE id = $1"#, id)
-            .execute(executor)
-            .await?;
+        let mut tx = self.pool.begin().await?;
 
-        Ok(())
+        let mut query = QueryBuilder::<Db>::new("DELETE FROM trashed_files WHERE id IN (");
+        {
+            let mut selected = query.separated(", ");
+            for id in ids {
+                selected.push_bind(*id);
+            }
+        }
+        query.push(") RETURNING id");
+
+        let deleted = query
+            .build_query_scalar::<Uuid>()
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(AppError::from)?;
+
+        if !deleted.is_empty() {
+            let mut meta = QueryBuilder::<Db>::new("DELETE FROM file_metadata WHERE file_id IN (");
+            {
+                let mut selected = meta.separated(", ");
+                for id in &deleted {
+                    selected.push_bind(*id);
+                }
+            }
+            meta.push(")");
+            meta.build().execute(&mut *tx).await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(deleted)
     }
 
     #[instrument(skip(self), err(Debug))]

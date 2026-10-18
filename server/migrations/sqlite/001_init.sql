@@ -54,8 +54,6 @@ CREATE TABLE files (
   sharing_mode TEXT,
   -- When set, the public share is treated as missing after this instant.
   share_expires_at TEXT,
-  -- Optional generated artifacts (preview hashes, etc.). Null until processing.
-  metadata TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -74,13 +72,20 @@ CREATE INDEX files_sharing_mode_idx ON files (sharing_mode, share_expires_at)
 WHERE
   sharing_mode IS NOT NULL;
 
-CREATE INDEX files_preview_64_idx ON files (json_extract(metadata, '$.preview64'))
-WHERE
-  json_extract(metadata, '$.preview64') IS NOT NULL;
+-- Preview hashes. `file_id` matches `files.id` or `trashed_files.id` (no FK).
+CREATE TABLE file_metadata (
+  file_id BLOB PRIMARY KEY NOT NULL,
+  preview_64 TEXT,
+  preview_256 TEXT
+);
 
-CREATE INDEX files_preview_256_idx ON files (json_extract(metadata, '$.preview256'))
+CREATE INDEX file_metadata_preview_64_idx ON file_metadata (preview_64)
 WHERE
-  json_extract(metadata, '$.preview256') IS NOT NULL;
+  preview_64 IS NOT NULL;
+
+CREATE INDEX file_metadata_preview_256_idx ON file_metadata (preview_256)
+WHERE
+  preview_256 IS NOT NULL;
 
 -- Rows leave `files` when trashed. A directly trashed row has `parent` NULL.
 -- Descendants keep their parent.
@@ -95,7 +100,6 @@ CREATE TABLE trashed_files (
   format TEXT,
   hash TEXT,
   size_bytes INTEGER NOT NULL,
-  metadata TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   trashed_at TEXT NOT NULL
@@ -110,14 +114,6 @@ CREATE INDEX trashed_files_trashed_by_idx ON trashed_files (trashed_by);
 CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
-
-CREATE INDEX trashed_files_preview_64_idx ON trashed_files (json_extract(metadata, '$.preview64'))
-WHERE
-  json_extract(metadata, '$.preview64') IS NOT NULL;
-
-CREATE INDEX trashed_files_preview_256_idx ON trashed_files (json_extract(metadata, '$.preview256'))
-WHERE
-  json_extract(metadata, '$.preview256') IS NOT NULL;
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 

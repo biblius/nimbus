@@ -77,8 +77,6 @@ CREATE TABLE files (
   sharing_mode TEXT,
   -- When set, the public share is treated as missing after this instant.
   share_expires_at TIMESTAMPTZ,
-  -- Optional generated artifacts (preview hashes, etc.). Null until processing.
-  metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
@@ -97,13 +95,21 @@ CREATE INDEX files_sharing_mode_idx ON files (sharing_mode, share_expires_at)
 WHERE
   sharing_mode IS NOT NULL;
 
-CREATE INDEX files_preview_64_idx ON files ((metadata->> 'preview64'))
-WHERE
-  metadata->> 'preview64' IS NOT NULL;
+-- Preview hashes and other generated artifacts. `file_id` matches `files.id`
+-- or `trashed_files.id` No FK because the same id moves between those tables.
+CREATE TABLE file_metadata (
+  file_id UUID PRIMARY KEY NOT NULL,
+  preview_64 TEXT,
+  preview_256 TEXT
+);
 
-CREATE INDEX files_preview_256_idx ON files ((metadata->> 'preview256'))
+CREATE INDEX file_metadata_preview_64_idx ON file_metadata (preview_64)
 WHERE
-  metadata->> 'preview256' IS NOT NULL;
+  preview_64 IS NOT NULL;
+
+CREATE INDEX file_metadata_preview_256_idx ON file_metadata (preview_256)
+WHERE
+  preview_256 IS NOT NULL;
 
 -- Used for soft deletion. Files end up here from `files`.
 -- A file that is directly deleted from `files` has its parent set to null
@@ -121,7 +127,6 @@ CREATE TABLE trashed_files (
   format TEXT,
   hash TEXT,
   size_bytes BIGINT NOT NULL,
-  metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   trashed_at TIMESTAMPTZ NOT NULL
@@ -134,14 +139,6 @@ CREATE INDEX trashed_files_root_id_id_idx ON trashed_files (root_id, id);
 CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
-
-CREATE INDEX trashed_files_preview_64_idx ON trashed_files ((metadata->> 'preview64'))
-WHERE
-  metadata->> 'preview64' IS NOT NULL;
-
-CREATE INDEX trashed_files_preview_256_idx ON trashed_files ((metadata->> 'preview256'))
-WHERE
-  metadata->> 'preview256' IS NOT NULL;
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 
