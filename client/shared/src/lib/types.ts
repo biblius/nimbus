@@ -41,6 +41,7 @@ export type UserData = {
   email?: string;
   role: Role;
   password?: string;
+  currentPassword?: string;
 };
 
 /** Profile fields a signed-in user can change on themselves. */
@@ -48,6 +49,7 @@ export type SelfUserData = {
   username?: string;
   email?: string;
   password?: string;
+  currentPassword?: string;
 };
 
 /** QR SVG plus confirmation token from `POST /auth/otp/setup`. */

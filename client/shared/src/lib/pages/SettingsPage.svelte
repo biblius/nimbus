@@ -169,6 +169,7 @@
       username: data.username?.trim(),
       email: data.email || undefined,
       password: data.password || undefined,
+      currentPassword: data.currentPassword || undefined,
     });
 
     session.user = updated;

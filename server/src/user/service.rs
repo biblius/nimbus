@@ -1,5 +1,5 @@
 use crate::{
-    auth::crypto::hash_password,
+    auth::crypto::{hash_password, verify_password},
     db::{
         Transactor,
         files::{FileRepository, FileTable, TrashRepository},
@@ -8,7 +8,7 @@ use crate::{
         users::UserRepository,
     },
     email::EmailSender,
-    error::AppError,
+    error::{AppError, AuthFailure},
     file::{
         model::{Cleanup, FileEntry, RootAssignment, RootView},
         queue::{DeletionQueue, DeletionQueueHandle, DeletionResult, PendingDeletion},
@@ -207,7 +207,19 @@ impl UserService {
         }
 
         let password = match input.password.as_deref() {
-            Some(password) => Some(hash_password(password)?),
+            Some(new_password) => {
+                let current = input.current_password.as_deref().ok_or_else(|| {
+                    AppError::Unprocessable(
+                        "Current password is required to set a new password".into(),
+                    )
+                })?;
+
+                if !verify_password(current, &user.password) {
+                    return Err(AppError::Auth(AuthFailure::InvalidCredentials));
+                }
+
+                Some(hash_password(new_password)?)
+            }
             None => None,
         };
 

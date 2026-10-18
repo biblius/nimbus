@@ -103,6 +103,14 @@ const AUTH_CHALLENGE_PATHS = new Set([
   "/auth/otp/disable",
 ]);
 
+/** PATCH /auth/me returns 401 when the current password is wrong. */
+function isAuthChallenge(path: string, method: string): boolean {
+  if (AUTH_CHALLENGE_PATHS.has(path)) {
+    return true;
+  }
+  return path === "/auth/me" && method.toUpperCase() === "PATCH";
+}
+
 function parseError(status: number, payload: ErrorBody | null): Error {
   if (payload?.code === VALIDATION_CODE && payload.body) {
     return new ValidationError(payload as ErrorBody<ValidationItem[]>);
@@ -131,8 +139,9 @@ export class NimbusClient {
     status: number,
     payload: ErrorBody | null,
     path: string,
+    method = "GET",
   ): Error {
-    if (status === 401 && !AUTH_CHALLENGE_PATHS.has(path)) {
+    if (status === 401 && !isAuthChallenge(path, method)) {
       this.onUnauthorized?.();
     }
     return parseError(status, payload);
@@ -1003,7 +1012,12 @@ export class NimbusClient {
       } catch {
         body = null;
       }
-      throw this.httpError(response.status, body, path);
+      throw this.httpError(
+        response.status,
+        body,
+        path,
+        init.method ?? "GET",
+      );
     }
 
     if (response.status === 204) {

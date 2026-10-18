@@ -30,10 +30,12 @@
   let role = $state<Role>(user?.role ?? "user");
   let password = $state("");
   let passwordConfirm = $state("");
+  let currentPassword = $state("");
 
   let busy = $state(false);
   let validation = $state<ValidationError | undefined>();
   let confirmError = $state<ValidationField | undefined>();
+  let currentPasswordError = $state<ValidationField | undefined>();
 
   async function onSubmit(event: SubmitEvent) {
     event.preventDefault();
@@ -41,6 +43,19 @@
     busy = true;
     validation = undefined;
     confirmError = undefined;
+    currentPasswordError = undefined;
+
+    if (selfService && password && !currentPassword) {
+      currentPasswordError = {
+        field: "currentPassword",
+        code: "required",
+        params: {},
+        message: "Current password is required to set a new password",
+        location: "/currentPassword",
+      };
+      busy = false;
+      return;
+    }
 
     if (selfService && password && password !== passwordConfirm) {
       confirmError = {
@@ -60,6 +75,7 @@
         email,
         role: selfService ? (user?.role ?? role) : role,
         password,
+        ...(selfService ? { currentPassword } : {}),
       });
     } catch (cause) {
       if (cause instanceof ValidationError) {
@@ -70,7 +86,11 @@
             ? "The server could not be reached"
             : cause instanceof ApiError && cause.status === 409
               ? "That username or email is already in use"
-              : "Could not save the user",
+              : cause instanceof ApiError &&
+                  cause.status === 401 &&
+                  selfService
+                ? "Current password is incorrect"
+                : "Could not save the user",
         );
       }
     } finally {
@@ -159,6 +179,19 @@
     {/if}
 
     <div class="space-y-3">
+      {#if selfService}
+        <Field
+          label="Current password"
+          id="account-current-password"
+          type="password"
+          dense
+          bind:value={currentPassword}
+          error={currentPasswordError ?? validation?.field("currentPassword")}
+          autocomplete="current-password"
+          required={!!password}
+        />
+      {/if}
+
       <Field
         label="Password"
         id="account-password"

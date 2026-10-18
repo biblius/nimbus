@@ -147,6 +147,7 @@ pub struct UpdateUser {
 
 /// Fields a signed-in user can change on their own account.
 /// Omit `password` to keep the current one. Role cannot be changed here.
+/// When setting `password`, `current_password` must match the existing hash.
 #[derive(Debug, Deserialize, Validify, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSelf {
@@ -155,6 +156,10 @@ pub struct UpdateSelf {
     #[validate(length(max = 63, message = "Username too long"))]
     #[validate(custom(function = User::valid_username))]
     pub username: Option<String>,
+
+    /// Required when `password` is set.
+    #[validate(length(min = 1, message = "Current password cannot be empty"))]
+    pub current_password: Option<String>,
 
     #[validate(length(min = 1, message = "Password cannot be empty"))]
     #[validate(length(max = 255, message = "Password too long"))]
