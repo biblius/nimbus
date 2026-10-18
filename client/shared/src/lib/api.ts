@@ -7,6 +7,7 @@ import type {
   FileTree,
   FileView,
   LoginResult,
+  SharedFileView,
   Member,
   ListQuery,
   OtpSetup,
@@ -633,16 +634,16 @@ export class NimbusClient {
   }
 
   /** Public shared file entry (no session required). */
-  sharedFile(fileId: string): Promise<FileView> {
-    return this.request<FileView>(
+  sharedFile(fileId: string): Promise<SharedFileView> {
+    return this.request<SharedFileView>(
       `/files/shared/${encodeURIComponent(fileId)}`,
       { credentials: "omit" },
     );
   }
 
   /** Children of a publicly shared directory. */
-  sharedList(parentId: string): Promise<FileView[]> {
-    return this.request<FileView[]>(
+  sharedList(parentId: string): Promise<SharedFileView[]> {
+    return this.request<SharedFileView[]>(
       `/files/shared/${encodeURIComponent(parentId)}/children`,
       { credentials: "omit" },
     );

@@ -311,7 +311,11 @@ export type FileTree = {
   children: FileTree[];
 };
 
-/** How a publicly shared file may be accessed. */
+/**
+ * How a publicly shared file may be accessed.
+ * - view: preview/stream in UI; no download button
+ * - download: preview plus download button
+ */
 export type SharingMode = "view" | "download";
 
 export type FileEntry = {
@@ -350,6 +354,26 @@ export type PreviewSize = 64 | 256;
 /** Directory listing row: file entry with optional joined metadata. */
 export type FileView = {
   file: FileEntry;
+  metadata: FileMetadata | null;
+};
+
+/** Public share entry: omits rootId, createdBy, and content hash. */
+export type SharedFileEntry = {
+  id: string;
+  kind: "file" | "directory";
+  name: string;
+  parent: string | null;
+  fileType: FileType | null;
+  sizeBytes: number;
+  sharingMode: SharingMode;
+  shareExpiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Public share listing/detail row. */
+export type SharedFileView = {
+  file: SharedFileEntry;
   metadata: FileMetadata | null;
 };
 

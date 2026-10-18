@@ -51,7 +51,7 @@ mod sharing {
             .unwrap();
 
         let shared = state.services.share.get(file.id).await.unwrap();
-        assert_eq!(shared.file.sharing_mode, Some(SharingMode::Download));
+        assert_eq!(shared.file.sharing_mode, SharingMode::Download);
         assert!(shared.file.share_expires_at.is_none());
         assert_eq!(shared.file.name, "notes.txt");
 
@@ -65,7 +65,7 @@ mod sharing {
     }
 
     #[test]
-    async fn view_share_allows_content_but_not_download(state: TestState) {
+    async fn view_share_allows_content_but_denies_download(state: TestState) {
         let _ada = user(state, "ada-share-view").await;
         let session = test::login(state, "ada-share-view", "temporary").await;
         let root = test::private_root(state, &session.user).await;
@@ -80,13 +80,15 @@ mod sharing {
             .unwrap();
 
         let shared = state.services.share.get(file.id).await.unwrap();
-        assert_eq!(shared.file.sharing_mode, Some(SharingMode::View));
+        assert_eq!(shared.file.sharing_mode, SharingMode::View);
 
-        let (entry, _, _) = state.services.share.content(file.id).await.unwrap();
+        let (entry, path, mime) = state.services.share.content(file.id).await.unwrap();
         assert_eq!(entry.id, file.id);
+        assert!(path.exists());
+        assert!(mime.starts_with("text/plain"));
 
-        let denied = state.services.share.download(file.id).await.unwrap_err();
-        assert!(matches!(denied, AppError::Forbidden(_)));
+        let download_denied = state.services.share.download(file.id).await.unwrap_err();
+        assert!(matches!(download_denied, AppError::Forbidden(_)));
     }
 
     #[test]
@@ -223,7 +225,7 @@ mod sharing {
             .unwrap();
 
         let shared_dir = state.services.share.get(dir.id).await.unwrap();
-        assert_eq!(shared_dir.file.sharing_mode, Some(SharingMode::View));
+        assert_eq!(shared_dir.file.sharing_mode, SharingMode::View);
         assert!(shared_dir.file.share_expires_at.is_some());
 
         assert_eq!(
@@ -235,7 +237,7 @@ mod sharing {
                 .unwrap()
                 .file
                 .sharing_mode,
-            Some(SharingMode::View)
+            SharingMode::View
         );
         assert_eq!(
             state
@@ -246,7 +248,7 @@ mod sharing {
                 .unwrap()
                 .file
                 .sharing_mode,
-            Some(SharingMode::View)
+            SharingMode::View
         );
 
         let children = state.services.share.list(dir.id).await.unwrap();

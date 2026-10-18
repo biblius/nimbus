@@ -6,7 +6,7 @@
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import { kv, type FilesViewMode } from "../../storage";
-  import type { FileView } from "../../types";
+  import type { SharedFileView } from "../../types";
   import { hasListThumbnail, isPreviewable } from "../../fileKind";
   import { formatBytes, formatDatetime } from "../../format";
   import { cn } from "../../utils";
@@ -23,7 +23,7 @@
     parentId = null,
   }: {
     /** The publicly shared directory this page was opened with. */
-    shareRoot: FileView;
+    shareRoot: SharedFileView;
     /** Directory open inside the share. Null lists the share root itself. */
     parentId?: string | null;
   } = $props();
@@ -33,7 +33,7 @@
 
   const canDownload = $derived(shareRoot.file.sharingMode === "download");
 
-  let entries = $state<FileView[]>([]);
+  let entries = $state<SharedFileView[]>([]);
   let loading = $state(true);
   let latestLoad = 0;
 
@@ -93,7 +93,7 @@
 
   onDestroy(() => previews.clear());
 
-  function compare(left: FileView, right: FileView) {
+  function compare(left: SharedFileView, right: SharedFileView) {
     const byKind = left.file.kind.localeCompare(right.file.kind);
 
     if (byKind !== 0) {
@@ -205,7 +205,7 @@
     }
   }
 
-  function activate(entry: FileView) {
+  function activate(entry: SharedFileView) {
     if (entry.file.kind === "directory") {
       const id = entry.file.id;
 
@@ -222,13 +222,13 @@
     }
   }
 
-  function downloadName(entry: FileView) {
+  function downloadName(entry: SharedFileView) {
     return entry.file.kind === "directory"
       ? `${entry.file.name}.zip`
       : entry.file.name;
   }
 
-  async function download(entry: FileView) {
+  async function download(entry: SharedFileView) {
     if (!canDownload) {
       return;
     }
@@ -265,7 +265,7 @@
   }
 </script>
 
-{#snippet thumb(entry: FileView, boxClass: string, iconSize: number)}
+{#snippet thumb(entry: SharedFileView, boxClass: string, iconSize: number)}
   {@const thumbnailUrl = previews.thumbs[entry.file.id]}
   {#if entry.file.kind === "directory"}
     <span

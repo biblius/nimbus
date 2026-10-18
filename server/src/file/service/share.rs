@@ -2,7 +2,9 @@ use crate::{
     db::files::ShareRepository,
     error::AppError,
     file::{
-        model::{FileContentPreview, FileEntry, FileKind, FileView, PreviewSize, SharingMode},
+        model::{
+            FileContentPreview, FileEntry, FileKind, PreviewSize, SharedFileView, SharingMode,
+        },
         storage::Storage,
         tree::FileTree,
     },
@@ -25,19 +27,19 @@ impl ShareService {
 
     /// Metadata for a shared file or directory.
     #[instrument(skip(self), err(Debug))]
-    pub async fn get(&self, id: Uuid) -> Result<FileView, AppError> {
+    pub async fn get(&self, id: Uuid) -> Result<SharedFileView, AppError> {
         let file = self
             .share
             .get_shared(id)
             .await?
             .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
-        Ok(FileView::from(file))
+        Ok(SharedFileView::from(file))
     }
 
     /// Children of a shared directory. The directory itself must be shared.
     #[instrument(skip(self), err(Debug))]
-    pub async fn list(&self, parent_id: Uuid) -> Result<Vec<FileView>, AppError> {
+    pub async fn list(&self, parent_id: Uuid) -> Result<Vec<SharedFileView>, AppError> {
         let parent = self
             .share
             .get_shared(parent_id)
@@ -53,23 +55,44 @@ impl ShareService {
         self.share.list_shared_children(parent_id).await
     }
 
-    /// Blob path for inline/stream access of a shared file (view or download mode).
+    /// Blob path for inline/stream access (preview). Allowed for view and download shares.
     #[instrument(skip(self), err(Debug))]
-    pub async fn content(
-        &self,
-        id: Uuid,
-    ) -> Result<(FileEntry, PathBuf, &'static str), AppError> {
-        self.shared_blob(id).await
+    pub async fn content(&self, id: Uuid) -> Result<(FileEntry, PathBuf, &'static str), AppError> {
+        let file = self
+            .share
+            .get_shared(id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
+
+        if file.kind != FileKind::File {
+            return Err(AppError::Unprocessable(
+                "Directories cannot be streamed".into(),
+            ));
+        }
+
+        let hash = file.hash.as_deref().ok_or(AppError::Internal)?;
+
+        let path = self.storage.path(hash);
+
+        if !tokio::fs::try_exists(&path).await? {
+            tracing::error!(%id, hash, "shared file row has no blob on disk");
+            return Err(AppError::Internal);
+        }
+
+        let mime = file
+            .file_type
+            .as_ref()
+            .map(|file_type| file_type.mime())
+            .unwrap_or("application/octet-stream");
+
+        Ok((file, path, mime))
     }
 
     /// Attachment download. Rejected when the share is view-only.
     ///
     /// Files stream as-is; directories are returned as a zip streamed while being built.
     #[instrument(skip(self), err(Debug))]
-    pub async fn download(
-        &self,
-        id: Uuid,
-    ) -> Result<(String, super::DownloadBody), AppError> {
+    pub async fn download(&self, id: Uuid) -> Result<(String, super::DownloadBody), AppError> {
         let file = self
             .share
             .get_shared(id)
@@ -123,40 +146,6 @@ impl ShareService {
         }
     }
 
-    async fn shared_blob(
-        &self,
-        id: Uuid,
-    ) -> Result<(FileEntry, PathBuf, &'static str), AppError> {
-        let file = self
-            .share
-            .get_shared(id)
-            .await?
-            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
-
-        if file.kind != FileKind::File {
-            return Err(AppError::Unprocessable(
-                "Directories cannot be streamed".into(),
-            ));
-        }
-
-        let hash = file.hash.as_deref().ok_or(AppError::Internal)?;
-
-        let path = self.storage.path(hash);
-
-        if !tokio::fs::try_exists(&path).await? {
-            tracing::error!(%id, hash, "shared file row has no blob on disk");
-            return Err(AppError::Internal);
-        }
-
-        let mime = file
-            .file_type
-            .as_ref()
-            .map(|file_type| file_type.mime())
-            .unwrap_or("application/octet-stream");
-
-        Ok((file, path, mime))
-    }
-
     /// Generated preview icon for a shared file, when one exists.
     #[instrument(skip(self), fields(?size), err(Debug))]
     pub async fn preview(
@@ -164,6 +153,7 @@ impl ShareService {
         id: Uuid,
         size: PreviewSize,
     ) -> Result<FileContentPreview, AppError> {
+        // Preview icons can be shared when file sharing is in view mode.
         let file = self
             .share
             .get_shared(id)

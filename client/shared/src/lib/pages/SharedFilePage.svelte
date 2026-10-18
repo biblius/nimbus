@@ -8,11 +8,11 @@
   import { route } from "../router";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
-  import type { FileView } from "../types";
+  import type { SharedFileView } from "../types";
 
   type LoadState = "loading" | "ready" | "not-found" | "error";
 
-  let entry = $state<FileView | null>(null);
+  let entry = $state<SharedFileView | null>(null);
   let status = $state<LoadState>("loading");
 
   const fileId = $derived(route.params.file_id);
@@ -64,7 +64,7 @@
     };
   });
 
-  async function download(view: FileView) {
+  async function download(view: SharedFileView) {
     const name =
       view.file.kind === "directory"
         ? `${view.file.name}.zip`

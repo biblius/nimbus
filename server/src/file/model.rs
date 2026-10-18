@@ -48,9 +48,9 @@ pub struct FileEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SharingMode {
-    /// Preview and stream only; attachment downloads are denied.
+    /// Preview/stream in the UI; attachment download is denied.
     View,
-    /// Preview, stream, and attachment download.
+    /// Preview/stream plus attachment download.
     Download,
 }
 
@@ -155,6 +155,53 @@ impl From<FileEntry> for FileView {
         let metadata = std::mem::take(&mut entry.metadata).into_option();
         Self {
             file: entry,
+            metadata,
+        }
+    }
+}
+
+/// Public share listing row: omits private identifiers (`root_id`, `created_by`, `hash`).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedFileEntry {
+    pub id: Uuid,
+    pub kind: FileKind,
+    pub name: String,
+    pub parent: Option<Uuid>,
+    pub file_type: Option<FileType>,
+    pub size_bytes: i64,
+    pub sharing_mode: SharingMode,
+    pub share_expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Public share view returned by unauthenticated share routes.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedFileView {
+    pub file: SharedFileEntry,
+    pub metadata: Option<FileMetadata>,
+}
+
+impl From<FileEntry> for SharedFileView {
+    fn from(mut entry: FileEntry) -> Self {
+        let metadata = std::mem::take(&mut entry.metadata).into_option();
+        let sharing_mode = entry.sharing_mode.unwrap_or(SharingMode::Download);
+
+        Self {
+            file: SharedFileEntry {
+                id: entry.id,
+                kind: entry.kind,
+                name: entry.name,
+                parent: entry.parent,
+                file_type: entry.file_type,
+                size_bytes: entry.size_bytes,
+                sharing_mode,
+                share_expires_at: entry.share_expires_at,
+                created_at: entry.created_at,
+                updated_at: entry.updated_at,
+            },
             metadata,
         }
     }

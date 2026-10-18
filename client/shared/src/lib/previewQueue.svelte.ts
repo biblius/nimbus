@@ -1,6 +1,14 @@
 import { hasListThumbnail } from "./fileKind";
 import { session } from "./session.svelte";
-import type { FileEntry } from "./types";
+import type { FileType } from "./types";
+
+/** Minimal fields needed to decide whether to fetch a list thumbnail. */
+type PreviewFile = {
+  id: string;
+  kind: "file" | "directory";
+  parent: string | null;
+  fileType: FileType | null;
+};
 
 const PREVIEW_POLL_MS = 3000;
 const PREVIEW_MAX_ATTEMPTS = 5;
@@ -42,7 +50,7 @@ export class PreviewQueue {
    * @param retry - Only for new uploads where a preview is known to be pending.
    *   Existing files should leave this false (one attempt, no poll retries).
    */
-  enqueue(file: FileEntry, retry = false) {
+  enqueue(file: PreviewFile, retry = false) {
     if (file.kind !== "file" || file.parent !== this.opts.getParentId()) {
       return;
     }
@@ -67,7 +75,7 @@ export class PreviewQueue {
   /**
    * Revoke cached thumbs and re-enqueue existing files (no retry).
    */
-  refreshAll(files: FileEntry[]) {
+  refreshAll(files: PreviewFile[]) {
     for (const url of Object.values(this.thumbs)) {
       URL.revokeObjectURL(url);
     }

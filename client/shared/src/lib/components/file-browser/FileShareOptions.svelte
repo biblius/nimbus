@@ -121,11 +121,7 @@
 
     <div class="space-y-2">
       <p class="text-sm font-medium">Access</p>
-      <div
-        role="radiogroup"
-        aria-label="Access"
-        class="grid grid-cols-2 gap-2"
-      >
+      <div role="radiogroup" aria-label="Access" class="grid grid-cols-2 gap-2">
         <button
           type="button"
           role="radio"
@@ -141,7 +137,9 @@
             <Eye size={15} class="shrink-0 text-muted-foreground" />
             View
           </span>
-          <span class="text-xs text-muted-foreground">Preview only</span>
+          <span class="text-xs text-muted-foreground">
+            Download controls hidden, content still available via preview
+          </span>
         </button>
         <button
           type="button"
@@ -158,7 +156,9 @@
             <Download size={15} class="shrink-0 text-muted-foreground" />
             Download
           </span>
-          <span class="text-xs text-muted-foreground">Preview & save</span>
+          <span class="text-xs text-muted-foreground">
+            Download controls shown
+          </span>
         </button>
       </div>
     </div>

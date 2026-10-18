@@ -36,7 +36,7 @@
   import { session } from "../../session.svelte";
   import { kv } from "../../storage";
   import { toastError } from "../../toast";
-  import type { FileView } from "../../types";
+  import type { SharedFileView } from "../../types";
   import { cn } from "../../utils";
   import AudioPreviewContent from "./preview/AudioPreviewContent.svelte";
   import ImagePreviewContent from "./preview/ImagePreviewContent.svelte";
@@ -49,7 +49,7 @@
     onSelect,
   }: {
     /** Previewable shared files in display order. */
-    files: FileView[];
+    files: SharedFileView[];
     fileId: string;
     /** Omit when the preview is the whole page (single shared file). */
     onClose?: () => void;
@@ -128,7 +128,7 @@
   const isZip = $derived(current != null && isZipFile(current));
   const fileName = $derived(current?.file.name ?? "");
   const canDownload = $derived(current?.file.sharingMode === "download");
-  /** Inline blob URL for image / PDF / text / xlsx / zip (allowed in view mode). */
+  /** Full-file content URL for preview (view and download shares). */
   const contentUrl = $derived(
     current ? session.client.sharedContentUrl(current.file.id) : "",
   );

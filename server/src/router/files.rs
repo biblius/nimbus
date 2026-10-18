@@ -4,8 +4,8 @@ use crate::{
     file::{
         model::{
             CopyFiles, CreateDirectory, CreateTextFile, DownloadFiles, FileEntry, FileView,
-            MoveFiles, PreviewSize, RenameFile, RestoreFile, RootView, ShareFiles, TrashFiles,
-            UnshareFiles,
+            MoveFiles, PreviewSize, RenameFile, RestoreFile, RootView, ShareFiles, SharedFileView,
+            TrashFiles, UnshareFiles,
         },
         queue::DeletionResult,
         tree::FileTree,
@@ -849,12 +849,12 @@ pub(crate) async fn delete_files(
     get,
     path = "/files/shared/{file_id}",
     params(("file_id" = Uuid, Path, description = "Shared file id")),
-    responses((status = 200, description = "Shared file entry", body = FileView))
+    responses((status = 200, description = "Shared file entry", body = SharedFileView))
 )]
 pub(crate) async fn shared_file(
     State(state): State<AppState>,
     Path(file_id): Path<Uuid>,
-) -> Result<Json<FileView>, AppError> {
+) -> Result<Json<SharedFileView>, AppError> {
     Ok(Json(state.services.share.get(file_id).await?))
 }
 
@@ -862,12 +862,12 @@ pub(crate) async fn shared_file(
     get,
     path = "/files/shared/{file_id}/children",
     params(("file_id" = Uuid, Path, description = "Shared directory id")),
-    responses((status = 200, description = "Shared directory children", body = Vec<FileView>))
+    responses((status = 200, description = "Shared directory children", body = Vec<SharedFileView>))
 )]
 pub(crate) async fn shared_children(
     State(state): State<AppState>,
     Path(file_id): Path<Uuid>,
-) -> Result<Json<Vec<FileView>>, AppError> {
+) -> Result<Json<Vec<SharedFileView>>, AppError> {
     Ok(Json(state.services.share.list(file_id).await?))
 }
 

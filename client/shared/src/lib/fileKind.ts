@@ -1,4 +1,12 @@
-import type { FileType, FileView } from "./types";
+import type { FileType } from "./types";
+
+/** Listing row with the fields preview helpers need. */
+type FileLike = {
+  file: {
+    kind: "file" | "directory";
+    fileType: FileType | null;
+  };
+};
 
 /** Top-level file family from the API `fileType` object. */
 export type FileFamily =
@@ -75,23 +83,23 @@ export function fileFamily(fileType: FileType | null | undefined): FileFamily {
   return "other";
 }
 
-export function isImageFile(entry: FileView): boolean {
+export function isImageFile(entry: FileLike): boolean {
   return entry.file.kind === "file" && fileFamily(entry.file.fileType) === "image";
 }
 
-export function isVideoFile(entry: FileView): boolean {
+export function isVideoFile(entry: FileLike): boolean {
   return entry.file.kind === "file" && fileFamily(entry.file.fileType) === "video";
 }
 
-export function isAudioFile(entry: FileView): boolean {
+export function isAudioFile(entry: FileLike): boolean {
   return entry.file.kind === "file" && fileFamily(entry.file.fileType) === "audio";
 }
 
-export function isTextFile(entry: FileView): boolean {
+export function isTextFile(entry: FileLike): boolean {
   return entry.file.kind === "file" && fileFamily(entry.file.fileType) === "text";
 }
 
-export function isPdfFile(entry: FileView): boolean {
+export function isPdfFile(entry: FileLike): boolean {
   return (
     entry.file.kind === "file" &&
     entry.file.fileType != null &&
@@ -108,7 +116,7 @@ export function isPdfFile(entry: FileView): boolean {
  * Html / Xml / Txt are also on the SheetJS list but stay as text preview —
  * those variants are general documents, not Excel worksheet flavours.
  */
-export function isXlsxFile(entry: FileView): boolean {
+export function isXlsxFile(entry: FileLike): boolean {
   if (entry.file.kind !== "file" || entry.file.fileType == null) {
     return false;
   }
@@ -135,7 +143,7 @@ export function isXlsxFile(entry: FileView): boolean {
 }
 
 /** ZIP archives — listed via SheetJS `CFB.read` (same lib as xlsx preview). */
-export function isZipFile(entry: FileView): boolean {
+export function isZipFile(entry: FileLike): boolean {
   return (
     entry.file.kind === "file" &&
     entry.file.fileType != null &&
@@ -145,7 +153,7 @@ export function isZipFile(entry: FileView): boolean {
 }
 
 /** Files that show a generated WebP icon in the browser list. */
-export function hasListThumbnail(entry: FileView): boolean {
+export function hasListThumbnail(entry: FileLike): boolean {
   return isImageFile(entry) || isVideoFile(entry);
 }
 
@@ -161,7 +169,7 @@ export function treeHasThumbnail(
   return family === "image" || family === "video";
 }
 
-export function isPreviewable(entry: FileView): boolean {
+export function isPreviewable(entry: FileLike): boolean {
   return (
     isImageFile(entry) ||
     isVideoFile(entry) ||

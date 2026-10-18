@@ -2,7 +2,7 @@ use crate::{
     db::{Db, DbPool},
     error::AppError,
     file::{
-        model::{FileEntry, FileView, SharingMode},
+        model::{FileEntry, SharedFileView, SharingMode},
         tree::FileEntryTree,
     },
 };
@@ -157,7 +157,10 @@ impl ShareRepository {
 
     /// Shared children of a shared directory (non-expired only).
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_shared_children(&self, parent: Uuid) -> Result<Vec<FileView>, AppError> {
+    pub async fn list_shared_children(
+        &self,
+        parent: Uuid,
+    ) -> Result<Vec<SharedFileView>, AppError> {
         let now = Utc::now();
 
         let mut query = QueryBuilder::new(
@@ -198,7 +201,7 @@ impl ShareRepository {
             .await
             .map_err(AppError::from)?;
 
-        Ok(rows.into_iter().map(FileView::from).collect())
+        Ok(rows.into_iter().map(SharedFileView::from).collect())
     }
 
     /// Set share mode and expiry on every id in `ids` and their live descendants.
