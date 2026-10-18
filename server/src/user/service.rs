@@ -278,13 +278,6 @@ impl UserService {
 
         FileEntry::valid_name(&input.name)?;
 
-        let mut members = Vec::new();
-
-        for member_id in input.members {
-            let member = self.users.get_by_id(member_id).await?;
-            members.push(member.id);
-        }
-
         let root_id = Uuid::new_v4();
 
         let mut tx = self.tx.begin().await?;
@@ -294,17 +287,9 @@ impl UserService {
             .insert_root(&mut *tx, root_id, &input.name, input.quota_bytes, None)
             .await?;
 
-        for member_id in members {
-            self.folders
-                .insert(
-                    &mut *tx,
-                    RootAssignment {
-                        root_id,
-                        user_id: member_id,
-                    },
-                )
-                .await?;
-        }
+        self.folders
+            .insert_many(&mut *tx, root_id, &input.members)
+            .await?;
 
         tx.commit().await?;
 
@@ -385,27 +370,13 @@ impl UserService {
         let add: Vec<Uuid> = want.difference(&have).copied().collect();
         let remove: Vec<Uuid> = have.difference(&want).copied().collect();
 
-        for user_id in &add {
-            self.users.get_by_id(*user_id).await?;
-        }
-
         let root = self
             .files
             .update_root(id, &input.name, input.quota_bytes)
             .await?;
 
-        for user_id in &add {
-            self.folders
-                .assign(RootAssignment {
-                    root_id: id,
-                    user_id: *user_id,
-                })
-                .await?;
-        }
-
-        for user_id in &remove {
-            self.folders.remove(id, *user_id).await?;
-        }
+        self.folders.assign_many(id, &add).await?;
+        self.folders.remove_many(id, &remove).await?;
 
         Ok(RootView {
             id: root.id,

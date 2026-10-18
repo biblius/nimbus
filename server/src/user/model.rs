@@ -184,7 +184,7 @@ pub struct CreateSharedFolder {
     #[validate(range(min = 0., message = "Quota must be 0 (unlimited) or higher"))]
     pub quota_bytes: i64,
 
-    #[serde(default)]
+    #[validate(length(min = 1, message = "At least one member must be provided"))]
     pub members: Vec<Uuid>,
 }
 

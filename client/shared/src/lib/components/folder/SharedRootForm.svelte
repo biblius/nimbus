@@ -40,6 +40,9 @@
   let validation = $state<ValidationError | undefined>();
   let busy = $state(false);
 
+  const membersError = $derived(validation?.field("members"));
+  const creating = $derived(folder == null);
+
   onMount(() => {
     if (!folder) {
       return;
@@ -80,6 +83,10 @@
     validation = undefined;
 
     if (!quotaValid) {
+      return;
+    }
+
+    if (creating && selected.length < 1) {
       return;
     }
 
@@ -138,6 +145,11 @@
           {selected.length} selected
         </span>
       </div>
+      {#if membersError}
+        <p class="text-xs text-destructive">
+          {membersError.message || membersError.code}
+        </p>
+      {/if}
       {#if !membersReady && !membersFailed}
         <p class="text-sm text-muted-foreground">Loading…</p>
       {:else}
@@ -196,6 +208,11 @@
     {#if cancel}
       <Button type="button" variant="outline" onclick={cancel}>Cancel</Button>
     {/if}
-    <Button type="submit" disabled={busy || !membersReady}>Save</Button>
+    <Button
+      type="submit"
+      disabled={busy || !membersReady || (creating && selected.length < 1)}
+    >
+      Save
+    </Button>
   </div>
 </form>

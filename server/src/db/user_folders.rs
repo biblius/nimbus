@@ -25,6 +25,11 @@ impl UserFolderRepository {
         self.insert(&self.pool, assignment).await
     }
 
+    #[instrument(skip(self, user_ids), fields(root_id = %root_id, n = user_ids.len()), err(Debug))]
+    pub async fn assign_many(&self, root_id: Uuid, user_ids: &[Uuid]) -> Result<(), AppError> {
+        self.insert_many(&self.pool, root_id, user_ids).await
+    }
+
     #[instrument(skip(self, executor, assignment), fields(root_id = %assignment.root_id, user_id = %assignment.user_id), err(Debug))]
     pub async fn insert<'e, E>(
         &self,
@@ -48,6 +53,34 @@ impl UserFolderRepository {
         )
         .execute(executor)
         .await?;
+        Ok(())
+    }
+
+    /// Assign many users to a root in one statement. Unknown user ids fail the FK.
+    #[instrument(skip(self, executor, user_ids), fields(root_id = %root_id, n = user_ids.len()), err(Debug))]
+    pub async fn insert_many<'e, E>(
+        &self,
+        executor: E,
+        root_id: Uuid,
+        user_ids: &[Uuid],
+    ) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        if user_ids.is_empty() {
+            return Ok(());
+        }
+
+        let mut query = QueryBuilder::<Db>::new("INSERT INTO user_folders (root_id, user_id) ");
+
+        query.push_values(user_ids, |mut row, user_id| {
+            row.push_bind(root_id).push_bind(*user_id);
+        });
+
+        query.push(" ON CONFLICT DO NOTHING");
+
+        query.build().execute(executor).await?;
+
         Ok(())
     }
 
@@ -193,6 +226,29 @@ impl UserFolderRepository {
                 "That user is not assigned to this folder".into(),
             ));
         }
+
+        Ok(())
+    }
+
+    /// Drop many memberships in one statement.
+    #[instrument(skip(self, user_ids), fields(root_id = %root_id, n = user_ids.len()), err(Debug))]
+    pub async fn remove_many(&self, root_id: Uuid, user_ids: &[Uuid]) -> Result<(), AppError> {
+        if user_ids.is_empty() {
+            return Ok(());
+        }
+
+        let mut query = QueryBuilder::<Db>::new("DELETE FROM user_folders WHERE root_id = ");
+        query.push_bind(root_id).push(" AND user_id IN (");
+
+        {
+            let mut selected = query.separated(", ");
+            for user_id in user_ids {
+                selected.push_bind(*user_id);
+            }
+        }
+
+        query.push(")");
+        query.build().execute(&self.pool).await?;
 
         Ok(())
     }
