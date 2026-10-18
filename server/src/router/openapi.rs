@@ -8,7 +8,7 @@ use crate::{
     auth::session::{ActiveSessionView, SessionView},
     file::{
         model::{
-            CopyFile, CreateDirectory, CreateTextFile, FileEntry, FileMetadata, FileView,
+            CopyFiles, CreateDirectory, CreateTextFile, FileEntry, FileMetadata, FileView,
             MoveFiles, RenameFile, RestoreFile, Root, RootView, ShareFile, SharingMode, TrashFiles,
         },
         tree::FileTree,
@@ -86,7 +86,7 @@ use crate::{
         files::delete_file,
         files::delete_files,
         files::move_files,
-        files::copy_file,
+        files::copy_files,
         files::tree,
         files::trash,
         files::delete_trash,
@@ -123,7 +123,7 @@ use crate::{
         CreateTextFile,
         TrashFiles,
         MoveFiles,
-        CopyFile,
+        CopyFiles,
         RenameFile,
         RestoreFile,
         SetQuota,

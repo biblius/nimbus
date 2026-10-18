@@ -13,7 +13,7 @@ use crate::{
     file::{
         format::{FileType, TextFormat},
         model::{
-            CopyFile, FileContentPreview, MAX_ANCESTOR_DEPTH, MoveFiles, PreviewSize, RenameFile,
+            CopyFiles, FileContentPreview, MAX_ANCESTOR_DEPTH, MoveFiles, PreviewSize, RenameFile,
             RootView, ShareFile, TrashFiles,
         },
         tree::FileTree,
@@ -74,7 +74,7 @@ impl FileService {
     /// Bytes stored in a root. Directories are not counted.
     #[instrument(skip(self, user), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
     pub async fn usage(&self, user: &User, root_id: Uuid) -> Result<i64, AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
+        self.accessible(user, root_id).await?;
 
         if self.files.get_root(root_id).await?.is_none() {
             return Err(AppError::ResourceMissing("Folder does not exist".into()));
@@ -90,7 +90,7 @@ impl FileService {
         root_id: Uuid,
         dir_id: Option<Uuid>,
     ) -> Result<Vec<FileView>, AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
+        self.accessible(user, root_id).await?;
 
         self.files.list_files(root_id, dir_id).await
     }
@@ -103,7 +103,7 @@ impl FileService {
         root_id: Uuid,
         file_id: Uuid,
     ) -> Result<Vec<FileEntry>, AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
+        self.accessible(user, root_id).await?;
 
         let chain = self.files.list_ancestors(root_id, file_id).await?;
 
@@ -148,7 +148,7 @@ impl FileService {
         Ok(entry)
     }
 
-    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
+    #[instrument(skip(self, user), fields(%root, user_id = %user.id, name=%input.name), err(Debug))]
     pub async fn create_text_file(
         &self,
         user: &User,
@@ -156,6 +156,8 @@ impl FileService {
         mut input: CreateTextFile,
     ) -> Result<FileEntry, AppError> {
         input.validify()?;
+
+        self.accessible(user, root).await?;
 
         let mut writer = self.start_upload(user, root, input.name).await?;
         let mut file = writer.finish().await?;
@@ -165,10 +167,25 @@ impl FileService {
             file.file_type = FileType::Text(TextFormat::Txt);
         }
 
-        self.finish_upload(user, root, input.parent, file).await
+        let mut files = self
+            .finish_upload_all(user, root, input.parent, vec![], vec![(file, input.parent)])
+            .await?;
+
+        let Some(file) = files.pop() else {
+            tracing::error!("finish_upload_all returned no items; this should not be possible!");
+            return Err(AppError::Internal);
+        };
+
+        Ok(file)
     }
 
-    /// Validate the parameters of a file upload and return the writer if valid.
+    /// Start an [`UploadWriter`] using the given name.
+    ///
+    /// Since this is usually called for processing a stream we don't want to
+    /// hit the DB every time for accessibility checks, therefore root
+    /// accessibility is not checked and is assumed to be accessible.
+    ///
+    /// Callers should call [`Self::accessible`] beforehand.
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn start_upload(
         &self,
@@ -176,61 +193,16 @@ impl FileService {
         root: Uuid,
         name: String,
     ) -> Result<UploadWriter, AppError> {
-        let name = self.writable(user, root, &name).await?;
         self.storage.writer(name).await
     }
 
-    /// Store the uploaded bytes, then insert the fully-described file row.
-    #[instrument(skip(self, user, file), fields(user_id = %user.id, name = %file.name), err(Debug))]
-    pub async fn finish_upload(
-        &self,
-        user: &User,
-        root_id: Uuid,
-        parent: Option<Uuid>,
-        mut file: TempFile,
-    ) -> Result<FileEntry, AppError> {
-        let quota = self.files.root_quota(root_id).await?;
-
-        if quota > 0 {
-            let used = self.files.root_quota_usage(root_id).await?;
-
-            if used.saturating_add(file.size) > quota {
-                return Err(AppError::QuotaExceeded);
-            }
-        }
-
-        let mut tx = self.tx.begin().await?;
-
-        let entry = self
-            .files
-            .insert(
-                &mut *tx,
-                NewFile {
-                    id: Uuid::new_v4(),
-                    root_id,
-                    created_by: user.id,
-                    kind: FileKind::File,
-                    name: file.name.clone(),
-                    parent,
-                    file_type: Some(file.file_type.clone()),
-                    hash: Some(file.hash.clone()),
-                    size_bytes: file.size,
-                },
-            )
-            .await?;
-
-        self.storage.persist(&mut file).await?;
-
-        tx.commit().await?;
-
-        if let Err(e) = ProcessingQueue::submit(&self.processing, entry.clone()).await {
-            tracing::error!(file=%entry.id, error=%e, "failed to enqueue file for processing");
-        }
-
-        Ok(entry)
-    }
-
-    /// Persist a directory upload: insert staged dirs and files, then move blobs into storage.
+    /// Persist a directory upload. Insert staged dirs and files, then move blobs into storage.
+    ///
+    /// The [`TempFile`]s should be obtained via [`Self::start_upload`].
+    ///
+    /// Root accessibility is not checked and is assumed to be accessible.
+    ///
+    /// Callers should call [`Self::accessible`] beforehand.
     #[instrument(
         skip(self, user, dirs, files),
         fields(user_id = %user.id, root_id = %root_id),
@@ -244,8 +216,12 @@ impl FileService {
         dirs: Vec<CreateDirectory>,
         mut files: Vec<(TempFile, Option<Uuid>)>,
     ) -> Result<Vec<FileEntry>, AppError> {
-        for dir in &dirs {
+        for dir in dirs.iter() {
             FileEntry::valid_name(&dir.name)?;
+        }
+
+        for (file, _) in files.iter() {
+            FileEntry::valid_name(&file.name)?;
         }
 
         let quota = self.files.root_quota(root_id).await?;
@@ -517,7 +493,7 @@ impl FileService {
         user: &User,
         root_id: Uuid,
     ) -> Result<(String, super::DownloadBody), AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
+        self.accessible(user, root_id).await?;
 
         let root = self
             .files
@@ -596,7 +572,7 @@ impl FileService {
     ) -> Result<(), AppError> {
         input.validate()?;
 
-        super::accessible(&self.folders, user, root_id).await?;
+        self.accessible(user, root_id).await?;
 
         self.trash.trash(root_id, user.id, &input.ids).await
     }
@@ -639,7 +615,7 @@ impl FileService {
     ) -> Result<(), AppError> {
         input.validate()?;
 
-        super::accessible(&self.folders, user, root_id).await?;
+        self.accessible(user, root_id).await?;
 
         let mut ids = Vec::with_capacity(input.ids.len());
         let mut seen = HashSet::with_capacity(input.ids.len());
@@ -683,19 +659,21 @@ impl FileService {
         self.files.move_to_parent(root_id, input.parent, &ids).await
     }
 
-    /// Copy a live file (and its descendants, if a directory) into `input.target_root_id`.
+    /// Copy live files (and descendants, for directories) into `input.target_root_id`.
     ///
-    /// Each copied row gets a new id and `created_at`; other metadata is retained.
-    /// Blob content is shared by hash - no filesystem copy is performed.
+    /// Each copied row gets a new id and `created_at`, other metadata is retained.
+    /// Blob content is shared by hash and no filesystem copy is performed.
     #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
-    pub async fn copy_file(
+    pub async fn copy_files(
         &self,
         user: &User,
         root_id: Uuid,
-        input: CopyFile,
+        input: CopyFiles,
     ) -> Result<(), AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
-        super::accessible(&self.folders, user, input.target_root_id).await?;
+        input.validate()?;
+
+        self.accessible(user, root_id).await?;
+        self.accessible(user, input.target_root_id).await?;
 
         if let Some(parent) = input.parent {
             let entry =
@@ -708,31 +686,42 @@ impl FileService {
             }
         }
 
-        let subtree = self.files.list_live_subtree(root_id, input.id).await?;
+        let mut ids = Vec::with_capacity(input.ids.len());
+        let mut copying = HashSet::with_capacity(input.ids.len());
 
-        let now = Utc::now();
+        for id in input.ids {
+            if copying.insert(id) {
+                ids.push(id);
+            }
+        }
 
-        let mut id_map = HashMap::with_capacity(subtree.len());
-        let mut copies = Vec::with_capacity(subtree.len());
-        let mut bytes = 0_i64;
+        let subtree = self.files.list_with_subtrees(root_id, &ids).await?;
+
+        let mut id_remap = HashMap::with_capacity(subtree.len());
 
         for entry in subtree.iter() {
-            id_map.insert(entry.id, Uuid::new_v4());
+            id_remap.insert(entry.id, Uuid::new_v4());
         }
+
+        let now = Utc::now();
+        let mut copies = Vec::with_capacity(subtree.len());
+        let mut size = 0_i64;
 
         for entry in subtree {
             if entry.kind == FileKind::File {
-                bytes = bytes.saturating_add(entry.size_bytes);
+                size = size.saturating_add(entry.size_bytes);
             }
 
-            let parent = if entry.id == input.id {
-                input.parent
-            } else {
-                entry.parent.and_then(|parent| id_map.get(&parent).copied())
+            let parent = match entry.parent {
+                // Parent is also in this copy, keep nesting under the new id.
+                Some(parent) if id_remap.contains_key(&parent) => Some(id_remap[&parent]),
+                // Selected root (parent outside the copy, or was null), or a
+                // defensive fallback if list_with_subtrees were unsound.
+                _ => input.parent,
             };
 
             copies.push(FileEntry {
-                id: id_map[&entry.id],
+                id: id_remap[&entry.id],
                 root_id: input.target_root_id,
                 created_by: entry.created_by,
                 kind: entry.kind,
@@ -755,7 +744,7 @@ impl FileService {
         if quota > 0 {
             let used = self.files.root_quota_usage(input.target_root_id).await?;
 
-            if used.saturating_add(bytes) > quota {
+            if used.saturating_add(size) > quota {
                 return Err(AppError::QuotaExceeded);
             }
         }
@@ -775,7 +764,7 @@ impl FileService {
         root_id: Uuid,
         parent: Option<Uuid>,
     ) -> Result<FileTree, AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
+        self.accessible(user, root_id).await?;
 
         let files = self.files.list_descendants(root_id, parent).await?;
 
@@ -844,16 +833,16 @@ impl FileService {
             .await?
             .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
-        super::accessible(&self.folders, user, file.root_id).await?;
+        self.accessible(user, file.root_id).await?;
 
         Ok(file)
     }
 
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
-    async fn writable(&self, user: &User, root: Uuid, name: &str) -> Result<String, AppError> {
+    async fn writable(&self, user: &User, root_id: Uuid, name: &str) -> Result<String, AppError> {
         let name = FileEntry::valid_name(name)?.to_string();
 
-        super::accessible(&self.folders, user, root).await?;
+        self.accessible(user, root_id).await?;
 
         Ok(name)
     }
@@ -862,7 +851,7 @@ impl FileService {
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     async fn readable_any(&self, user: &User, id: Uuid) -> Result<FileEntry, AppError> {
         if let Some(file) = self.files.get_live(id).await? {
-            super::accessible(&self.folders, user, file.root_id).await?;
+            self.accessible(user, file.root_id).await?;
             return Ok(file);
         }
 
@@ -872,8 +861,14 @@ impl FileService {
             .await?
             .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
-        super::accessible(&self.folders, user, file.root_id).await?;
+        self.accessible(user, file.root_id).await?;
 
         Ok(file)
+    }
+
+    /// See [super::accessible].
+    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
+    pub async fn accessible(&self, user: &User, root: Uuid) -> Result<(), AppError> {
+        super::accessible(&self.folders, user, root).await
     }
 }

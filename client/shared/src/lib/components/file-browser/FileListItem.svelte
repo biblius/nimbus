@@ -46,6 +46,7 @@
     onPreview,
     onDownload,
     onCopy,
+    canCopy = true,
     onShare,
     onUnshare,
     onCopyLink,
@@ -66,6 +67,8 @@
     multiSelected?: boolean;
     /** When true, plain taps toggle and icon clicks do not open/preview. */
     selectMode?: boolean;
+    /** False when there are no other roots/folders to copy into. */
+    canCopy?: boolean;
     onSelect: (event: MouseEvent) => void;
     /** Long-press: enter select mode with this item as the only selection. */
     onLongSelect?: () => void;
@@ -451,7 +454,10 @@
           <Folder size={iconSize} strokeWidth={1.75} />
         </button>
         {#if file.sharingMode}
-          <SharedBadge size={compact ? "sm" : "md"} />
+          <SharedBadge
+            size={compact ? "sm" : "md"}
+            expiresAt={file.shareExpiresAt}
+          />
         {/if}
       </span>
     {:else if previewable}
@@ -487,7 +493,10 @@
           </span>
         </button>
         {#if file.sharingMode}
-          <SharedBadge size={compact ? "sm" : "md"} />
+          <SharedBadge
+            size={compact ? "sm" : "md"}
+            expiresAt={file.shareExpiresAt}
+          />
         {/if}
       </span>
     {:else}
@@ -499,7 +508,10 @@
       >
         <FileTypeIcon fileType={file.fileType} size={iconSize} />
         {#if file.sharingMode}
-          <SharedBadge size={compact ? "sm" : "md"} />
+          <SharedBadge
+            size={compact ? "sm" : "md"}
+            expiresAt={file.shareExpiresAt}
+          />
         {/if}
       </span>
     {/if}
@@ -591,12 +603,36 @@
           <Share2 size={16} />
         </Button>
       {/snippet}
-      <MenuItem onclick={onCopy}>Copy to…</MenuItem>
-      {#if file.sharingMode}
-        <MenuItem onclick={onCopyLink}>Copy public link</MenuItem>
-        <MenuItem onclick={onUnshare}>Stop sharing</MenuItem>
+      {#if canCopy}
+        <MenuItem onclick={onCopy}>
+          <Share2 size={16} />
+          Copy
+        </MenuItem>
       {:else}
-        <MenuItem onclick={onShare}>Create public link</MenuItem>
+        <span
+          class="block w-full"
+          title="There are no other folders to copy to"
+        >
+          <MenuItem disabled aria-label="There are no other folders to copy to">
+            <Share2 size={16} />
+            Copy
+          </MenuItem>
+        </span>
+      {/if}
+      {#if file.sharingMode}
+        <MenuItem onclick={onCopyLink}>
+          <LinkIcon size={16} />
+          Copy public link
+        </MenuItem>
+        <MenuItem onclick={onUnshare}>
+          <Link2Off size={16} />
+          Stop sharing
+        </MenuItem>
+      {:else}
+        <MenuItem onclick={onShare}>
+          <LinkIcon size={16} />
+          Create public link
+        </MenuItem>
       {/if}
     </Menu>
     <Button
@@ -646,10 +682,25 @@
         role="menu"
         class="absolute top-0 left-full z-50 ml-0.5 w-44 rounded-xl border bg-card p-1 shadow-lg"
       >
-        <MenuItem onclick={onCopy}>
-          <Share2 size={16} />
-          Copy to…
-        </MenuItem>
+        {#if canCopy}
+          <MenuItem onclick={onCopy}>
+            <Share2 size={16} />
+            Copy
+          </MenuItem>
+        {:else}
+          <span
+            class="block w-full"
+            title="There are no other folders to copy to"
+          >
+            <MenuItem
+              disabled
+              aria-label="There are no other folders to copy to"
+            >
+              <Share2 size={16} />
+              Copy
+            </MenuItem>
+          </span>
+        {/if}
         {#if file.sharingMode}
           <MenuItem onclick={onCopyLink}>
             <LinkIcon size={16} />

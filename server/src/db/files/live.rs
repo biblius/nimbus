@@ -15,6 +15,7 @@ use crate::{
 };
 use chrono::Utc;
 use sqlx::{Executor, QueryBuilder, types::Json};
+use std::collections::HashSet;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -794,15 +795,22 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    /// Live file `id` and all of its descendants in `root_id`.
-    #[instrument(skip(self), err(Debug))]
-    pub async fn list_live_subtree(
+    /// List files in `ids` and all of their descendants in `root_id`.
+    ///
+    /// Overlapping selections should never happen
+    /// (e.g. both a directory and its child are in `ids`), but
+    /// are deduped by `UNION` just in case.
+    #[instrument(skip(self, ids), err(Debug))]
+    pub async fn list_with_subtrees(
         &self,
         root_id: Uuid,
-        id: Uuid,
+        ids: &[Uuid],
     ) -> Result<Vec<FileEntry>, AppError> {
-        let rows = sqlx::query_as!(
-            FileEntry,
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query = QueryBuilder::<Db>::new(
             r#"
             WITH RECURSIVE tree AS (
                 SELECT
@@ -821,9 +829,24 @@ impl FileRepository {
                     created_at,
                     updated_at
                 FROM files
-                WHERE id = $1
-                  AND root_id = $2
-                UNION ALL
+                WHERE root_id =
+            "#,
+        );
+
+        query.push_bind(root_id);
+        query.push(" AND id IN (");
+
+        {
+            let mut selected = query.separated(", ");
+            for id in ids {
+                selected.push_bind(*id);
+            }
+        }
+
+        query.push(
+            r#"
+                )
+                UNION
                 SELECT
                     child.id,
                     child.root_id,
@@ -843,30 +866,33 @@ impl FileRepository {
                 JOIN tree t ON child.parent = t.id
             )
             SELECT
-                id AS "id!",
-                root_id AS "root_id!",
-                created_by AS "created_by?",
-                "type" AS "kind!: FileKind",
-                name AS "name!",
+                id,
+                root_id,
+                created_by,
+                "type" AS kind,
+                name,
                 parent,
-                format AS "file_type: FileType",
+                format AS file_type,
                 hash,
-                size_bytes AS "size_bytes!",
-                sharing_mode AS "sharing_mode: SharingMode",
+                size_bytes,
+                sharing_mode,
                 share_expires_at,
-                metadata AS "metadata: Json<FileMetadata>",
-                created_at AS "created_at!",
-                updated_at AS "updated_at!"
+                metadata,
+                created_at,
+                updated_at
             FROM tree
             "#,
-            id,
-            root_id
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(AppError::from)?;
+        );
 
-        if rows.iter().all(|row| row.id != id) {
+        let rows = query
+            .build_query_as::<FileEntry>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+
+        let found: HashSet<_> = rows.iter().map(|row| row.id).collect();
+
+        if ids.iter().any(|id| !found.contains(id)) {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         }
 

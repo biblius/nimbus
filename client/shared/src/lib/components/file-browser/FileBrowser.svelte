@@ -2,6 +2,7 @@
   import {
     Check,
     ChevronDown,
+    Copy,
     Download,
     File as FileIcon,
     Folder,
@@ -127,6 +128,10 @@
   let viewMode = $state<FilesViewMode>(kv.filesViewMode.get());
 
   const previewEntries = $derived(entries.filter(isPreviewable));
+
+  const hasCopyDestination = $derived(
+    roots.some((item) => item.id !== root.id),
+  );
 
   const tiles = $derived(
     viewMode === "tiles-small" || viewMode === "tiles-large",
@@ -1096,33 +1101,46 @@
     }
   }
 
-  function startCopy(entry: FileView) {
-    const destinations = roots.filter((item) => item.id !== root.id);
-
-    if (destinations.length === 0) {
-      toastError("No other roots available");
+  function startCopy(ids: string[]) {
+    if (ids.length === 0) {
       return;
     }
 
+    const destinations = roots.filter((item) => item.id !== root.id);
+
+    if (destinations.length === 0) {
+      return;
+    }
+
+    const single =
+      ids.length === 1
+        ? entries.find((item) => item.file.id === ids[0])
+        : undefined;
+
+    const title = single
+      ? `Copy ${label(single)}`
+      : `Copy ${ids.length} items`;
+
+    const description = single
+      ? `Pick a destination for ${label(single)} copy.`
+      : `Pick a destination for ${ids.length} items.`;
+
     destination = {
       roots: destinations,
-      title: `Copy ${label(entry)}`,
-      description: `Pick a destination for ${label(entry)} copy.`,
+      title,
+      description,
       confirmLabel: "Copy",
       onConfirm: async (targetRoot, parent) => {
         try {
-          await session.client.copy(
-            root.id,
-            entry.file.id,
-            targetRoot.id,
-            parent,
-          );
+          await session.client.copy(root.id, ids, targetRoot.id, parent);
           destination = null;
         } catch (cause) {
           toastError(
             cause instanceof TypeError
               ? "The server could not be reached"
-              : `Could not copy ${label(entry)}`,
+              : single
+                ? `Could not copy ${label(single)}`
+                : `Could not copy ${ids.length} items`,
           );
         }
       },
@@ -1267,6 +1285,26 @@
           <span class="hidden sm:inline">Clear</span>
         </Button>
         {#if selected.length > 0}
+          <span
+            class="inline-flex"
+            title={hasCopyDestination
+              ? undefined
+              : "There are no other folders to copy to"}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!hasCopyDestination}
+              aria-label={hasCopyDestination
+                ? "Copy selected"
+                : "There are no other folders to copy to"}
+              onclick={() => startCopy(selected)}
+            >
+              <Copy size={15} />
+              <span class="hidden sm:inline">Copy ({selected.length})</span>
+            </Button>
+          </span>
           <Button
             type="button"
             variant="outline"
@@ -1557,12 +1595,13 @@
                   selected={selected.includes(entry.file.id)}
                   multiSelected={selected.length >= 2}
                   {selectMode}
+                  canCopy={hasCopyDestination}
                   onSelect={(event) => selectEntry(entry.file.id, event)}
                   onLongSelect={() => longSelectEntry(entry.file.id)}
                   onOpen={() => openDirectory(entry)}
                   onPreview={() => (previewFileId = entry.file.id)}
                   onDownload={() => download(entry)}
-                  onCopy={() => startCopy(entry)}
+                  onCopy={() => startCopy([entry.file.id])}
                   onShare={() => openShareDialog(entry.file)}
                   onUnshare={() => openShareDialog(entry.file)}
                   onCopyLink={() => copyLink(entry)}
@@ -1579,12 +1618,13 @@
                   selected={selected.includes(entry.file.id)}
                   multiSelected={selected.length >= 2}
                   {selectMode}
+                  canCopy={hasCopyDestination}
                   onSelect={(event) => selectEntry(entry.file.id, event)}
                   onLongSelect={() => longSelectEntry(entry.file.id)}
                   onOpen={() => openDirectory(entry)}
                   onPreview={() => (previewFileId = entry.file.id)}
                   onDownload={() => download(entry)}
-                  onCopy={() => startCopy(entry)}
+                  onCopy={() => startCopy([entry.file.id])}
                   onShare={() => openShareDialog(entry.file)}
                   onUnshare={() => openShareDialog(entry.file)}
                   onCopyLink={() => copyLink(entry)}

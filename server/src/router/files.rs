@@ -3,8 +3,8 @@ use crate::{
     error::AppError,
     file::{
         model::{
-            CopyFile, CreateDirectory, CreateTextFile, FileEntry, FileView, MoveFiles, PreviewSize,
-            RenameFile, RestoreFile, RootView, ShareFile, TrashFiles,
+            CopyFiles, CreateDirectory, CreateTextFile, FileEntry, FileView, MoveFiles,
+            PreviewSize, RenameFile, RestoreFile, RootView, ShareFile, TrashFiles,
         },
         queue::DeletionResult,
         tree::FileTree,
@@ -254,8 +254,14 @@ pub(crate) async fn upload(
     session: Session,
     mut multipart: Multipart,
 ) -> Result<Json<Vec<FileEntry>>, AppError> {
+    state
+        .services
+        .files
+        .accessible(&session.user, root_id)
+        .await?;
+
     let mut parent = None;
-    let mut uploaded = Vec::new();
+    let mut staged = Vec::new();
 
     while let Some(mut field) = multipart.next_field().await.map_err(|error| {
         tracing::error!(%error, "multipart read failed");
@@ -303,7 +309,7 @@ pub(crate) async fn upload(
                     }
                 };
 
-                uploaded.push(file);
+                staged.push(file);
             }
             _ => {
                 tracing::warn!("multipart field has no name: {:?}", field);
@@ -311,27 +317,26 @@ pub(crate) async fn upload(
         }
     }
 
-    if uploaded.is_empty() {
+    if staged.is_empty() {
         return Err(AppError::Unprocessable("File is required".into()));
     }
 
-    let mut stored = Vec::with_capacity(uploaded.len());
+    // Set `parent` after parsing whole multipart as it can arrive after file fields
+    let staged = staged.into_iter().map(|file| (file, parent)).collect();
 
-    for file in uploaded {
-        stored.push(
-            state
-                .services
-                .files
-                .finish_upload(&session.user, root_id, parent, file)
-                .await?,
-        );
-    }
+    let files = state
+        .services
+        .files
+        .finish_upload_all(&session.user, root_id, parent, vec![], staged)
+        .await?;
 
-    Ok(Json(stored))
+    Ok(Json(files))
 }
 
-/// Upload a directory tree. Each `file` field's filename is a relative path
-/// (e.g. `Photos/2024/pic.jpg`). Intermediate directories are created as needed.
+/// Upload a directory tree.
+/// Each `file` field's filename is a relative path
+/// (e.g. `Photos/2024/pic.jpg`, set by webkitdirectory).
+/// Intermediate directories are created as needed.
 #[utoipa::path(
     post,
     path = "/roots/{root_id}/upload/dir",
@@ -344,8 +349,13 @@ pub(crate) async fn upload_dir(
     session: Session,
     mut multipart: Multipart,
 ) -> Result<Json<Vec<FileEntry>>, AppError> {
-    let mut parent = None;
+    state
+        .services
+        .files
+        .accessible(&session.user, root_id)
+        .await?;
 
+    let mut parent = None;
     let mut staged_dirs = Vec::new();
     let mut staged_files = Vec::new();
 
@@ -740,19 +750,19 @@ pub(crate) async fn move_files(
     post,
     path = "/roots/{root_id}/copy",
     params(("root_id" = Uuid, Path, description = "Source root id")),
-    request_body = CopyFile,
-    responses((status = 204, description = "File copied"))
+    request_body = CopyFiles,
+    responses((status = 204, description = "Files copied"))
 )]
-pub(crate) async fn copy_file(
+pub(crate) async fn copy_files(
     Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
     session: Session,
-    Json(input): Json<CopyFile>,
+    Json(input): Json<CopyFiles>,
 ) -> Result<StatusCode, AppError> {
     state
         .services
         .files
-        .copy_file(&session.user, root_id, input)
+        .copy_files(&session.user, root_id, input)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

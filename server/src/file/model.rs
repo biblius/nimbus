@@ -275,12 +275,13 @@ pub struct MoveFiles {
     pub parent: Option<Uuid>,
 }
 
-/// A live file (or directory tree) to copy into another accessible root.
-/// `parent` is null to place the copy directly in the target root.
-#[derive(Debug, Deserialize, ToSchema)]
+/// Live files (or directory trees) to copy into another accessible root.
+/// `parent` is null to place the copies directly in the target root.
+#[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct CopyFile {
-    pub id: Uuid,
+pub struct CopyFiles {
+    #[validate(length(min = 1, message = "At least 1 file must be provided"))]
+    pub ids: Vec<Uuid>,
     pub target_root_id: Uuid,
     pub parent: Option<Uuid>,
 }

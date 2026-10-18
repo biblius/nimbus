@@ -40,6 +40,7 @@
     onPreview,
     onDownload,
     onCopy,
+    canCopy = true,
     onShare,
     onUnshare,
     onCopyLink,
@@ -56,6 +57,8 @@
     multiSelected?: boolean;
     /** When true, plain taps toggle and icon clicks do not open/preview. */
     selectMode?: boolean;
+    /** False when there are no other roots/folders to copy into. */
+    canCopy?: boolean;
     onSelect: (event: MouseEvent) => void;
     /** Long-press: enter select mode with this item as the only selection. */
     onLongSelect?: () => void;
@@ -339,10 +342,25 @@
         <Download size={16} />
         Download
       </MenuItem>
-      <MenuItem onclick={onCopy}>
-        <Share2 size={16} />
-        Copy to…
-      </MenuItem>
+      {#if canCopy}
+        <MenuItem onclick={onCopy}>
+          <Share2 size={16} />
+          Copy
+        </MenuItem>
+      {:else}
+        <span
+          class="block w-full"
+          title="There are no other folders to copy to"
+        >
+          <MenuItem
+            disabled
+            aria-label="There are no other folders to copy to"
+          >
+            <Share2 size={16} />
+            Copy
+          </MenuItem>
+        </span>
+      {/if}
       {#if file.sharingMode}
         <MenuItem onclick={onCopyLink}>
           <LinkIcon size={16} />
@@ -381,7 +399,7 @@
         <Folder size={iconSize} strokeWidth={1.75} />
       </button>
       {#if file.sharingMode}
-        <SharedBadge size={large ? "lg" : "md"} />
+        <SharedBadge size={large ? "lg" : "md"} expiresAt={file.shareExpiresAt} />
       {/if}
     </span>
   {:else if previewable}
@@ -415,7 +433,7 @@
         </span>
       </button>
       {#if file.sharingMode}
-        <SharedBadge size={large ? "lg" : "md"} />
+        <SharedBadge size={large ? "lg" : "md"} expiresAt={file.shareExpiresAt} />
       {/if}
     </span>
   {:else}
@@ -424,7 +442,7 @@
     >
       <FileTypeIcon fileType={file.fileType} size={iconSize} />
       {#if file.sharingMode}
-        <SharedBadge size={large ? "lg" : "md"} />
+        <SharedBadge size={large ? "lg" : "md"} expiresAt={file.shareExpiresAt} />
       {/if}
     </span>
   {/if}

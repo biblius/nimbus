@@ -585,13 +585,13 @@ export class NimbusClient {
 
   copy(
     rootId: string,
-    id: string,
+    ids: string[],
     targetRootId: string,
     parent: string | null = null,
   ): Promise<void> {
     return this.request<void>(`/roots/${encodeURIComponent(rootId)}/copy`, {
       method: "POST",
-      body: JSON.stringify({ id, targetRootId, parent }),
+      body: JSON.stringify({ ids, targetRootId, parent }),
     });
   }
 

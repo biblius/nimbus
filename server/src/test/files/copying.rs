@@ -4,7 +4,7 @@ mod copying {
     use super::super::{upload_in, user};
     use crate::{
         error::AppError,
-        file::model::{CopyFile, CreateDirectory, FileKind},
+        file::model::{CopyFiles, CreateDirectory, FileKind},
         test::{self, TestState},
         user::model::CreateSharedFolder,
     };
@@ -37,11 +37,11 @@ mod copying {
         state
             .services
             .files
-            .copy_file(
+            .copy_files(
                 &session.user,
                 shared.id,
-                CopyFile {
-                    id: source.id,
+                CopyFiles {
+                    ids: vec![source.id],
                     target_root_id: private,
                     parent: None,
                 },
@@ -77,6 +77,53 @@ mod copying {
             .await
             .unwrap();
         assert_eq!(original.root_id, shared.id);
+    }
+
+    #[test]
+    async fn copies_multiple_files_in_one_request(state: TestState) {
+        let ada = user(state, "ada-copy-many").await;
+        let session = test::login(state, "ada-copy-many", "temporary").await;
+        let private = test::private_root(state, &session.user).await;
+        let shared = state
+            .services
+            .users
+            .create_shared(CreateSharedFolder {
+                name: "many-copy".into(),
+                quota_bytes: 0,
+                members: vec![ada.id],
+            })
+            .await
+            .unwrap();
+
+        let first = test::upload(state, &session.user, shared.id, "a.txt", b"a").await;
+        let second = test::upload(state, &session.user, shared.id, "b.txt", b"b").await;
+
+        state
+            .services
+            .files
+            .copy_files(
+                &session.user,
+                shared.id,
+                CopyFiles {
+                    ids: vec![first.id, second.id],
+                    target_root_id: private,
+                    parent: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let listed = state
+            .services
+            .files
+            .list(&session.user, private, None)
+            .await
+            .unwrap();
+        let names: Vec<_> = listed.iter().map(|entry| entry.file.name.as_str()).collect();
+        assert!(names.contains(&"a.txt"));
+        assert!(names.contains(&"b.txt"));
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|entry| entry.file.id != first.id && entry.file.id != second.id));
     }
 
     #[test]
@@ -122,11 +169,11 @@ mod copying {
         state
             .services
             .files
-            .copy_file(
+            .copy_files(
                 &session.user,
                 shared.id,
-                CopyFile {
-                    id: folder.id,
+                CopyFiles {
+                    ids: vec![folder.id],
                     target_root_id: private,
                     parent: None,
                 },
@@ -160,6 +207,80 @@ mod copying {
     }
 
     #[test]
+    async fn overlapping_selection_nests_child_under_copied_folder(state: TestState) {
+        let ada = user(state, "ada-copy-overlap").await;
+        let session = test::login(state, "ada-copy-overlap", "temporary").await;
+        let private = test::private_root(state, &session.user).await;
+        let shared = state
+            .services
+            .users
+            .create_shared(CreateSharedFolder {
+                name: "overlap-copy".into(),
+                quota_bytes: 0,
+                members: vec![ada.id],
+            })
+            .await
+            .unwrap();
+
+        let folder = state
+            .services
+            .files
+            .create_directory(
+                &session.user,
+                shared.id,
+                CreateDirectory {
+                    parent: None,
+                    name: "docs".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let nested = upload_in(
+            state,
+            &session.user,
+            shared.id,
+            Some(folder.id),
+            "note.txt",
+            b"note",
+        )
+        .await;
+
+        state
+            .services
+            .files
+            .copy_files(
+                &session.user,
+                shared.id,
+                CopyFiles {
+                    ids: vec![folder.id, nested.id],
+                    target_root_id: private,
+                    parent: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let listed = state
+            .services
+            .files
+            .list(&session.user, private, None)
+            .await
+            .unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].file.name, "docs");
+
+        let children = state
+            .services
+            .files
+            .list(&session.user, private, Some(listed[0].file.id))
+            .await
+            .unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].file.name, "note.txt");
+    }
+
+    #[test]
     async fn copies_into_a_target_directory(state: TestState) {
         let _ada = user(state, "ada-copy-parent").await;
         let session = test::login(state, "ada-copy-parent", "temporary").await;
@@ -184,11 +305,11 @@ mod copying {
         state
             .services
             .files
-            .copy_file(
+            .copy_files(
                 &session.user,
                 private,
-                CopyFile {
-                    id: file.id,
+                CopyFiles {
+                    ids: vec![file.id],
                     target_root_id: private,
                     parent: Some(destination.id),
                 },
@@ -231,11 +352,11 @@ mod copying {
         let forbidden = state
             .services
             .files
-            .copy_file(
+            .copy_files(
                 &bob.user,
                 shared.id,
-                CopyFile {
-                    id: file.id,
+                CopyFiles {
+                    ids: vec![file.id],
                     target_root_id: bob_private,
                     parent: None,
                 },
@@ -246,11 +367,11 @@ mod copying {
         let still_forbidden = state
             .services
             .files
-            .copy_file(
+            .copy_files(
                 &bob.user,
                 private,
-                CopyFile {
-                    id: file.id,
+                CopyFiles {
+                    ids: vec![file.id],
                     target_root_id: bob_private,
                     parent: None,
                 },
@@ -283,11 +404,11 @@ mod copying {
         let overflow = state
             .services
             .files
-            .copy_file(
+            .copy_files(
                 &session.user,
                 private,
-                CopyFile {
-                    id: file.id,
+                CopyFiles {
+                    ids: vec![file.id],
                     target_root_id: shared.id,
                     parent: None,
                 },

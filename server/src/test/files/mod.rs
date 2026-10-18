@@ -25,6 +25,8 @@ pub(super) async fn upload_in(
     name: &str,
     bytes: &[u8],
 ) -> FileEntry {
+    state.services.files.accessible(user, root).await.unwrap();
+
     let mut writer = state
         .services
         .files
@@ -36,9 +38,12 @@ pub(super) async fn upload_in(
     state
         .services
         .files
-        .finish_upload(user, root, parent, file)
+        .finish_upload_all(user, root, parent, vec![], vec![(file, parent)])
         .await
         .unwrap()
+        .into_iter()
+        .next()
+        .expect("finish_upload_all returns the uploaded file")
 }
 
 macro_rules! count {

@@ -518,7 +518,13 @@ mod trash {
             b"restore-inside",
         )
         .await;
-        let created = inside.created_at;
+
+        let created: chrono::DateTime<Utc> =
+            sqlx::query_scalar("SELECT created_at FROM files WHERE id = $1")
+                .bind(inside.id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
 
         state
             .services

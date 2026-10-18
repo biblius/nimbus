@@ -190,7 +190,7 @@ pub fn router(state: AppState) -> Router {
             post(files::restore_file),
         )
         .route("/roots/{root_id}/move", post(files::move_files))
-        .route("/roots/{root_id}/copy", post(files::copy_file))
+        .route("/roots/{root_id}/copy", post(files::copy_files))
         .route("/roots/{root_id}/files", delete(files::delete_files))
         .route_layer(axum_middleware::from_fn_with_state(
             state.clone(),

@@ -80,12 +80,8 @@ impl TestState {
             build_services(pool.clone(), cache.clone(), &storage_dir).await;
 
         // Short sweep so expired-trash integration tests finish quickly.
-        let queue = DeletionQueue::start(
-            repository,
-            storage,
-            std::time::Duration::from_secs(1),
-            30,
-        );
+        let queue =
+            DeletionQueue::start(repository, storage, std::time::Duration::from_secs(1), 30);
 
         Self {
             services,
@@ -203,8 +199,8 @@ async fn build_services(
     );
     let repository = Repository::new(pool.clone());
 
-    let rp_origin = webauthn_rs::prelude::Url::parse("http://localhost:5173")
-        .expect("test webauthn origin");
+    let rp_origin =
+        webauthn_rs::prelude::Url::parse("http://localhost:5173").expect("test webauthn origin");
     let webauthn = webauthn_rs::prelude::WebauthnBuilder::new("localhost", &rp_origin)
         .expect("test webauthn builder")
         .rp_name("Nimbus")
@@ -246,10 +242,7 @@ async fn build_services(
         repository.folders.clone(),
         Transactor::new(pool),
     );
-    let share = crate::file::service::ShareService::new(
-        repository.share.clone(),
-        storage.clone(),
-    );
+    let share = crate::file::service::ShareService::new(repository.share.clone(), storage.clone());
     files.prepare().await.unwrap();
     user_service.ensure_initial_admin().await.unwrap();
 
@@ -333,7 +326,13 @@ pub async fn submit(
     root: Uuid,
     files: Vec<(&str, &[u8])>,
 ) -> Vec<Result<FileEntry, AppError>> {
-    let mut stored = Vec::with_capacity(files.len());
+    // Mirrors the router: check access once before staging / finish_upload_all.
+    if let Err(error) = state.services.files.accessible(user, root).await {
+        return vec![Err(error)];
+    }
+
+    let mut staged = Vec::with_capacity(files.len());
+
     for (name, bytes) in files {
         let mut writer = match state
             .services
@@ -342,22 +341,21 @@ pub async fn submit(
             .await
         {
             Ok(writer) => writer,
-            Err(error) => {
-                stored.push(Err(error));
-                continue;
-            }
+            Err(error) => return vec![Err(error)],
         };
         writer.write(bytes).await.unwrap();
-        let file = writer.finish().await.unwrap();
-        stored.push(
-            state
-                .services
-                .files
-                .finish_upload(user, root, None, file)
-                .await,
-        );
+        staged.push((writer.finish().await.unwrap(), None));
     }
-    stored
+
+    match state
+        .services
+        .files
+        .finish_upload_all(user, root, None, vec![], staged)
+        .await
+    {
+        Ok(entries) => entries.into_iter().map(Ok).collect(),
+        Err(error) => vec![Err(error)],
+    }
 }
 
 pub fn blob_count(dir: &Path) -> usize {

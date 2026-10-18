@@ -171,6 +171,73 @@ mod upload {
     }
 
     #[test]
+    async fn finish_upload_all_places_files_under_parent(state: TestState) {
+        let _ada = user(state, "ada-flat-parent").await;
+        let session = test::login(state, "ada-flat-parent", "temporary").await;
+        let root = test::private_root(state, &session.user).await;
+
+        let folder = state
+            .services
+            .files
+            .create_directory(
+                &session.user,
+                root,
+                CreateDirectory {
+                    parent: None,
+                    name: "Inbox".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let mut first = state
+            .services
+            .files
+            .start_upload(&session.user, root, "a.txt".into())
+            .await
+            .unwrap();
+        first.write(b"a").await.unwrap();
+        let first = first.finish().await.unwrap();
+
+        let mut second = state
+            .services
+            .files
+            .start_upload(&session.user, root, "b.txt".into())
+            .await
+            .unwrap();
+        second.write(b"b").await.unwrap();
+        let second = second.finish().await.unwrap();
+
+        let created = state
+            .services
+            .files
+            .finish_upload_all(
+                &session.user,
+                root,
+                Some(folder.id),
+                vec![],
+                vec![(first, Some(folder.id)), (second, Some(folder.id))],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(created.len(), 2);
+        assert!(created.iter().all(|entry| entry.parent == Some(folder.id)));
+
+        let listed = state
+            .services
+            .files
+            .list(&session.user, root, Some(folder.id))
+            .await
+            .unwrap();
+        assert_eq!(listed.len(), 2);
+        let names: Vec<_> = listed.iter().map(|entry| entry.file.name.as_str()).collect();
+        assert!(names.contains(&"a.txt"));
+        assert!(names.contains(&"b.txt"));
+    }
+
+    #[test]
     async fn finish_upload_all_creates_dirs_and_nested_files(state: TestState) {
         let _ada = user(state, "ada-dir-upload").await;
         let session = test::login(state, "ada-dir-upload", "temporary").await;
