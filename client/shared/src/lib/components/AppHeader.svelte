@@ -71,7 +71,7 @@
   </Button>
 
   <div class="flex min-w-0 items-center gap-2.5">
-    <img src="/favicon.png" alt="" class="size-7 shrink-0" />
+    <img src="/logo.png" alt="" class="size-7 shrink-0" />
     <p class="truncate text-[15px] font-semibold tracking-tight">Nimbus</p>
   </div>
 
