@@ -11,9 +11,9 @@ export const session = $state<{
   menuOpen: boolean;
   /** Native (Tauri) client - login creates a permanent session. */
   native: boolean;
-  /** Native only: persisted server URL, or `null` if not configured yet. */
+  /** Native only: persisted server origin (no `/api`), or `null` if unset. */
   endpoint: string | null;
-  /** Native only: persist a new server URL and rebuild the API client. */
+  /** Native only: persist a server origin and rebuild the API client. */
   configureEndpoint: ((url: string) => Promise<void>) | null;
   /** Native only: open a URL in the system browser. */
   openExternalUrl: ((url: string) => Promise<void>) | null;

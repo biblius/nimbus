@@ -10,6 +10,20 @@ async function _db(): Promise<Database> {
   return database;
 }
 
+/** Trim, strip a trailing slash, and strip a trailing `/api` if present. */
+export function normalizeOrigin(url: string): string {
+  let origin = url.trim().replace(/\/$/, "");
+  if (origin.endsWith("/api")) {
+    origin = origin.slice(0, -"/api".length).replace(/\/$/, "");
+  }
+  return origin;
+}
+
+/** Build the Nimbus API base URL from a server origin. */
+export function apiBaseUrl(origin: string): string {
+  return `${origin}/api`;
+}
+
 export async function loadEndpoint(): Promise<string | null> {
   const db = await _db();
 

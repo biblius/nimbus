@@ -5,7 +5,12 @@
   import { toastOptions } from "@nimbus/shared/toast";
   import { Router } from "sv-router";
   import { onMount } from "svelte";
-  import { loadEndpoint, saveEndpoint } from "./settings";
+  import {
+    apiBaseUrl,
+    loadEndpoint,
+    normalizeOrigin,
+    saveEndpoint,
+  } from "./settings";
   import { NimbusClient } from "@nimbus/shared/api";
 
   let ready = $state(false);
@@ -13,25 +18,30 @@
   onMount(async () => {
     session.native = true;
 
-    const endpoint = await loadEndpoint();
+    const loaded = await loadEndpoint();
+    const origin = loaded ? normalizeOrigin(loaded) : null;
 
-    session.endpoint = endpoint;
+    if (loaded && origin && loaded !== origin) {
+      await saveEndpoint(origin);
+    }
 
-    session.client = new NimbusClient(endpoint ?? "", {
+    session.endpoint = origin;
+
+    session.client = new NimbusClient(origin ? apiBaseUrl(origin) : "", {
       onUnauthorized: clearSession,
     });
 
     session.configureEndpoint = async (url: string) => {
-      const trimmed = url.trim().replace(/\/$/, "");
+      const normalized = normalizeOrigin(url);
 
-      if (!trimmed) {
+      if (!normalized) {
         throw new Error("empty endpoint");
       }
-      await saveEndpoint(trimmed);
+      await saveEndpoint(normalized);
 
-      session.endpoint = trimmed;
+      session.endpoint = normalized;
 
-      session.client = new NimbusClient(trimmed, {
+      session.client = new NimbusClient(apiBaseUrl(normalized), {
         onUnauthorized: clearSession,
       });
     };
