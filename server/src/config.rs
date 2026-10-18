@@ -213,18 +213,7 @@ arg!(
 
 arg!(upload_dir, "UPLOAD_DIR", default "./data".to_string());
 arg!(preview_dir, "PREVIEW_DIR", default "./preview".to_string());
-arg!(
-    tmp_dir,
-    "TMP_DIR",
-    default {
-        let dir = std::env::temp_dir();
-        if dir.is_dir() {
-            dir.to_string_lossy().into_owned()
-        } else {
-            "./tmp".to_string()
-        }
-    }
-);
+arg!(tmp_dir, "TMP_DIR", default "./tmp".to_string());
 arg!(file_retention_days, "FILE_RETENTION_DAYS", default 30, u16);
 arg!(
     file_deletion_interval_secs,

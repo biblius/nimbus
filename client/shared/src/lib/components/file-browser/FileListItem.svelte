@@ -384,11 +384,7 @@
 
     previewUrl = null;
 
-    if (
-      entry.file.kind !== "file" ||
-      !hasPreview ||
-      !hasListThumbnail(entry)
-    ) {
+    if (entry.file.kind !== "file" || !hasPreview || !hasListThumbnail(entry)) {
       return;
     }
 
@@ -441,12 +437,7 @@
   onpointercancel={onRowPointerEnd}
   oncontextmenu={onRowContextMenu}
 >
-  <div
-    class={cn(
-      "flex w-full min-w-0 items-center",
-      innerRowClass,
-    )}
-  >
+  <div class={cn("flex w-full min-w-0 items-center", innerRowClass)}>
     {#if file.kind === "directory"}
       <span class={cn("relative shrink-0", boxClass)}>
         <button
@@ -632,7 +623,7 @@
   </MenuItem>
   <MenuItem onclick={onMove}>
     <FolderInput size={16} />
-    Move to…
+    Move
   </MenuItem>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
