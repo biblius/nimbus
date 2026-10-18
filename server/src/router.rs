@@ -17,12 +17,7 @@ use axum::{
 use axum_extra::{TypedHeader, headers::Range};
 use futures::Stream;
 use std::{
-    convert::Infallible,
-    io::SeekFrom,
-    ops::Bound,
-    path::Path,
-    str::FromStr,
-    time::Duration,
+    convert::Infallible, io::SeekFrom, ops::Bound, path::Path, str::FromStr, time::Duration,
 };
 use tokio::{
     fs::File,
@@ -273,7 +268,7 @@ where
 
 impl DownloadBody {
     /// Build an attachment response. Files include `Content-Length`; zips are chunked.
-    pub async fn to_response(self, name: String) -> Result<Response, AppError> {
+    pub async fn into_response(self, name: String) -> Result<Response, AppError> {
         match self {
             Self::File { path, mime } => {
                 let file = File::open(&path).await?;

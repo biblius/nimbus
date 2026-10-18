@@ -124,7 +124,7 @@ impl ShareRepository {
             "#,
         );
         query.push_bind(now);
-        query.push(format!(
+        query.push(
             r#"
               )
             )
@@ -145,8 +145,8 @@ impl ShareRepository {
             FROM tree t
             LEFT JOIN file_metadata m ON m.file_id = t.id
             ORDER BY CASE WHEN t.kind = 'd' THEN 0 ELSE 1 END, t.name, t.created_at, t.id
-            "#
-        ));
+            "#,
+        );
 
         query
             .build_query_as::<FileEntryTree>()
@@ -160,7 +160,7 @@ impl ShareRepository {
     pub async fn list_shared_children(&self, parent: Uuid) -> Result<Vec<FileView>, AppError> {
         let now = Utc::now();
 
-        let mut query = QueryBuilder::new(format!(
+        let mut query = QueryBuilder::new(
             r#"
             SELECT
                 f.id,
@@ -182,8 +182,8 @@ impl ShareRepository {
             LEFT JOIN file_metadata m ON m.file_id = f.id
             WHERE f.sharing_mode IS NOT NULL
               AND (f.share_expires_at IS NULL OR f.share_expires_at > 
-            "#
-        ));
+            "#,
+        );
 
         query.push_bind(now);
         query.push(") AND f.parent = ");

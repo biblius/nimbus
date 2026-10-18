@@ -292,7 +292,7 @@ impl FileRepository {
             return Ok(Vec::new());
         }
 
-        let mut query = QueryBuilder::<Db>::new(format!(
+        let mut query = QueryBuilder::<Db>::new(
             r#"
             SELECT
                 f.id,
@@ -313,8 +313,8 @@ impl FileRepository {
             FROM files f
             LEFT JOIN file_metadata m ON m.file_id = f.id
             WHERE f.id IN (
-            "#
-        ));
+            "#,
+        );
 
         {
             let mut selected = query.separated(", ");

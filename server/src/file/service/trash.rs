@@ -80,7 +80,7 @@ impl TrashFileService {
     ) -> Result<(), AppError> {
         super::accessible(&self.folders, user, root_id).await?;
 
-        let Some(trashed_root) = self.trash.trashed_root(id).await? else {
+        let Some(trashed_root) = self.trash.get_file_root_id(id).await? else {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         };
 
@@ -102,10 +102,7 @@ impl TrashFileService {
 
         let mut tx = self.tx.begin().await?;
 
-        let mut restored = self
-            .trash
-            .delete_trashed_tree(&mut *tx, root_id, id)
-            .await?;
+        let mut restored = self.trash.delete_tree(&mut *tx, root_id, id).await?;
 
         let bytes: i64 = restored
             .iter()
@@ -124,7 +121,7 @@ impl TrashFileService {
             }
         }
 
-        self.files.insert_many(&mut *tx, &restored).await?;
+        self.files.insert_many(&mut tx, &restored).await?;
 
         tx.commit().await?;
 
@@ -140,6 +137,7 @@ impl TrashFileService {
         target: RestoreFile,
     ) -> Result<(), AppError> {
         super::accessible(&self.folders, user, root_id).await?;
+
         self.validate_restore_parent(root_id, target.parent).await?;
 
         let trash = self.trash.list_trash(root_id).await?;
@@ -166,10 +164,7 @@ impl TrashFileService {
         let mut restored = Vec::new();
 
         for id in root_ids {
-            let mut tree = self
-                .trash
-                .delete_trashed_tree(&mut *tx, root_id, id)
-                .await?;
+            let mut tree = self.trash.delete_tree(&mut *tx, root_id, id).await?;
 
             for file in tree.iter_mut() {
                 if file.id == id {
@@ -191,7 +186,7 @@ impl TrashFileService {
             return Err(AppError::QuotaExceeded);
         }
 
-        self.files.insert_many(&mut *tx, &restored).await?;
+        self.files.insert_many(&mut tx, &restored).await?;
 
         tx.commit().await?;
 

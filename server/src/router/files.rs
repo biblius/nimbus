@@ -614,7 +614,7 @@ pub(crate) async fn download_root(
         .content_for_root_download(&session.user, root_id)
         .await?;
 
-    body.to_response(name).await
+    body.into_response(name).await
 }
 
 #[utoipa::path(
@@ -637,7 +637,7 @@ pub(crate) async fn download(
         .content_for_download(&session.user, file_id)
         .await?;
 
-    body.to_response(name).await
+    body.into_response(name).await
 }
 
 #[utoipa::path(
@@ -844,7 +844,7 @@ pub(crate) async fn shared_download(
 ) -> Result<Response, AppError> {
     let (name, body) = state.services.share.download(file_id).await?;
 
-    body.to_response(name).await
+    body.into_response(name).await
 }
 
 #[utoipa::path(

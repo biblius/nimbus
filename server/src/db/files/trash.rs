@@ -76,7 +76,7 @@ impl TrashRepository {
             return Ok(Vec::new());
         }
 
-        let mut query = QueryBuilder::<Db>::new(format!(
+        let mut query = QueryBuilder::<Db>::new(
             r#"
             SELECT
                 f.id,
@@ -97,8 +97,8 @@ impl TrashRepository {
             FROM trashed_files f
             LEFT JOIN file_metadata m ON m.file_id = f.id
             WHERE f.id IN (
-            "#
-        ));
+            "#,
+        );
 
         {
             let mut selected = query.separated(", ");
@@ -249,7 +249,7 @@ impl TrashRepository {
 
     /// Root of one trashed row.
     #[instrument(skip(self), err(Debug))]
-    pub async fn trashed_root(&self, id: Uuid) -> Result<Option<Uuid>, AppError> {
+    pub async fn get_file_root_id(&self, id: Uuid) -> Result<Option<Uuid>, AppError> {
         sqlx::query_scalar!(
             r#"
             SELECT root_id

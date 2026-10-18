@@ -287,7 +287,7 @@ impl FileService {
 
         let mut tx = self.tx.begin().await?;
 
-        self.files.insert_many(&mut *tx, &entries).await?;
+        self.files.insert_many(&mut tx, &entries).await?;
 
         for (file, _) in files.iter_mut() {
             self.storage.persist(file).await?;
@@ -750,7 +750,7 @@ impl FileService {
 
         let mut tx = self.tx.begin().await?;
 
-        self.files.insert_many(&mut *tx, &copies).await?;
+        self.files.insert_many(&mut tx, &copies).await?;
 
         tx.commit().await?;
 

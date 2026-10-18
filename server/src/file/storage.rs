@@ -157,13 +157,6 @@ impl Storage {
         self.root.join(DATA_DIR).join(hash)
     }
 
-    /// Create a temporary file under the configured tmp directory.
-    pub async fn tmp_file(&self) -> Result<File, AppError> {
-        File::create(&self.tmp_path())
-            .await
-            .map_err(AppError::from)
-    }
-
     pub fn preview_path(&self, hash: &str) -> PathBuf {
         self.preview.join(hash)
     }

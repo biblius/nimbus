@@ -112,7 +112,6 @@ use crate::{
         CreateSharedFolder,
         Root,
         RootView,
-        UserView,
         FileEntry,
         FileMetadata,
         FileView,

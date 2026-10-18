@@ -49,6 +49,7 @@ pub struct Pagination {
 
 impl Pagination {
     /// `page` is 1-based.
+    #[cfg(test)]
     pub fn new(page: usize, per_page: usize) -> Self {
         Self { page, per_page }
     }
@@ -209,11 +210,6 @@ pub trait ToSearchColumn {
 
 pub trait ToSortColumn {
     fn to_sort_column(&self) -> &'static str;
-
-    /// Useful when performing joins for prefixing the column with the desired table.
-    fn to_sort_column_prefixed(&self, prefix: &str) -> String {
-        format!("{}.{}", prefix, self.to_sort_column())
-    }
 }
 
 /// Creates an enum with the specified variants that implements [ToSortColumn].
@@ -229,6 +225,27 @@ macro_rules! sort_column {
 
         impl $crate::model::ToSortColumn for $name {
             fn to_sort_column(&self) -> &'static str {
+                match self {
+                    $($name::$variant => $column),+
+                }
+            }
+        }
+    };
+}
+
+/// Creates an enum with the specified variants that implements [ToSearchColumn].
+#[macro_export]
+macro_rules! search_column {
+    ($name:ident, $($variant:ident => $column:literal),+ $(,)?) => {
+        #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+        #[cfg_attr(test, derive(Clone))]
+        #[serde(rename_all = "camelCase")]
+        pub enum $name {
+            $($variant),+
+        }
+
+        impl $crate::model::ToSearchColumn for $name {
+            fn to_search_column(&self) -> &'static str {
                 match self {
                     $($name::$variant => $column),+
                 }
@@ -276,25 +293,4 @@ mod query {
         assert_eq!(search.column.to_search_column(), "username");
         found.validate().unwrap();
     }
-}
-
-/// Creates an enum with the specified variants that implements [ToSearchColumn].
-#[macro_export]
-macro_rules! search_column {
-    ($name:ident, $($variant:ident => $column:literal),+ $(,)?) => {
-        #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
-        #[cfg_attr(test, derive(Clone))]
-        #[serde(rename_all = "camelCase")]
-        pub enum $name {
-            $($variant),+
-        }
-
-        impl $crate::model::ToSearchColumn for $name {
-            fn to_search_column(&self) -> &'static str {
-                match self {
-                    $($name::$variant => $column),+
-                }
-            }
-        }
-    };
 }

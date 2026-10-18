@@ -4,7 +4,6 @@ use crate::file::{
     format::FileType,
     model::{FileKind, FileMetadata},
 };
-use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::FromRow;
 use utoipa::ToSchema;
@@ -84,17 +83,13 @@ impl From<FileEntryTree> for FileTree {
 #[derive(FromRow)]
 pub struct FileEntryTree {
     pub id: Uuid,
-    pub root_id: Uuid,
     pub kind: FileKind,
     pub name: String,
     pub parent: Option<Uuid>,
     pub file_type: Option<FileType>,
     pub hash: Option<String>,
-    pub size_bytes: i64,
     #[sqlx(flatten)]
     pub metadata: FileMetadata,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
     pub query_root: bool,
 }
 
@@ -102,7 +97,6 @@ pub struct FileEntryTree {
 mod tests {
     use super::{FileEntryTree, FileTree};
     use crate::file::model::{FileKind, FileMetadata};
-    use chrono::Utc;
     use uuid::Uuid;
 
     fn entry(
@@ -112,19 +106,14 @@ mod tests {
         kind: FileKind,
         query_root: bool,
     ) -> FileEntryTree {
-        let now = Utc::now();
         FileEntryTree {
             id,
-            root_id: Uuid::nil(),
             kind,
             name: name.into(),
             parent,
             file_type: None,
             hash: None,
-            size_bytes: 0,
             metadata: FileMetadata::default(),
-            created_at: now,
-            updated_at: now,
             query_root,
         }
     }
