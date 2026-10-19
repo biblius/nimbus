@@ -257,19 +257,20 @@ impl DeletionQueue {
                 continue;
             };
 
-            content_hashes.insert(hash.clone());
+            content_hashes.insert(hash.as_str());
 
-            if let Some(preview) = file.metadata.preview_64.clone() {
-                preview_hashes.insert(preview);
+            if let Some(ref preview) = file.metadata.preview_64 {
+                preview_hashes.insert(preview.as_str());
             }
-            if let Some(preview) = file.metadata.preview_256.clone() {
-                preview_hashes.insert(preview);
+
+            if let Some(ref preview) = file.metadata.preview_256 {
+                preview_hashes.insert(preview.as_str());
             }
         }
 
         // Counts are after the row deletes, so this batch is already excluded.
-        let content_hashes: Vec<String> = content_hashes.into_iter().collect();
-        let preview_hashes: Vec<String> = preview_hashes.into_iter().collect();
+        let content_hashes: Vec<&str> = content_hashes.into_iter().collect();
+        let preview_hashes: Vec<&str> = preview_hashes.into_iter().collect();
 
         let hash_counts = match self.repository.files.count_hashes(&content_hashes).await {
             Ok(counts) => counts,
@@ -280,7 +281,7 @@ impl DeletionQueue {
             }
         };
 
-        for hash in content_hashes.iter() {
+        for hash in content_hashes {
             let remaining = hash_counts.get(hash).copied().unwrap_or(0);
 
             if remaining > 0 {
@@ -306,7 +307,7 @@ impl DeletionQueue {
             }
         };
 
-        for preview in preview_hashes.iter() {
+        for preview in preview_hashes {
             let remaining = preview_counts.get(preview).copied().unwrap_or(0);
 
             if remaining > 0 {

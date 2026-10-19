@@ -933,7 +933,7 @@ impl FileRepository {
     /// Remaining live+trashed references for each content hash.
     /// Hashes with zero references are omitted from the map.
     #[instrument(skip(self, hashes), err(Debug))]
-    pub async fn count_hashes(&self, hashes: &[String]) -> Result<HashMap<String, i64>, AppError> {
+    pub async fn count_hashes(&self, hashes: &[&str]) -> Result<HashMap<String, i64>, AppError> {
         if hashes.is_empty() {
             return Ok(HashMap::new());
         }
@@ -989,10 +989,7 @@ impl FileRepository {
     /// Remaining references for each preview hash across `file_metadata`.
     /// Previews with zero references are omitted from the map.
     #[instrument(skip(self, hashes), err(Debug))]
-    pub async fn count_previews(
-        &self,
-        hashes: &[String],
-    ) -> Result<HashMap<String, i64>, AppError> {
+    pub async fn count_previews(&self, hashes: &[&str]) -> Result<HashMap<String, i64>, AppError> {
         if hashes.is_empty() {
             return Ok(HashMap::new());
         }
