@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_passkeys (user_id, data, created_at)\n            VALUES ($1, $2, $3)\n            RETURNING\n                id,\n                user_id,\n                data AS \"data: Json<Passkey>\",\n                created_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_passkeys",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_passkeys",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "data: Json<Passkey>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "user_passkeys",
+            "name": "data"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_passkeys",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1efc13b194249ed04fe4310bc59ab415981caec01156319e7105d138ac179341"
+}

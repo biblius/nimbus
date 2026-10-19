@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT quota_bytes \n            FROM roots \n            WHERE id = $1 \n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "quota_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "roots",
+            "name": "quota_bytes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "88796d669579720bd3c7eb93a9c11ff7c9f470c05f7b100e49dadc664f0c6d66"
+}

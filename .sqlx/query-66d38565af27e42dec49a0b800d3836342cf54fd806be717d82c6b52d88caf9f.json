@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH RECURSIVE tree AS (\n                SELECT id\n                FROM trashed_files\n                WHERE id = $1\n                  AND root_id = $2\n\n                UNION ALL\n\n                SELECT child.id\n                FROM trashed_files child\n                JOIN tree parent ON child.parent = parent.id\n            )\n            SELECT id AS \"id!\"\n            FROM tree\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "66d38565af27e42dec49a0b800d3836342cf54fd806be717d82c6b52d88caf9f"
+}

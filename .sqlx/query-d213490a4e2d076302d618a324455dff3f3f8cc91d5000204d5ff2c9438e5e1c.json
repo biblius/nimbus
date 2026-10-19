@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                id,\n                name,\n                quota_bytes AS quota,\n                owner,\n                created_at,\n                updated_at \n            FROM roots\n            WHERE owner = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "roots",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "roots",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "quota",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "roots",
+            "name": "quota_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "owner",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "roots",
+            "name": "owner"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "roots",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "roots",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "d213490a4e2d076302d618a324455dff3f3f8cc91d5000204d5ff2c9438e5e1c"
+}

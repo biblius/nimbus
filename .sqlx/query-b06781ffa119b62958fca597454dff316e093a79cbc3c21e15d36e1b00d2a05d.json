@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE roots\n            SET\n                quota_bytes = $1,\n                updated_at = $2\n            WHERE id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b06781ffa119b62958fca597454dff316e093a79cbc3c21e15d36e1b00d2a05d"
+}

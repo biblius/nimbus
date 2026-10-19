@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT root_id\n            FROM trashed_files\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "root_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "trashed_files",
+            "name": "root_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2c393f91a304e4215d8302dd6b7d2aff289c1f7f7bb5e32b1b4cddb9ebd03c5f"
+}

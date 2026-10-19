@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE users \n            SET \n                otp_secret = $1,\n                updated_at = $2 \n            WHERE \n                id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7800d98bc0a1ca30b3464d324f025ed7f414cdbc0bea15d059946491929fe6f0"
+}

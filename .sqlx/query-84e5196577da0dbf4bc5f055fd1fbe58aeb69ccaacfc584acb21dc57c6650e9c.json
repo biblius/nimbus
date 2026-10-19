@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT data AS \"data: Json<Passkey>\"\n            FROM user_passkeys\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "data: Json<Passkey>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "user_passkeys",
+            "name": "data"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "84e5196577da0dbf4bc5f055fd1fbe58aeb69ccaacfc584acb21dc57c6650e9c"
+}

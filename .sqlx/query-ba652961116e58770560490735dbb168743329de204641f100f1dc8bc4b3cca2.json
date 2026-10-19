@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_passkeys\n            SET data = $1\n            WHERE id = $2 \n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ba652961116e58770560490735dbb168743329de204641f100f1dc8bc4b3cca2"
+}

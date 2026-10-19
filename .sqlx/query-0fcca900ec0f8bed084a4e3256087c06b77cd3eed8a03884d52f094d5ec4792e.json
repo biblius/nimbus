@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_folders (\n                root_id,\n                user_id\n            )\n            VALUES ($1, $2)\n            ON CONFLICT DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0fcca900ec0f8bed084a4e3256087c06b77cd3eed8a03884d52f094d5ec4792e"
+}

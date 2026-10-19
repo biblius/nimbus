@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT CAST(COALESCE(SUM(size_bytes), 0) AS BIGINT) AS \"usage!\"\n            FROM files\n            WHERE root_id = $1\n              AND \"type\" = 'f'\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "usage!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fb7bad02906c14c7d6caa6aedb976f8ec40ae1b592bfca9c6b171c84f65be1a2"
+}
