@@ -17,6 +17,7 @@ use crate::{
 };
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use thotp::encoding::data_encoding::BASE32;
 use tracing::instrument;
 use uuid::Uuid;
@@ -53,7 +54,7 @@ pub struct AuthenticationService {
     login_attempts: LoginAttemptStore,
     email: EmailSender,
     webauthn: Webauthn,
-    nimbus_origin: String,
+    nimbus_origin: Arc<str>,
 }
 
 impl AuthenticationService {
@@ -63,7 +64,7 @@ impl AuthenticationService {
         login_attempts: LoginAttemptStore,
         email: EmailSender,
         webauthn: Webauthn,
-        nimbus_origin: String,
+        nimbus_origin: impl Into<Arc<str>>,
     ) -> Self {
         Self {
             repo,
@@ -71,7 +72,7 @@ impl AuthenticationService {
             login_attempts,
             email,
             webauthn,
-            nimbus_origin: nimbus_origin.trim_end_matches('/').to_string(),
+            nimbus_origin: nimbus_origin.into(),
         }
     }
 

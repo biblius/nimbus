@@ -271,13 +271,13 @@ impl FileType {
             // files or unhandled files. Text files cannot be inferred
             // from bytes.
             (None, Some(ext_type)) => match ext_type {
-                FileType::Text(_) | FileType::Other(_) => ext_type.clone(),
+                FileType::Text(_) | FileType::Other(_) => ext_type,
                 // If this is not a text file or unhandled file we must flag it as
                 // an unhandled file by setting it to other.
-                _ => {
+                other => {
                     tracing::warn!(
                         "file type from bytes does not match extension: {:?}",
-                        ext_type
+                        other
                     );
                     Self::Other("other".into())
                 }

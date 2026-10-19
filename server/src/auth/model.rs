@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
+use std::sync::Arc;
 use uuid::Uuid;
 use validify::{ValidationError, Validify};
 use webauthn_rs::prelude::{
@@ -215,7 +216,7 @@ pub struct PasskeyLoginChallenge {
     pub challenge: RequestChallengeResponse,
 
     /// Web app origin for native passkey browser handoff.
-    pub nimbus_origin: String,
+    pub nimbus_origin: Arc<str>,
 }
 
 /// Finish discoverable passkey login: ceremony token plus the authenticator assertion.

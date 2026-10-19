@@ -12,16 +12,26 @@ use sha2::{Digest, Sha256};
 use std::{io::Cursor, path::Path, process::Command};
 use tokio::sync::mpsc;
 use tracing::instrument;
+use uuid::Uuid;
 
 /// List / small-tile icon size.
 const PREVIEW_ICON: u32 = 64;
 /// Large-tile thumbnail size.
 const PREVIEW_TILE: u32 = 256;
 
-/// A committed file entry ready for background processing.
+/// Kind of preview work to run for a committed file.
+#[derive(Debug, Clone, Copy)]
+enum ProcessingKind {
+    Image,
+    Video,
+}
+
+/// Minimal payload for background preview generation.
 #[derive(Debug)]
 pub struct ProcessingRequest {
-    pub file: FileEntry,
+    file_id: Uuid,
+    hash: String,
+    kind: ProcessingKind,
 }
 
 pub type ProcessingQueueHandle = mpsc::Sender<ProcessingRequest>;
@@ -58,10 +68,25 @@ impl ProcessingQueue {
         }
     }
 
-    /// Enqueue a committed file entry for processing.
-    pub async fn submit(handle: &ProcessingQueueHandle, file: FileEntry) -> Result<(), AppError> {
+    /// Enqueue a committed file for preview processing when its type needs it.
+    pub async fn submit(handle: &ProcessingQueueHandle, file: &FileEntry) -> Result<(), AppError> {
+        let kind = match file.file_type {
+            Some(FileType::Image(_)) => ProcessingKind::Image,
+            Some(FileType::Video(_)) => ProcessingKind::Video,
+            _ => return Ok(()),
+        };
+
+        let Some(hash) = file.hash.as_ref() else {
+            tracing::error!(file = %file.id, "file queued for processing has no hash");
+            return Err(AppError::Internal);
+        };
+
         handle
-            .send(ProcessingRequest { file })
+            .send(ProcessingRequest {
+                file_id: file.id,
+                hash: hash.clone(),
+                kind,
+            })
             .await
             .map_err(|_| AppError::Internal)
     }
@@ -70,7 +95,7 @@ impl ProcessingQueue {
     fn _start(mut self) {
         tokio::spawn(async move {
             while let Some(request) = self.requests.recv().await {
-                if let Err(e) = self.process(request.file).await {
+                if let Err(e) = self.process(request).await {
                     tracing::error!(error=%e, "error processing file");
                 }
             }
@@ -79,24 +104,18 @@ impl ProcessingQueue {
         });
     }
 
-    #[instrument(skip(self, file), fields(file_id = %file.id, name = %file.name), err(Debug))]
-    async fn process(&self, file: FileEntry) -> Result<(), AppError> {
-        match file.file_type {
-            Some(FileType::Image(_)) => self.process_image(file).await,
-            Some(FileType::Video(_)) => self.process_video(file).await,
-            _ => Ok(()),
+    #[instrument(skip(self, request), fields(file_id = %request.file_id), err(Debug))]
+    async fn process(&self, request: ProcessingRequest) -> Result<(), AppError> {
+        match request.kind {
+            ProcessingKind::Image => self.process_image(request.file_id, request.hash).await,
+            ProcessingKind::Video => self.process_video(request.file_id, request.hash).await,
         }
     }
 
     /// Resize an image to 64×64 and 256×256 WebP icons and store them content-addressed.
-    #[instrument(skip(self, file), fields(file_id = %file.id), err(Debug))]
-    async fn process_image(&self, file: FileEntry) -> Result<(), AppError> {
-        let hash = file.hash.as_deref().ok_or_else(|| {
-            tracing::error!(file=%file.id, "image file has no hash");
-            AppError::Internal
-        })?;
-
-        let source_path = self.storage.path(hash);
+    #[instrument(skip(self, hash), fields(file_id = %file_id), err(Debug))]
+    async fn process_image(&self, file_id: Uuid, hash: String) -> Result<(), AppError> {
+        let source_path = self.storage.path(&hash);
 
         let pair = tokio::task::spawn_blocking(move || encode_preview_pair(&source_path))
             .await
@@ -105,18 +124,13 @@ impl ProcessingQueue {
                 AppError::Internal
             })??;
 
-        self.store_previews(file.id, &pair).await
+        self.store_previews(file_id, &pair).await
     }
 
     /// Extract one video frame with system `ffmpeg`, then store both WebP sizes.
-    #[instrument(skip(self, file), fields(file_id = %file.id), err(Debug))]
-    async fn process_video(&self, file: FileEntry) -> Result<(), AppError> {
-        let hash = file.hash.as_deref().ok_or_else(|| {
-            tracing::error!(file=%file.id, "video file has no hash");
-            AppError::Internal
-        })?;
-
-        let source_path = self.storage.path(hash);
+    #[instrument(skip(self, hash), fields(file_id = %file_id), err(Debug))]
+    async fn process_video(&self, file_id: Uuid, hash: String) -> Result<(), AppError> {
+        let source_path = self.storage.path(&hash);
 
         let pair = tokio::task::spawn_blocking(move || encode_video_preview_pair(&source_path))
             .await
@@ -125,7 +139,7 @@ impl ProcessingQueue {
                 AppError::Internal
             })??;
 
-        self.store_previews(file.id, &pair).await
+        self.store_previews(file_id, &pair).await
     }
 
     async fn store_previews(&self, file_id: uuid::Uuid, pair: &PreviewPair) -> Result<(), AppError> {
@@ -134,20 +148,18 @@ impl ProcessingQueue {
 
         self.storage.persist_preview(&icon_hash, &pair.icon).await?;
         self.storage.persist_preview(&tile_hash, &pair.tile).await?;
-        self.files
-            .set_metadata(
-                file_id,
-                &FileMetadata {
-                    preview_64: Some(icon_hash.clone()),
-                    preview_256: Some(tile_hash.clone()),
-                },
-            )
-            .await?;
+
+        let metadata = FileMetadata {
+            preview_64: Some(icon_hash),
+            preview_256: Some(tile_hash),
+        };
+
+        self.files.set_metadata(file_id, &metadata).await?;
 
         tracing::info!(
             file=%file_id,
-            preview_64=%icon_hash,
-            preview_256=%tile_hash,
+            preview_64=%metadata.preview_64.as_deref().unwrap_or_default(),
+            preview_256=%metadata.preview_256.as_deref().unwrap_or_default(),
             "stored file previews"
         );
 

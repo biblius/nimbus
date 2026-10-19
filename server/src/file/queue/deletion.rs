@@ -222,7 +222,7 @@ impl DeletionQueue {
         let mut preview_hashes = HashSet::new();
 
         for entry in &files {
-            let Some(file) = by_id.get(&entry.file_id) else {
+            let Some(file) = by_id.remove(&entry.file_id) else {
                 tracing::debug!(?entry, "file is missing");
                 failed = true;
                 continue;
@@ -241,7 +241,7 @@ impl DeletionQueue {
                 self.send_result(DeletionResult {
                     request_id,
                     file_id: file.id,
-                    name: file.name.clone(),
+                    name: file.name,
                     success,
                 })
                 .await;
@@ -251,28 +251,35 @@ impl DeletionQueue {
                 continue;
             }
 
-            let Some(hash) = file.hash.as_ref() else {
+            let Some(hash) = file.hash else {
                 tracing::error!(file=%file.id, "file has no hash");
                 failed = true;
                 continue;
             };
 
-            content_hashes.insert(hash.as_str());
+            content_hashes.insert(hash);
 
-            if let Some(ref preview) = file.metadata.preview_64 {
-                preview_hashes.insert(preview.as_str());
+            if let Some(preview) = file.metadata.preview_64 {
+                preview_hashes.insert(preview);
             }
 
-            if let Some(ref preview) = file.metadata.preview_256 {
-                preview_hashes.insert(preview.as_str());
+            if let Some(preview) = file.metadata.preview_256 {
+                preview_hashes.insert(preview);
             }
         }
 
         // Counts are after the row deletes, so this batch is already excluded.
-        let content_hashes: Vec<&str> = content_hashes.into_iter().collect();
-        let preview_hashes: Vec<&str> = preview_hashes.into_iter().collect();
+        let content_hashes: Vec<_> = content_hashes.into_iter().collect();
+        let preview_hashes: Vec<_> = preview_hashes.into_iter().collect();
+        let content_hash_refs: Vec<&str> = content_hashes.iter().map(String::as_str).collect();
+        let preview_hash_refs: Vec<&str> = preview_hashes.iter().map(String::as_str).collect();
 
-        let hash_counts = match self.repository.files.count_hashes(&content_hashes).await {
+        let hash_counts = match self
+            .repository
+            .files
+            .count_hashes(&content_hash_refs)
+            .await
+        {
             Ok(counts) => counts,
             Err(e) => {
                 tracing::error!(error=%e, "cannot count remaining hashes, will not delete BLOBs");
@@ -281,7 +288,7 @@ impl DeletionQueue {
             }
         };
 
-        for hash in content_hashes {
+        for hash in &content_hashes {
             let remaining = hash_counts.get(hash).copied().unwrap_or(0);
 
             if remaining > 0 {
@@ -298,7 +305,12 @@ impl DeletionQueue {
             }
         }
 
-        let preview_counts = match self.repository.files.count_previews(&preview_hashes).await {
+        let preview_counts = match self
+            .repository
+            .files
+            .count_previews(&preview_hash_refs)
+            .await
+        {
             Ok(counts) => counts,
             Err(e) => {
                 tracing::error!(error=%e, "cannot count remaining previews, will not delete preview BLOBs");
@@ -307,7 +319,7 @@ impl DeletionQueue {
             }
         };
 
-        for preview in preview_hashes {
+        for preview in &preview_hashes {
             let remaining = preview_counts.get(preview).copied().unwrap_or(0);
 
             if remaining > 0 {

@@ -4,9 +4,7 @@ use super::format::FileType;
 use crate::{db::Db, error::AppError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError, prelude::FromRow,
-};
+use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError, prelude::FromRow};
 use uuid::Uuid;
 use validify::{Validate, Validify};
 
@@ -112,11 +110,7 @@ impl FileMetadata {
     }
 
     pub fn into_option(self) -> Option<Self> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(self)
-        }
+        if self.is_empty() { None } else { Some(self) }
     }
 }
 
@@ -397,6 +391,12 @@ pub struct CreateDirectory {
     pub parent: Option<Uuid>,
 }
 
+impl CreateDirectory {
+    pub fn new(id: Uuid, name: String, parent: Option<Uuid>) -> Self {
+        Self { id, parent, name }
+    }
+}
+
 #[derive(Debug, Deserialize, Validify)]
 pub struct CreateTextFile {
     #[modify(trim)]
@@ -405,12 +405,6 @@ pub struct CreateTextFile {
     pub name: String,
 
     pub parent: Option<Uuid>,
-}
-
-impl CreateDirectory {
-    pub fn new(id: Uuid, name: String, parent: Option<Uuid>) -> Self {
-        Self { id, parent, name }
-    }
 }
 
 impl Default for CreateDirectory {

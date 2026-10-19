@@ -232,7 +232,7 @@ impl TrashRepository {
                 .push_bind(parent)
                 .push_bind(file.kind)
                 .push_bind(&file.name)
-                .push_bind(file.file_type.clone())
+                .push_bind(&file.file_type)
                 .push_bind(&file.hash)
                 .push_bind(file.size_bytes)
                 .push_bind(file.created_at)

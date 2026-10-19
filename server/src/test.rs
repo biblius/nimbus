@@ -1,8 +1,8 @@
 //! Test suites and harness.
 //!
 //! The database engine follows the crate features: `postgres` starts a Postgres
-//! container, `sqlite` uses a temporary file. The cache follows `valkey` or
-//! `memory-cache` the same way.
+//! container, `sqlite` uses a temporary file. With `valkey`, tests start a
+//! Valkey container; otherwise the in-memory cache is used.
 //!
 //! Keep [`TestState`] alive in suitest [`before_all`](suitest::before_all) so
 //! containers are not dropped mid-suite.
@@ -70,11 +70,11 @@ impl TestState {
         #[cfg(feature = "postgres")]
         let (pool, postgres) = init_postgres().await;
 
-        #[cfg(feature = "memory-cache")]
-        let cache = Cache::new();
-
         #[cfg(feature = "valkey")]
         let (cache, valkey) = init_valkey().await;
+
+        #[cfg(not(feature = "valkey"))]
+        let cache = Cache::new();
 
         let (services, repository, storage) =
             build_services(pool.clone(), cache.clone(), &storage_dir).await;
@@ -188,7 +188,7 @@ async fn build_services(
         String::new(),
         String::new(),
         "Nimbus".into(),
-        "http://localhost".into(),
+        "http://localhost",
     );
 
     let storage = Storage::new(
@@ -213,7 +213,7 @@ async fn build_services(
         LoginAttemptStore::new(cache.clone()),
         email.clone(),
         webauthn,
-        "http://localhost:5173".into(),
+        "http://localhost:5173",
     );
 
     let user_service = UserService::new(

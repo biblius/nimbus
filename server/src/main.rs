@@ -19,12 +19,6 @@ compile_error!("enable exactly one of the `postgres` or `sqlite` features");
 #[cfg(all(feature = "postgres", feature = "sqlite"))]
 compile_error!("features `postgres` and `sqlite` are mutually exclusive");
 
-#[cfg(not(any(feature = "valkey", feature = "memory-cache")))]
-compile_error!("enable exactly one of the `valkey` or `memory-cache` features");
-
-#[cfg(all(feature = "valkey", feature = "memory-cache"))]
-compile_error!("features `valkey` and `memory-cache` are mutually exclusive");
-
 #[tokio::main]
 async fn main() {
     let args = <config::StartArgs as clap::Parser>::parse();

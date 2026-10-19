@@ -63,10 +63,10 @@ impl AppState {
         #[cfg(feature = "valkey")]
         let cache = Cache::connect(&args.valkey_url()).expect("unable to create the valkey pool");
 
-        #[cfg(feature = "memory-cache")]
+        #[cfg(not(feature = "valkey"))]
         let cache = Cache::new();
 
-        let nimbus_origin = args.nimbus_origin();
+        let nimbus_origin: Arc<str> = args.nimbus_origin().trim_end_matches('/').into();
         let rp_origin = webauthn_rs::prelude::Url::parse(&nimbus_origin).unwrap_or_else(|error| {
             panic!("invalid NIMBUS_ORIGIN `{nimbus_origin}`: {error}")
         });
@@ -101,7 +101,7 @@ impl AppState {
             args.gmail_address(),
             args.gmail_app_password(),
             args.mail_from_name(),
-            nimbus_origin.clone(),
+            Arc::clone(&nimbus_origin),
         );
 
         let repository = Repository::new(db.clone());

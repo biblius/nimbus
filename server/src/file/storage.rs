@@ -110,13 +110,13 @@ impl Storage {
         self.tmp.join(Uuid::new_v4().to_string())
     }
 
-    pub async fn writer(&self, name: String) -> Result<UploadWriter, AppError> {
+    pub async fn writer(&self, name: impl Into<String>) -> Result<UploadWriter, AppError> {
         let temp = self.tmp_path();
 
         let file = File::create(&temp).await?;
 
         Ok(UploadWriter {
-            name,
+            name: name.into(),
             file,
             hasher: Sha256::new(),
             size: 0,
@@ -227,12 +227,15 @@ impl UploadWriter {
 
         self.committed = true;
 
+        let name = std::mem::take(&mut self.name);
+        let file_type = FileType::infer(&name, &self.header);
+
         Ok(TempFile {
-            name: self.name.clone(),
-            temp: self.temp.clone(),
-            hash: hex::encode(self.hasher.clone().finalize()),
+            name,
+            temp: std::mem::take(&mut self.temp),
+            hash: hex::encode(std::mem::replace(&mut self.hasher, Sha256::new()).finalize()),
             size: self.size,
-            file_type: FileType::infer(&self.name, &self.header),
+            file_type,
             committed: false,
         })
     }

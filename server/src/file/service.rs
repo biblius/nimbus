@@ -127,12 +127,18 @@ async fn zip_tree(
         format!("{prefix}/{}", node.name)
     };
 
-    let count = seen
-        .entry(path.clone())
-        .and_modify(|count| *count += 1)
-        .or_insert(0);
+    let count = match seen.get_mut(&path) {
+        Some(count) => {
+            *count += 1;
+            *count
+        }
+        None => {
+            seen.insert(path.clone(), 0);
+            0
+        }
+    };
 
-    if *count > 0 {
+    if count > 0 {
         path = if let Some((prefix, ext)) = path.rsplit_once('.') {
             format!("{prefix} ({count}).{ext}")
         } else {

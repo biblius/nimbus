@@ -154,7 +154,7 @@ pub(crate) async fn expire_session(
 }
 
 fn clear_session_cookie(mut response: Response, config: &HttpConfiguration) -> Response {
-    let mut cookie = Cookie::build((config.cookie_name.to_string(), String::new()))
+    let mut cookie = Cookie::build((&*config.cookie_name, ""))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
@@ -163,7 +163,7 @@ fn clear_session_cookie(mut response: Response, config: &HttpConfiguration) -> R
         .build();
 
     if !config.cookie_domain.is_empty() {
-        cookie.set_domain(config.cookie_domain.to_string());
+        cookie.set_domain(&*config.cookie_domain);
     }
 
     match HeaderValue::from_str(&cookie.to_string()) {
@@ -332,16 +332,15 @@ async fn login_response(result: LoginResult, state: &AppState) -> Result<Respons
         LoginResult::Session { session_id } => {
             let session = state.services.auth.get_session_by_id(session_id).await?;
 
-            let mut cookie =
-                Cookie::build((config.cookie_name.to_string(), session.id.to_string()))
-                    .path("/")
-                    .http_only(true)
-                    .same_site(SameSite::Lax)
-                    .secure(config.cookie_secure)
-                    .build();
+            let mut cookie = Cookie::build((&*config.cookie_name, session.id.to_string()))
+                .path("/")
+                .http_only(true)
+                .same_site(SameSite::Lax)
+                .secure(config.cookie_secure)
+                .build();
 
             if !config.cookie_domain.is_empty() {
-                cookie.set_domain(config.cookie_domain.to_string());
+                cookie.set_domain(&*config.cookie_domain);
             }
 
             match session.expires_at {

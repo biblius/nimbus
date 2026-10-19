@@ -186,12 +186,12 @@ impl FileService {
     /// accessibility is not checked and is assumed to be accessible.
     ///
     /// Callers should call [`Self::accessible`] beforehand.
-    #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
+    #[instrument(skip(self, user, name), fields(user_id = %user.id), err(Debug))]
     pub async fn start_upload(
         &self,
         user: &User,
         root: Uuid,
-        name: String,
+        name: impl Into<String>,
     ) -> Result<UploadWriter, AppError> {
         self.storage.writer(name).await
     }
@@ -249,13 +249,13 @@ impl FileService {
         let now = Utc::now();
 
         let mut entries: Vec<_> = dirs
-            .iter()
+            .into_iter()
             .map(|dir| FileEntry {
                 id: dir.id,
                 root_id,
                 created_by: Some(user.id),
                 kind: FileKind::Directory,
-                name: dir.name.clone(),
+                name: dir.name,
                 parent: dir.parent,
                 file_type: None,
                 hash: None,
@@ -268,14 +268,17 @@ impl FileService {
             })
             .collect();
 
-        entries.extend(files.iter().map(|(file, parent)| FileEntry {
+        entries.extend(files.iter_mut().map(|(file, parent)| FileEntry {
             id: Uuid::new_v4(),
             root_id,
             created_by: Some(user.id),
             kind: FileKind::File,
-            name: file.name.clone(),
+            name: std::mem::take(&mut file.name),
             parent: *parent,
-            file_type: Some(file.file_type.clone()),
+            file_type: Some(std::mem::replace(
+                &mut file.file_type,
+                FileType::Other(String::new()),
+            )),
             hash: Some(file.hash.clone()),
             size_bytes: file.size,
             sharing_mode,
@@ -296,7 +299,7 @@ impl FileService {
         tx.commit().await?;
 
         for entry in entries.iter().filter(|entry| entry.kind == FileKind::File) {
-            if let Err(error) = ProcessingQueue::submit(&self.processing, entry.clone()).await {
+            if let Err(error) = ProcessingQueue::submit(&self.processing, entry).await {
                 tracing::error!(file = %entry.id, %error, "failed to enqueue file for processing");
             }
         }
@@ -328,7 +331,7 @@ impl FileService {
             ));
         }
 
-        let writer = self.storage.writer(file.name.clone()).await?;
+        let writer = self.storage.writer(file.name.as_str()).await?;
 
         Ok((file, writer))
     }

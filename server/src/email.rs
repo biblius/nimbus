@@ -3,6 +3,7 @@ use lettre::{
     message::{Mailbox, header::ContentType},
     transport::smtp::authentication::Credentials,
 };
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::instrument;
 use uuid::Uuid;
@@ -100,7 +101,7 @@ impl EmailQueue {
 #[derive(Clone)]
 pub struct EmailSender {
     queue: EmailQueueHandle,
-    nimbus_origin: String,
+    nimbus_origin: Arc<str>,
     #[cfg(debug_assertions)]
     mailer_configured: bool,
 }
@@ -110,7 +111,7 @@ impl EmailSender {
         address: String,
         app_password: String,
         from_name: String,
-        nimbus_origin: String,
+        nimbus_origin: impl Into<Arc<str>>,
     ) -> Self {
         let parsed = if address.is_empty() {
             "nimbus@localhost".parse()
@@ -150,7 +151,7 @@ impl EmailSender {
 
         Self {
             queue,
-            nimbus_origin: nimbus_origin.trim_end_matches('/').to_string(),
+            nimbus_origin: nimbus_origin.into(),
             #[cfg(debug_assertions)]
             mailer_configured,
         }
