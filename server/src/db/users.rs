@@ -165,20 +165,19 @@ impl UserRepository {
 
         if let Some(ref search) = pagination.search {
             let column = search.column.to_search_column();
+            let pattern = format!("%{}%", search.q.to_lowercase());
 
             listed
-                .push(" WHERE ")
+                .push(" WHERE LOWER(")
                 .push(column)
-                .push(" ILIKE '%' || ")
-                .push_bind(&search.q)
-                .push(" || '%'");
+                .push(") LIKE ")
+                .push_bind(pattern.clone());
 
             count
-                .push(" WHERE ")
+                .push(" WHERE LOWER(")
                 .push(column)
-                .push(" ILIKE '%' || ")
-                .push_bind(&search.q)
-                .push(" || '%'");
+                .push(") LIKE ")
+                .push_bind(pattern);
         }
 
         listed

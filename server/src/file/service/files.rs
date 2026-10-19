@@ -343,7 +343,7 @@ impl FileService {
         user: &User,
         existing: FileEntry,
         mut file: TempFile,
-    ) -> Result<FileEntry, AppError> {
+    ) -> Result<(), AppError> {
         let Some(old_hash) = existing.hash.as_deref() else {
             // Should never happen
             return Err(AppError::Unprocessable(
@@ -355,7 +355,7 @@ impl FileService {
 
         if !content_changed {
             tracing::info!("file contents are the same, skipping overwrite");
-            return Ok(existing);
+            return Ok(());
         }
 
         let quota = self.files.root_quota(existing.root_id).await?;
@@ -382,8 +382,7 @@ impl FileService {
 
         let mut tx = self.tx.begin().await?;
 
-        let entry = self
-            .files
+        self.files
             .update_content(&mut *tx, existing.id, &file.hash, file.size, file_type)
             .await?;
 
@@ -404,7 +403,7 @@ impl FileService {
             }
         }
 
-        Ok(entry)
+        Ok(())
     }
 
     /// Single-file blob for streaming / range requests. Directories are rejected.

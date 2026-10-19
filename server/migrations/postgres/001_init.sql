@@ -3,7 +3,7 @@
 CREATE TABLE users (
   id UUID PRIMARY KEY NOT NULL,
   username TEXT UNIQUE NOT NULL,
-  password TEXT,
+  password TEXT NOT NULL,
   email TEXT,
   role TEXT NOT NULL,
   otp_secret TEXT,

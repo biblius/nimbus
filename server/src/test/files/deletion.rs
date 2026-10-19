@@ -156,16 +156,16 @@ mod deletion {
 
         expire_trash(state, file.id).await;
 
+        // Row delete commits before blob GC in the same sweep — wait for both.
         wait_until(std::time::Duration::from_secs(5), || async {
             count!(
                 state,
                 "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
                 file.id
             ) == 0
+                && test::blob_count(state.storage_dir()) == blobs_before - 1
         })
         .await;
-
-        assert_eq!(test::blob_count(state.storage_dir()), blobs_before - 1);
         assert_eq!(
             count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", root),
             1
@@ -312,15 +312,11 @@ mod deletion {
                 "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
                 file.id
             ) == 0
+                && !icon_path.exists()
+                && !tile_path.exists()
+                && test::preview_count(state.storage_dir()) == previews_before - 2
         })
         .await;
-
-        assert!(!icon_path.exists(), "64px preview blob should be removed");
-        assert!(!tile_path.exists(), "256px preview blob should be removed");
-        assert_eq!(
-            test::preview_count(state.storage_dir()),
-            previews_before - 2
-        );
     }
 
     #[test]
@@ -391,13 +387,10 @@ mod deletion {
                 "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
                 second.id
             ) == 0
+                && !icon_path.exists()
+                && !tile_path.exists()
         })
         .await;
-
-        assert!(
-            !icon_path.exists() && !tile_path.exists(),
-            "previews removed with last reference"
-        );
     }
 
     #[test]

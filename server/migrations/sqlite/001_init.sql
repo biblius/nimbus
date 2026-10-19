@@ -1,5 +1,11 @@
--- Identifiers and timestamps are generated in Rust.
--- sqlx stores Uuid as a 16-byte BLOB and DateTime<Utc> as TEXT.
+-- Mirror of migrations/postgres/001_init.sql.
+-- Identifiers and timestamps are generated in Rust so the same repository
+-- code can run on Postgres and SQLite.
+--
+-- Type mapping (sqlx):
+--   UUID / TIMESTAMPTZ → BLOB / TEXT
+--   BIGINT / BIGSERIAL  → INTEGER (64-bit) / INTEGER AUTOINCREMENT
+--   JSONB              → TEXT
 CREATE TABLE users (
   id BLOB PRIMARY KEY NOT NULL,
   username TEXT UNIQUE NOT NULL,
@@ -15,6 +21,18 @@ CREATE UNIQUE INDEX users_email_idx ON users (email)
 WHERE
   email IS NOT NULL;
 
+CREATE TABLE sessions (
+  id BLOB PRIMARY KEY NOT NULL,
+  user_id BLOB NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  remote_address TEXT,
+  user_agent TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT
+);
+
+CREATE INDEX sessions_user_id_idx ON sessions (user_id);
+
 CREATE TABLE user_passkeys (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id BLOB NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -22,14 +40,15 @@ CREATE TABLE user_passkeys (
   created_at TEXT NOT NULL
 );
 
--- A root is the quota and access boundary. It is not a file row: directories and
--- files live in `files` and point back here with `root_id`.
+-- A root directory, either private or shared.
 -- `owner` is set for a user's private root and null for a shared root.
--- A user has at most one private root.
+-- A user can have only one private root.
 CREATE TABLE roots (
   id BLOB PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
+  -- A quota of 0 means unlimited.
   quota_bytes INTEGER NOT NULL DEFAULT 0,
+  -- If present, the root is private.
   owner BLOB REFERENCES users (id),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -43,11 +62,21 @@ CREATE TABLE files (
   id BLOB PRIMARY KEY NOT NULL,
   root_id BLOB NOT NULL REFERENCES roots (id),
   created_by BLOB REFERENCES users (id) ON DELETE SET NULL,
+  -- We allows this to be set to null on parent deletion because
+  -- it simplifies hard deletion logic. 
+  -- The only time this can change is when a file is trashed directly
+  -- (in which case it becomes null), or when moved.
+  -- The only time this can get set to null is during hard deletion, i.e.
+  -- when either users hard delete files manually or when the trash expiration
+  -- worker picks it up.
   parent BLOB REFERENCES files (id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
   "type" TEXT NOT NULL,
   name TEXT NOT NULL,
+  -- Always null for directories
   format TEXT,
+  -- Always null for directories
   hash TEXT,
+  -- Always null for directories
   size_bytes INTEGER NOT NULL,
   -- Null when not publicly shared. `view` allows preview only; `download` also allows downloads.
   -- Sharing a directory sets this (and share_expires_at) on every descendant; unsharing clears them.
@@ -72,7 +101,8 @@ CREATE INDEX files_sharing_mode_idx ON files (sharing_mode, share_expires_at)
 WHERE
   sharing_mode IS NOT NULL;
 
--- Preview hashes. `file_id` matches `files.id` or `trashed_files.id` (no FK).
+-- Preview hashes and other generated artifacts. `file_id` matches `files.id`
+-- or `trashed_files.id` No FK because the same id moves between those tables.
 CREATE TABLE file_metadata (
   file_id BLOB PRIMARY KEY NOT NULL,
   preview_64 TEXT,
@@ -87,8 +117,11 @@ CREATE INDEX file_metadata_preview_256_idx ON file_metadata (preview_256)
 WHERE
   preview_256 IS NOT NULL;
 
--- Rows leave `files` when trashed. A directly trashed row has `parent` NULL.
--- Descendants keep their parent.
+-- Used for soft deletion. Files end up here from `files`.
+-- A file that is directly deleted from `files` has its parent set to null
+-- and always recursively pulls with it all its children.
+-- Its children keep the parent pointing to the file to keep the relation.
+-- The same reasoning for ON DELETE SET NULL applies as that of `files`.
 CREATE TABLE trashed_files (
   id BLOB PRIMARY KEY NOT NULL,
   root_id BLOB NOT NULL REFERENCES roots (id),
@@ -109,25 +142,11 @@ CREATE INDEX trashed_files_root_id_parent_idx ON trashed_files (root_id, parent)
 
 CREATE INDEX trashed_files_root_id_id_idx ON trashed_files (root_id, id);
 
-CREATE INDEX trashed_files_trashed_by_idx ON trashed_files (trashed_by);
-
 CREATE INDEX trashed_files_parent_idx ON trashed_files (parent);
 
 CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
-
-CREATE TABLE sessions (
-  id BLOB PRIMARY KEY NOT NULL,
-  user_id BLOB NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  remote_address TEXT,
-  user_agent TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  expires_at TEXT
-);
-
-CREATE INDEX sessions_user_id_idx ON sessions (user_id);
 
 -- Membership of a shared root. Private roots are not recorded here.
 CREATE TABLE user_folders (

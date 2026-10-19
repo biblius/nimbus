@@ -751,11 +751,11 @@ export class NimbusClient {
     id: string,
     content: Blob,
     name: string,
-  ): Promise<FileEntry> {
+  ): Promise<void> {
     const body = new FormData();
     body.set("file", content, name);
 
-    return this.request<FileEntry>(
+    return this.request<void>(
       `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/overwrite`,
       { method: "PUT", body },
     );

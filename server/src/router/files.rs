@@ -437,7 +437,7 @@ pub(crate) async fn overwrite(
     State(state): State<AppState>,
     session: Session,
     mut multipart: Multipart,
-) -> Result<Json<FileEntry>, AppError> {
+) -> Result<StatusCode, AppError> {
     let (existing, mut writer) = state
         .services
         .files
@@ -480,13 +480,13 @@ pub(crate) async fn overwrite(
         }
     };
 
-    let new = state
+    state
         .services
         .files
         .finish_overwrite(&session.user, existing, file)
         .await?;
 
-    Ok(Json(new))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn download_root(

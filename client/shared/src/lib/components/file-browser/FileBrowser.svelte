@@ -1799,11 +1799,10 @@
         fileId={previewFileId}
         onClose={() => (previewFileId = null)}
         onSelect={(id) => (previewFileId = id)}
-        onUpdated={(entry) => {
-          const index = entries.findIndex((item) => item.file.id === entry.id);
-
+        onUpdated={(sizeBytes) => {
+          const index = entries.findIndex((item) => item.file.id === previewFileId);
           if (index !== -1) {
-            entries[index] = { file: entry, metadata: null };
+            entries[index].file.sizeBytes = sizeBytes;
           }
         }}
       />

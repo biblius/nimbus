@@ -146,18 +146,18 @@ impl UserFolderRepository {
         count_q.push_bind(root_id);
 
         if let Some(ref search) = pagination.search {
-            q.push(" AND ")
+            let pattern = format!("%{}%", search.q.to_lowercase());
+
+            q.push(" AND LOWER(")
                 .push(search.column.to_search_column_prefixed("u"))
-                .push(" ILIKE '%' || ")
-                .push_bind(&search.q)
-                .push(" || '%'");
+                .push(") LIKE ")
+                .push_bind(pattern.clone());
 
             count_q
-                .push(" AND ")
+                .push(" AND LOWER(")
                 .push(search.column.to_search_column_prefixed("u"))
-                .push(" ILIKE '%' || ")
-                .push_bind(&search.q)
-                .push(" || '%'");
+                .push(") LIKE ")
+                .push_bind(pattern);
         }
 
         q.push(" ORDER BY ")

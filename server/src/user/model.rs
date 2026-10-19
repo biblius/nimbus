@@ -144,7 +144,7 @@ pub struct UpdateUser {
 
 /// Fields a signed-in user can change on their own account.
 /// Omit `password` to keep the current one. Role cannot be changed here.
-/// When setting `password`, `current_password` must match the existing hash.
+/// When setting `password`, `current_password` must match the existing one.
 #[derive(Debug, Deserialize, Validify)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSelf {

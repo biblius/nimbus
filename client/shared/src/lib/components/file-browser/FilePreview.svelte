@@ -34,7 +34,7 @@
   } from "../../fileKind";
   import { session } from "../../session.svelte";
   import { kv } from "../../storage";
-  import type { FileEntry, FileView } from "../../types";
+  import type { FileView } from "../../types";
   import { cn } from "../../utils";
   import AudioPreviewContent from "./preview/AudioPreviewContent.svelte";
   import ImagePreviewContent from "./preview/ImagePreviewContent.svelte";
@@ -54,7 +54,7 @@
     fileId: string;
     onClose: () => void;
     onSelect: (fileId: string) => void;
-    onUpdated?: (entry: FileEntry) => void;
+    onUpdated?: (sizeBytes: number) => void;
   } = $props();
 
   const familyIcons: Record<FileFamily, typeof FileIcon> = {

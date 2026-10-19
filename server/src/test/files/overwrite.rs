@@ -30,10 +30,17 @@ mod overwrite {
         writer.write(b"hello world").await.unwrap();
         let temp = writer.finish().await.unwrap();
 
-        let updated = state
+        state
             .services
             .files
             .finish_overwrite(&session.user, existing, temp)
+            .await
+            .unwrap();
+
+        let updated = state
+            .services
+            .files
+            .metadata(&session.user, original.id)
             .await
             .unwrap();
 

@@ -68,7 +68,7 @@ impl FileRepository {
                 id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner AS "owner: Uuid",
+                owner AS "owner?: Uuid",
                 created_at AS "created_at: DateTime<Utc>",
                 updated_at AS "updated_at: DateTime<Utc>"
             "#,
@@ -92,7 +92,7 @@ impl FileRepository {
                 id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner AS "owner: Uuid",
+                owner AS "owner?: Uuid",
                 created_at AS "created_at: DateTime<Utc>",
                 updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
@@ -114,7 +114,7 @@ impl FileRepository {
                 id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner AS "owner: Uuid",
+                owner AS "owner?: Uuid",
                 created_at AS "created_at: DateTime<Utc>",
                 updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
@@ -137,7 +137,7 @@ impl FileRepository {
                 id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner AS "owner: Uuid",
+                owner AS "owner?: Uuid",
                 created_at AS "created_at: DateTime<Utc>",
                 updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
@@ -178,7 +178,7 @@ impl FileRepository {
                 id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner AS "owner: Uuid",
+                owner AS "owner?: Uuid",
                 created_at AS "created_at: DateTime<Utc>",
                 updated_at AS "updated_at: DateTime<Utc>"
             "#,
@@ -228,7 +228,7 @@ impl FileRepository {
                 id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner AS "owner: Uuid",
+                owner AS "owner?: Uuid",
                 created_at AS "created_at: DateTime<Utc>",
                 updated_at AS "updated_at: DateTime<Utc>"
             FROM roots WHERE id = $1"#,
@@ -248,7 +248,7 @@ impl FileRepository {
                 id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner AS "owner: Uuid",
+                owner AS "owner?: Uuid",
                 created_at AS "created_at: DateTime<Utc>",
                 updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
@@ -473,63 +473,47 @@ impl FileRepository {
     {
         let now = Utc::now();
 
+        // Plain INSERT RETURNING (no modifying CTE) so this works on SQLite.
+        // New rows have no file_metadata yet so preview columns are null.
         sqlx::query_as::<_, FileEntry>(
             r#"
-            WITH inserted AS (
-                INSERT INTO files (
-                    id,
-                    root_id,
-                    created_by,
-                    "type",
-                    name,
-                    parent,
-                    format,
-                    hash,
-                    size_bytes,
-                    sharing_mode,
-                    share_expires_at,
-                    created_at,
-                    updated_at
-                )
-                VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9,
-                    (SELECT p.sharing_mode FROM files p WHERE p.id = $6),
-                    (SELECT p.share_expires_at FROM files p WHERE p.id = $6),
-                    $10, $11
-                )
-                RETURNING
-                    id,
-                    root_id,
-                    created_by,
-                    "type",
-                    name,
-                    parent,
-                    format,
-                    hash,
-                    size_bytes,
-                    sharing_mode,
-                    share_expires_at,
-                    created_at,
-                    updated_at
+            INSERT INTO files (
+                id,
+                root_id,
+                created_by,
+                "type",
+                name,
+                parent,
+                format,
+                hash,
+                size_bytes,
+                sharing_mode,
+                share_expires_at,
+                created_at,
+                updated_at
             )
-            SELECT
-                f.id,
-                f.root_id,
-                f.created_by,
-                f."type" AS kind,
-                f.name,
-                f.parent,
-                f.format AS file_type,
-                f.hash,
-                f.size_bytes,
-                f.sharing_mode,
-                f.share_expires_at,
-                m.preview_64,
-                m.preview_256,
-                f.created_at,
-                f.updated_at
-            FROM inserted f
-            LEFT JOIN file_metadata m ON m.file_id = f.id
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                (SELECT p.sharing_mode FROM files p WHERE p.id = $6),
+                (SELECT p.share_expires_at FROM files p WHERE p.id = $6),
+                $10, $11
+            )
+            RETURNING
+                id,
+                root_id,
+                created_by,
+                "type" AS kind,
+                name,
+                parent,
+                format AS file_type,
+                hash,
+                size_bytes,
+                sharing_mode,
+                share_expires_at,
+                CAST(NULL AS TEXT) AS preview_64,
+                CAST(NULL AS TEXT) AS preview_256,
+                created_at,
+                updated_at
             "#,
         )
         .bind(file.id)
@@ -789,55 +773,21 @@ impl FileRepository {
         hash: &str,
         size_bytes: i64,
         file_type: &FileType,
-    ) -> Result<FileEntry, AppError>
+    ) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Db>,
     {
         let now = Utc::now();
 
-        sqlx::query_as::<_, FileEntry>(
+        let result = sqlx::query(
             r#"
-            WITH updated AS (
-                UPDATE files
-                SET
-                    hash = $2,
-                    size_bytes = $3,
-                    format = $4,
-                    updated_at = $5
-                WHERE id = $1
-                RETURNING
-                    id,
-                    root_id,
-                    created_by,
-                    "type",
-                    name,
-                    parent,
-                    format,
-                    hash,
-                    size_bytes,
-                    sharing_mode,
-                    share_expires_at,
-                    created_at,
-                    updated_at
-            )
-            SELECT
-                f.id,
-                f.root_id,
-                f.created_by,
-                f."type" AS kind,
-                f.name,
-                f.parent,
-                f.format AS file_type,
-                f.hash,
-                f.size_bytes,
-                f.sharing_mode,
-                f.share_expires_at,
-                m.preview_64,
-                m.preview_256,
-                f.created_at,
-                f.updated_at
-            FROM updated f
-            LEFT JOIN file_metadata m ON m.file_id = f.id
+            UPDATE files
+            SET
+                hash = $2,
+                size_bytes = $3,
+                format = $4,
+                updated_at = $5
+            WHERE id = $1
             "#,
         )
         .bind(id)
@@ -845,65 +795,41 @@ impl FileRepository {
         .bind(size_bytes)
         .bind(file_type)
         .bind(now)
-        .fetch_one(executor)
-        .await
-        .map_err(AppError::from)
+        .execute(executor)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        Ok(())
     }
 
     /// Update only the display name of a live file or directory.
     #[instrument(skip(self, name), fields(file_id = %id, name = %name), err(Debug))]
-    pub async fn update_name(&self, id: Uuid, name: &str) -> Result<FileEntry, AppError> {
+    pub async fn update_name(&self, id: Uuid, name: &str) -> Result<(), AppError> {
         let now = Utc::now();
 
-        sqlx::query_as::<_, FileEntry>(
+        let result = sqlx::query(
             r#"
-            WITH updated AS (
-                UPDATE files
-                SET
-                    name = $2,
-                    updated_at = $3
-                WHERE id = $1
-                RETURNING
-                    id,
-                    root_id,
-                    created_by,
-                    "type",
-                    name,
-                    parent,
-                    format,
-                    hash,
-                    size_bytes,
-                    sharing_mode,
-                    share_expires_at,
-                    created_at,
-                    updated_at
-            )
-            SELECT
-                f.id,
-                f.root_id,
-                f.created_by,
-                f."type" AS kind,
-                f.name,
-                f.parent,
-                f.format AS file_type,
-                f.hash,
-                f.size_bytes,
-                f.sharing_mode,
-                f.share_expires_at,
-                m.preview_64,
-                m.preview_256,
-                f.created_at,
-                f.updated_at
-            FROM updated f
-            LEFT JOIN file_metadata m ON m.file_id = f.id
+            UPDATE files
+            SET
+                name = $2,
+                updated_at = $3
+            WHERE id = $1
             "#,
         )
         .bind(id)
         .bind(name)
         .bind(now)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        Ok(())
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -940,7 +866,7 @@ impl FileRepository {
 
         let mut query = QueryBuilder::<Db>::new(
             r#"
-            SELECT hash, COUNT(*)::bigint AS count
+            SELECT hash, COUNT(*) AS count
             FROM (
                 SELECT hash FROM files WHERE hash IN (
             "#,
@@ -996,7 +922,7 @@ impl FileRepository {
 
         let mut query = QueryBuilder::<Db>::new(
             r#"
-            SELECT preview, COUNT(*)::bigint AS count
+            SELECT preview, COUNT(*) AS count
             FROM (
                 SELECT preview_64 AS preview
                 FROM file_metadata

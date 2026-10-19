@@ -3,7 +3,6 @@
   import { editorPrefs } from "../../../codemirror.svelte";
   import { session } from "../../../session.svelte";
   import { toastError } from "../../../toast";
-  import type { FileEntry } from "../../../types";
   import { cn } from "../../../utils";
   import CodeMirrorEditor from "../../CodeMirrorEditor.svelte";
 
@@ -24,7 +23,7 @@
     /** Required when not `readonly` (for overwrite). */
     rootId?: string;
     fileId?: string;
-    onUpdated?: (entry: FileEntry) => void;
+    onUpdated?: (sizeBytes: number) => void;
     editing?: boolean;
     /** Hide editing controls and never enter edit mode. */
     readonly?: boolean;
@@ -100,16 +99,12 @@
     saving = true;
 
     try {
-      const entry = await session.client.overwrite(
-        rootId,
-        fileId,
-        new Blob([draft], { type: "text/plain" }),
-        name,
-      );
+      const blob = new Blob([draft], { type: "text/plain" });
+      await session.client.overwrite(rootId, fileId, blob, name);
 
       text = draft;
       editing = false;
-      onUpdated?.(entry);
+      onUpdated?.(blob.size);
     } catch {
       toastError("Could not save file");
     } finally {

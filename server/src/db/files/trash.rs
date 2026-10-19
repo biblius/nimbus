@@ -125,6 +125,9 @@ impl TrashRepository {
     ///
     /// A moved row whose parent was not moved becomes a trash root.
     /// Preview metadata stays in `file_metadata` (same file id).
+    ///
+    /// Rows are selected before delete: SQLite applies `ON DELETE SET NULL`
+    /// immediately while deleting, which would wipe parent links in `RETURNING`.
     #[instrument(skip(self), err(Debug))]
     pub async fn trash(
         &self,
@@ -138,7 +141,7 @@ impl TrashRepository {
 
         let mut tx = self.pool.begin().await?;
 
-        let mut delete = QueryBuilder::<Db>::new(
+        let mut select = QueryBuilder::<Db>::new(
             r#"
             WITH RECURSIVE tree AS (
                 SELECT id
@@ -147,44 +150,48 @@ impl TrashRepository {
             "#,
         );
 
-        delete.push_bind(root_id);
-        delete.push(" AND id IN (");
+        select.push_bind(root_id);
+        select.push(" AND id IN (");
 
-        let mut selected = delete.separated(", ");
-        for id in ids {
-            selected.push_bind(*id);
+        {
+            let mut selected = select.separated(", ");
+            for id in ids {
+                selected.push_bind(*id);
+            }
         }
 
-        selected.push_unseparated(
+        // UNION (not ALL): selected ids can also appear as descendants.
+        select.push(
             r#"
                 )
-                UNION ALL
+                UNION
                 SELECT f.id
                 FROM files f
                 JOIN tree t ON f.parent = t.id
             )
-            DELETE FROM files
-            WHERE id IN (SELECT id FROM tree)
-            RETURNING
-                id,
-                root_id,
-                created_by,
-                "type" AS kind,
-                name,
-                parent,
-                format AS file_type,
-                hash,
-                size_bytes,
-                sharing_mode,
-                share_expires_at,
-                NULL AS preview_64,
-                NULL AS preview_256,
-                created_at,
-                updated_at
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.sharing_mode,
+                f.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM tree t
+            JOIN files f ON f.id = t.id
+            LEFT JOIN file_metadata m ON m.file_id = f.id
             "#,
         );
 
-        let trashed = delete
+        let trashed = select
             .build_query_as::<FileEntry>()
             .fetch_all(&mut *tx)
             .await?;
@@ -194,7 +201,17 @@ impl TrashRepository {
             return Ok(());
         }
 
-        let ids: HashSet<Uuid> = trashed.iter().map(|file| file.id).collect();
+        let removed: HashSet<Uuid> = trashed.iter().map(|file| file.id).collect();
+
+        let mut delete = QueryBuilder::<Db>::new("DELETE FROM files WHERE id IN (");
+        {
+            let mut selected = delete.separated(", ");
+            for id in &removed {
+                selected.push_bind(*id);
+            }
+        }
+        delete.push(")");
+        delete.build().execute(&mut *tx).await?;
 
         let now = Utc::now();
 
@@ -223,7 +240,7 @@ impl TrashRepository {
             // become new roots
             let parent = file
                 .parent
-                .and_then(|parent| ids.contains(&parent).then_some(parent));
+                .and_then(|parent| removed.contains(&parent).then_some(parent));
 
             row.push_bind(file.id)
                 .push_bind(file.root_id)
@@ -266,16 +283,16 @@ impl TrashRepository {
     /// Delete `id` and its descendants from `trashed_files`. Returns the removed rows.
     ///
     /// Does not touch `file_metadata` because the same IDs are reused on restore.
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn delete_tree<'e, E>(
+    ///
+    /// Selects before delete so parent links survive SQLite's immediate
+    /// `ON DELETE SET NULL` during the multi-row delete.
+    #[instrument(skip(self, conn), err(Debug))]
+    pub async fn delete_tree(
         &self,
-        executor: E,
+        conn: &mut <Db as sqlx::Database>::Connection,
         root_id: Uuid,
         id: Uuid,
-    ) -> Result<Vec<FileEntry>, AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
+    ) -> Result<Vec<FileEntry>, AppError> {
         let restored = sqlx::query_as::<_, FileEntry>(
             r#"
             WITH RECURSIVE tree AS (
@@ -288,34 +305,45 @@ impl TrashRepository {
                 FROM trashed_files child
                 JOIN tree t ON child.parent = t.id
             )
-            DELETE FROM trashed_files
-            WHERE id IN (SELECT id FROM tree)
-            RETURNING
-                id,
-                root_id,
-                created_by,
-                "type" AS kind,
-                name,
-                parent,
-                format AS file_type,
-                hash,
-                size_bytes,
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
                 NULL AS sharing_mode,
                 NULL AS share_expires_at,
-                NULL AS preview_64,
-                NULL AS preview_256,
-                created_at,
-                updated_at
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM tree t
+            JOIN trashed_files f ON f.id = t.id
+            LEFT JOIN file_metadata m ON m.file_id = f.id
             "#,
         )
         .bind(id)
         .bind(root_id)
-        .fetch_all(executor)
+        .fetch_all(&mut *conn)
         .await?;
 
         if restored.iter().all(|row| row.id != id) {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         }
+
+        let mut delete = QueryBuilder::<Db>::new("DELETE FROM trashed_files WHERE id IN (");
+        {
+            let mut selected = delete.separated(", ");
+            for row in &restored {
+                selected.push_bind(row.id);
+            }
+        }
+        delete.push(")");
+        delete.build().execute(&mut *conn).await?;
 
         Ok(restored)
     }
@@ -323,41 +351,50 @@ impl TrashRepository {
     /// Delete every trashed row in `root_id`. Returns the removed rows.
     ///
     /// Does not touch `file_metadata` because the same IDs are reused on restore.
-    #[instrument(skip(self, executor), err(Debug))]
-    pub async fn delete_all<'e, E>(
+    ///
+    /// Selects before delete so parent links survive SQLite's immediate
+    /// `ON DELETE SET NULL` during the multi-row delete.
+    #[instrument(skip(self, conn), err(Debug))]
+    pub async fn delete_all(
         &self,
-        executor: E,
+        conn: &mut <Db as sqlx::Database>::Connection,
         root_id: Uuid,
-    ) -> Result<Vec<FileEntry>, AppError>
-    where
-        E: Executor<'e, Database = Db>,
-    {
-        sqlx::query_as::<_, FileEntry>(
+    ) -> Result<Vec<FileEntry>, AppError> {
+        let restored = sqlx::query_as::<_, FileEntry>(
             r#"
-            DELETE FROM trashed_files
-            WHERE root_id = $1
-            RETURNING
-                id,
-                root_id,
-                created_by,
-                "type" AS kind,
-                name,
-                parent,
-                format AS file_type,
-                hash,
-                size_bytes,
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
                 NULL AS sharing_mode,
                 NULL AS share_expires_at,
-                NULL AS preview_64,
-                NULL AS preview_256,
-                created_at,
-                updated_at
+                m.preview_64,
+                m.preview_256,
+                f.created_at,
+                f.updated_at
+            FROM trashed_files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
+            WHERE f.root_id = $1
             "#,
         )
         .bind(root_id)
-        .fetch_all(executor)
-        .await
-        .map_err(AppError::from)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        if !restored.is_empty() {
+            sqlx::query("DELETE FROM trashed_files WHERE root_id = $1")
+                .bind(root_id)
+                .execute(&mut *conn)
+                .await?;
+        }
+
+        Ok(restored)
     }
 
     /// Delete trashed rows for `ids`. Returns the ids that were actually removed.
