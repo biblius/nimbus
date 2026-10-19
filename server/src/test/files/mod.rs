@@ -47,9 +47,9 @@ pub(super) async fn upload_in(
 }
 
 macro_rules! count {
-    ($state:expr, $sql:literal, $id:expr) => {
+    ($state:expr, $sql:literal, $($id:expr),+ $(,)?) => {
         sqlx::query_scalar::<_, i64>($sql)
-            .bind($id)
+            $(.bind($id))+
             .fetch_one(&$state.pool)
             .await
             .unwrap()

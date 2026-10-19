@@ -10,7 +10,7 @@ use crate::{
         tree::FileEntryTree,
     },
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sqlx::{Executor, FromRow, QueryBuilder};
 use std::collections::{HashMap, HashSet};
 use tracing::instrument;
@@ -65,12 +65,12 @@ impl FileRepository {
             )
             VALUES ($1, $2, $3, $4, $5, $5)
             RETURNING 
-                id,
+                id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner,
-                created_at,
-                updated_at
+                owner AS "owner: Uuid",
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             "#,
             id,
             name,
@@ -89,12 +89,12 @@ impl FileRepository {
             RootView,
             r#"
             SELECT
-                id,
+                id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner,
-                created_at,
-                updated_at
+                owner AS "owner: Uuid",
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
             WHERE owner IS NOT NULL
             ORDER BY name
@@ -111,12 +111,12 @@ impl FileRepository {
             RootView,
             r#"
             SELECT
-                id,
+                id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner,
-                created_at,
-                updated_at
+                owner AS "owner: Uuid",
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
             WHERE owner IS NULL
             ORDER BY name
@@ -134,12 +134,12 @@ impl FileRepository {
             RootView,
             r#"
             SELECT
-                id,
+                id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner,
-                created_at,
-                updated_at
+                owner AS "owner: Uuid",
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
             WHERE owner = $1
             OR id IN (
@@ -175,12 +175,12 @@ impl FileRepository {
                 updated_at = $3
             WHERE id = $4
             RETURNING
-                id,
+                id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner,
-                created_at,
-                updated_at
+                owner AS "owner: Uuid",
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             "#,
             name,
             quota_bytes,
@@ -224,13 +224,13 @@ impl FileRepository {
         sqlx::query_as!(
             Root,
             r#"
-            SELECT 
-                id,
+            SELECT
+                id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner,
-                created_at,
-                updated_at 
+                owner AS "owner: Uuid",
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             FROM roots WHERE id = $1"#,
             id
         )
@@ -244,13 +244,13 @@ impl FileRepository {
         sqlx::query_as!(
             Root,
             r#"
-            SELECT 
-                id,
+            SELECT
+                id AS "id: Uuid",
                 name,
                 quota_bytes AS quota,
-                owner,
-                created_at,
-                updated_at 
+                owner AS "owner: Uuid",
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
             WHERE owner = $1
             "#,
@@ -1246,15 +1246,8 @@ impl FileRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        // `file_metadata` has no FK; clear any rows still tied to this root first.
         let result = sqlx::query!(
             r#"
-            WITH deleted_meta AS (
-                DELETE FROM file_metadata
-                WHERE file_id IN (SELECT id FROM files WHERE root_id = $1)
-                   OR file_id IN (SELECT id FROM trashed_files WHERE root_id = $1)
-                RETURNING file_id
-            )
             DELETE FROM roots WHERE id = $1
             "#,
             id
@@ -1274,7 +1267,7 @@ impl FileRepository {
         sqlx::query_as!(
             FileRef,
             r#"
-            SELECT id
+            SELECT id AS "id: Uuid"
             FROM files
             WHERE root_id = $1
             "#,

@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use sqlx::{Executor, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
@@ -189,11 +190,11 @@ impl UserFolderRepository {
             Member,
             r#"
             SELECT
-                u.id,
+                u.id AS "id: Uuid",
                 u.username,
                 u.email,
                 u.role AS "role: Role",
-                u.created_at
+                u.created_at AS "created_at: DateTime<Utc>"
             FROM user_folders uf
             JOIN users u ON uf.user_id = u.id
             WHERE root_id = $1

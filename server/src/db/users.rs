@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sqlx::{Executor, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
@@ -70,14 +70,14 @@ impl UserRepository {
             User,
             r#"
             SELECT
-                id,
+                id AS "id: Uuid",
                 username,
                 password AS "password!",
                 email,
                 role AS "role: Role",
-                otp_secret, 
-                created_at,
-                updated_at
+                otp_secret,
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             FROM users
             WHERE id = $1
             "#,
@@ -98,14 +98,14 @@ impl UserRepository {
             User,
             r#"
             SELECT
-                id,
+                id AS "id: Uuid",
                 username,
                 password AS "password!",
                 email,
                 role AS "role: Role",
-                otp_secret, 
-                created_at,
-                updated_at
+                otp_secret,
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             FROM users
             WHERE username = $1
             "#,
@@ -122,14 +122,14 @@ impl UserRepository {
             User,
             r#"
             SELECT
-                id,
+                id AS "id: Uuid",
                 username,
                 password AS "password!",
                 email,
                 role AS "role: Role",
                 otp_secret,
-                created_at,
-                updated_at
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             FROM users
             WHERE email = $1
             "#,
@@ -232,14 +232,14 @@ impl UserRepository {
             )
             VALUES ($1, $2, $3, $4, $5, $6, $6)
             RETURNING
-                id,
+                id AS "id: Uuid",
                 username,
                 password AS "password!",
                 email,
                 role AS "role: Role",
                 otp_secret,
-                created_at,
-                updated_at
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             "#,
             id,
             user.username,
@@ -276,14 +276,14 @@ impl UserRepository {
                 updated_at = $5
             WHERE id = $6
             RETURNING
-                id,
+                id AS "id: Uuid",
                 username,
                 password AS "password!",
                 email,
                 role AS "role: Role",
                 otp_secret,
-                created_at,
-                updated_at
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>"
             "#,
             username,
             email,
@@ -465,10 +465,10 @@ impl UserRepository {
             UserPasskey,
             r#"
             SELECT
-                id,
-                user_id,
+                id AS "id!",
+                user_id AS "user_id: Uuid",
                 data AS "data: Json<Passkey>",
-                created_at
+                created_at AS "created_at: DateTime<Utc>"
             FROM user_passkeys
             WHERE user_id = $1
             ORDER BY created_at
@@ -495,10 +495,10 @@ impl UserRepository {
             INSERT INTO user_passkeys (user_id, data, created_at)
             VALUES ($1, $2, $3)
             RETURNING
-                id,
-                user_id,
+                id AS "id!",
+                user_id AS "user_id: Uuid",
                 data AS "data: Json<Passkey>",
-                created_at
+                created_at AS "created_at: DateTime<Utc>"
             "#,
             user_id,
             data as Json<Passkey>,

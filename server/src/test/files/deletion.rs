@@ -229,8 +229,9 @@ mod deletion {
         assert_eq!(
             count!(
                 state,
-                "SELECT COUNT(*) FROM trashed_files WHERE id = ANY($1)",
-                &[directory.id, child.id]
+                "SELECT COUNT(*) FROM trashed_files WHERE id IN ($1, $2)",
+                directory.id,
+                child.id
             ),
             0
         );

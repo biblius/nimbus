@@ -43,14 +43,14 @@ impl SessionRepository {
                 expires_at
             )
             VALUES ($1, $2, $3, $4, $5, $5, $6)
-            RETURNING 
-                id,
-                user_id,
+            RETURNING
+                id AS "id: Uuid",
+                user_id AS "user_id: Uuid",
                 remote_address,
                 user_agent,
-                created_at,
-                updated_at,
-                expires_at
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>",
+                expires_at AS "expires_at: DateTime<Utc>"
             "#,
             session.id,
             session.user_id,
@@ -69,14 +69,14 @@ impl SessionRepository {
         sqlx::query_as!(
             SessionRecord,
             r#"
-            SELECT 
-                id,
-                user_id,
+            SELECT
+                id AS "id: Uuid",
+                user_id AS "user_id: Uuid",
                 remote_address,
                 user_agent,
-                created_at,
-                updated_at,
-                expires_at
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>",
+                expires_at AS "expires_at: DateTime<Utc>"
             FROM sessions
             WHERE id = $1
             "#,
@@ -96,13 +96,13 @@ impl SessionRepository {
             SessionRecord,
             r#"
             SELECT
-                id,
-                user_id,
+                id AS "id: Uuid",
+                user_id AS "user_id: Uuid",
                 remote_address,
                 user_agent,
-                created_at,
-                updated_at,
-                expires_at
+                created_at AS "created_at: DateTime<Utc>",
+                updated_at AS "updated_at: DateTime<Utc>",
+                expires_at AS "expires_at: DateTime<Utc>"
             FROM sessions
             WHERE
                 user_id = $1

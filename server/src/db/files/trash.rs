@@ -252,7 +252,7 @@ impl TrashRepository {
     pub async fn get_file_root_id(&self, id: Uuid) -> Result<Option<Uuid>, AppError> {
         sqlx::query_scalar!(
             r#"
-            SELECT root_id
+            SELECT root_id AS "root_id: Uuid"
             FROM trashed_files
             WHERE id = $1
             "#,
@@ -408,7 +408,7 @@ impl TrashRepository {
         sqlx::query_as!(
             FileRef,
             r#"
-            SELECT id
+            SELECT id AS "id: Uuid"
             FROM trashed_files
             WHERE root_id = $1
             "#,
@@ -441,7 +441,7 @@ impl TrashRepository {
                 FROM trashed_files child
                 JOIN tree parent ON child.parent = parent.id
             )
-            SELECT id AS "id!"
+            SELECT id AS "id!: Uuid"
             FROM tree
             "#,
             id,
@@ -461,7 +461,7 @@ impl TrashRepository {
         sqlx::query_as!(
             FileRef,
             r#"
-            SELECT id
+            SELECT id AS "id: Uuid"
             FROM trashed_files
             WHERE trashed_at < $1
             "#,

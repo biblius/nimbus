@@ -17,7 +17,7 @@ mod auth_service {
             r#"
             SELECT EXISTS(
                 SELECT 1 FROM user_passkeys WHERE user_id = $1
-            ) AS "exists!"
+            ) AS "exists!: bool"
             "#,
             user_id
         )
