@@ -338,7 +338,7 @@ pub async fn submit(
         let mut writer = match state
             .services
             .files
-            .start_upload(user, root, name.to_string())
+            .start_upload(user, root, name)
             .await
         {
             Ok(writer) => writer,

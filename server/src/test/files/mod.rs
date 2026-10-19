@@ -30,7 +30,7 @@ pub(super) async fn upload_in(
     let mut writer = state
         .services
         .files
-        .start_upload(user, root, name.to_string())
+        .start_upload(user, root, name)
         .await
         .unwrap();
     writer.write(bytes).await.unwrap();

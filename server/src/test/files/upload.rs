@@ -194,7 +194,7 @@ mod upload {
         let mut first = state
             .services
             .files
-            .start_upload(&session.user, root, "a.txt".into())
+            .start_upload(&session.user, root, "a.txt")
             .await
             .unwrap();
         first.write(b"a").await.unwrap();
@@ -203,7 +203,7 @@ mod upload {
         let mut second = state
             .services
             .files
-            .start_upload(&session.user, root, "b.txt".into())
+            .start_upload(&session.user, root, "b.txt")
             .await
             .unwrap();
         second.write(b"b").await.unwrap();
@@ -252,7 +252,7 @@ mod upload {
         let mut nested = state
             .services
             .files
-            .start_upload(&session.user, root, "shot.txt".into())
+            .start_upload(&session.user, root, "shot.txt")
             .await
             .unwrap();
         nested.write(b"nested").await.unwrap();
@@ -261,7 +261,7 @@ mod upload {
         let mut top = state
             .services
             .files
-            .start_upload(&session.user, root, "readme.txt".into())
+            .start_upload(&session.user, root, "readme.txt")
             .await
             .unwrap();
         top.write(b"top").await.unwrap();
