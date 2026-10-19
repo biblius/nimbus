@@ -205,15 +205,17 @@ impl DeletionQueue {
         let live = self.repository.files.get_live_many(&live_ids).await?;
         let trashed = self.repository.trash.get_trashed_many(&trash_ids).await?;
 
-        let mut by_id: HashMap<Uuid, FileEntry> =
-            HashMap::with_capacity(live.len() + trashed.len());
+        let cap = live.len() + trashed.len();
 
-        for file in live.into_iter().chain(trashed.into_iter()) {
-            by_id.insert(file.id, file);
-        }
+        let by_id: HashMap<Uuid, FileEntry> = live.into_iter().chain(trashed.into_iter()).fold(
+            HashMap::with_capacity(cap),
+            |mut acc, file| {
+                acc.insert(file.id, file);
+                acc
+            },
+        );
 
         let deleted_live = self.repository.files.delete_many(&live_ids).await?;
-
         let deleted_trash = self.repository.trash.delete_many(&trash_ids).await?;
 
         let deleted: HashSet<Uuid> = deleted_live.into_iter().chain(deleted_trash).collect();
@@ -221,9 +223,9 @@ impl DeletionQueue {
         let mut content_hashes = HashSet::new();
         let mut preview_hashes = HashSet::new();
 
-        for entry in &files {
-            let Some(file) = by_id.remove(&entry.file_id) else {
-                tracing::debug!(?entry, "file is missing");
+        for entry in files.iter() {
+            let Some(file) = by_id.get(&entry.file_id) else {
+                tracing::debug!(?entry, "file was not deleted");
                 failed = true;
                 continue;
             };
@@ -241,7 +243,7 @@ impl DeletionQueue {
                 self.send_result(DeletionResult {
                     request_id,
                     file_id: file.id,
-                    name: file.name,
+                    name: file.name.clone(),
                     success,
                 })
                 .await;
@@ -251,35 +253,28 @@ impl DeletionQueue {
                 continue;
             }
 
-            let Some(hash) = file.hash else {
+            let Some(ref hash) = file.hash else {
                 tracing::error!(file=%file.id, "file has no hash");
                 failed = true;
                 continue;
             };
 
-            content_hashes.insert(hash);
+            content_hashes.insert(hash.as_str());
 
-            if let Some(preview) = file.metadata.preview_64 {
-                preview_hashes.insert(preview);
+            if let Some(ref preview) = file.metadata.preview_64 {
+                preview_hashes.insert(preview.as_str());
             }
 
-            if let Some(preview) = file.metadata.preview_256 {
-                preview_hashes.insert(preview);
+            if let Some(ref preview) = file.metadata.preview_256 {
+                preview_hashes.insert(preview.as_str());
             }
         }
 
         // Counts are after the row deletes, so this batch is already excluded.
         let content_hashes: Vec<_> = content_hashes.into_iter().collect();
         let preview_hashes: Vec<_> = preview_hashes.into_iter().collect();
-        let content_hash_refs: Vec<&str> = content_hashes.iter().map(String::as_str).collect();
-        let preview_hash_refs: Vec<&str> = preview_hashes.iter().map(String::as_str).collect();
 
-        let hash_counts = match self
-            .repository
-            .files
-            .count_hashes(&content_hash_refs)
-            .await
-        {
+        let hash_counts = match self.repository.files.count_hashes(&content_hashes).await {
             Ok(counts) => counts,
             Err(e) => {
                 tracing::error!(error=%e, "cannot count remaining hashes, will not delete BLOBs");
@@ -288,7 +283,7 @@ impl DeletionQueue {
             }
         };
 
-        for hash in &content_hashes {
+        for hash in content_hashes {
             let remaining = hash_counts.get(hash).copied().unwrap_or(0);
 
             if remaining > 0 {
@@ -305,12 +300,7 @@ impl DeletionQueue {
             }
         }
 
-        let preview_counts = match self
-            .repository
-            .files
-            .count_previews(&preview_hash_refs)
-            .await
-        {
+        let preview_counts = match self.repository.files.count_previews(&preview_hashes).await {
             Ok(counts) => counts,
             Err(e) => {
                 tracing::error!(error=%e, "cannot count remaining previews, will not delete preview BLOBs");
@@ -319,7 +309,7 @@ impl DeletionQueue {
             }
         };
 
-        for preview in &preview_hashes {
+        for preview in preview_hashes {
             let remaining = preview_counts.get(preview).copied().unwrap_or(0);
 
             if remaining > 0 {
