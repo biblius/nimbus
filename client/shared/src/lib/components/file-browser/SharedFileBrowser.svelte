@@ -7,7 +7,12 @@
   import { toastError } from "../../toast";
   import { kv, type FilesViewMode } from "../../storage";
   import type { SharedFileView } from "../../types";
-  import { hasListThumbnail, isPreviewable } from "../../fileKind";
+  import {
+    FILE_ICON_CHIP_CLASS,
+    fileIconChipStyle,
+    hasListThumbnail,
+    isPreviewable,
+  } from "../../fileKind";
   import { formatBytes, formatDatetime } from "../../format";
   import { cn } from "../../utils";
   import FilePathCrumbs, { type Crumb } from "./FilePathCrumbs.svelte";
@@ -279,9 +284,17 @@
   {:else}
     <span
       class={cn(
-        "group relative flex items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground ring-1 ring-border/60",
+        "group relative flex items-center justify-center overflow-hidden rounded-lg ring-1",
+        hasListThumbnail(entry) && thumbnailUrl
+          ? "bg-muted text-muted-foreground ring-border/60"
+          : FILE_ICON_CHIP_CLASS,
         boxClass,
       )}
+      style={
+        hasListThumbnail(entry) && thumbnailUrl
+          ? undefined
+          : fileIconChipStyle(entry.file.fileType)
+      }
     >
       {#if hasListThumbnail(entry) && thumbnailUrl}
         <img src={thumbnailUrl} alt="" class="size-full object-cover" />

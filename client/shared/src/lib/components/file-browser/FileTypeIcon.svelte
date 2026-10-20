@@ -11,7 +11,11 @@
     Music,
     Type,
   } from "@lucide/svelte";
-  import { fileFamily, type FileFamily } from "../../fileKind";
+  import {
+    fileFamily,
+    fileIconColor,
+    type FileFamily,
+  } from "../../fileKind";
   import type { FileType } from "../../types";
   import { cn } from "../../utils";
 
@@ -28,6 +32,7 @@
   } = $props();
 
   const family = $derived(fileFamily(fileType));
+  const color = $derived(fileIconColor(fileType));
 
   const icons: Record<FileFamily, typeof FileIcon> = {
     app: AppWindow,
@@ -45,4 +50,9 @@
   const Icon = $derived(icons[family]);
 </script>
 
-<Icon {size} {strokeWidth} class={cn(className)} />
+<Icon
+  {size}
+  {strokeWidth}
+  class={cn(className)}
+  style={`color: ${color}`}
+/>

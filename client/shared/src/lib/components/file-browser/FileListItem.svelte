@@ -13,7 +13,12 @@
   } from "@lucide/svelte";
   import { createDraggable, createDroppable } from "@dnd-kit/svelte";
   import { onDestroy, tick, untrack } from "svelte";
-  import { hasListThumbnail, isPreviewable } from "../../fileKind";
+  import {
+    FILE_ICON_CHIP_CLASS,
+    fileIconChipStyle,
+    hasListThumbnail,
+    isPreviewable,
+  } from "../../fileKind";
   import { formatBytes, formatDatetime } from "../../format";
   import { session } from "../../session.svelte";
   import type { FileView } from "../../types";
@@ -485,7 +490,11 @@
             />
           {:else}
             <span
-              class="flex size-full items-center justify-center bg-muted text-muted-foreground"
+              class={cn(
+                "flex size-full items-center justify-center",
+                FILE_ICON_CHIP_CLASS,
+              )}
+              style={fileIconChipStyle(file.fileType)}
             >
               <FileTypeIcon fileType={file.fileType} size={iconSize} />
             </span>
@@ -507,9 +516,11 @@
     {:else}
       <span
         class={cn(
-          "relative flex shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground ring-1 ring-border/60",
+          "relative flex shrink-0 items-center justify-center rounded-lg ring-1",
+          FILE_ICON_CHIP_CLASS,
           boxClass,
         )}
+        style={fileIconChipStyle(file.fileType)}
       >
         <FileTypeIcon fileType={file.fileType} size={iconSize} />
         {#if file.sharingMode}

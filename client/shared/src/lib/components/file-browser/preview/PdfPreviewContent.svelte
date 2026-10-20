@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ZoomIn } from "@lucide/svelte";
   import {
     getDocument,
     GlobalWorkerOptions,
@@ -14,6 +15,7 @@
   const MAX_PAGE_WIDTH = 720;
   const DEFAULT_PAGE_ASPECT = "1 / 1.414";
   const LAZY_ROOT_MARGIN = "100% 0px";
+  const RENDER_DEBOUNCE_MS = 140;
 
   let {
     url,
@@ -32,6 +34,9 @@
   let currentPage = $state(1);
   let containerWidth = $state(0);
   let pageAspect = $state(DEFAULT_PAGE_ASPECT);
+  let zoom = $state(0);
+  /** Settled width for rasterization; layout uses live `pageWidth`. */
+  let renderWidth = $state(0);
   let pdfDoc = $state.raw<PDFDocumentProxy | null>(null);
 
   let mainPane: HTMLElement | null = null;
@@ -39,9 +44,30 @@
   const pageNumbers = $derived(
     Array.from({ length: pageCount }, (_, i) => i + 1),
   );
-  const pageWidth = $derived(
-    containerWidth > 0 ? Math.min(containerWidth, MAX_PAGE_WIDTH) : 0,
-  );
+  const pageWidth = $derived.by(() => {
+    if (containerWidth <= 0) return 0;
+    const maxWidth =
+      MAX_PAGE_WIDTH +
+      Math.max(0, containerWidth - MAX_PAGE_WIDTH) * (Number(zoom) / 100);
+    return Math.min(containerWidth, maxWidth);
+  });
+
+  // Live layout while dragging; re-rasterize shortly after zoom settles.
+  $effect(() => {
+    const w = pageWidth;
+    if (w <= 0) {
+      renderWidth = 0;
+      return;
+    }
+    if (w === renderWidth) return;
+    const timer = setTimeout(
+      () => {
+        renderWidth = w;
+      },
+      renderWidth === 0 ? 0 : RENDER_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(timer);
+  });
 
   $effect(() => {
     const contentUrl = url;
@@ -51,6 +77,8 @@
     pageCount = 0;
     currentPage = 1;
     pageAspect = DEFAULT_PAGE_ASPECT;
+    zoom = 0;
+    renderWidth = 0;
     pdfDoc = null;
 
     let cancelled = false;
@@ -144,23 +172,45 @@
     const viewport = page.getViewport({ scale });
     const dpr = window.devicePixelRatio || 1;
 
-    canvas.width = Math.floor(viewport.width * dpr);
-    canvas.height = Math.floor(viewport.height * dpr);
-    canvas.style.width = `${Math.floor(viewport.width)}px`;
-    canvas.style.height = `${Math.floor(viewport.height)}px`;
+    const canvasWidth = Math.floor(viewport.width * dpr);
+    const canvasHeight = Math.floor(viewport.height * dpr);
 
-    const ctx = canvas.getContext("2d");
+    // Offscreen canvas used to smooth out scrolling
 
-    if (!ctx || isCancelled()) {
+    const offscreen = document.createElement("canvas");
+    offscreen.width = canvasWidth;
+    offscreen.height = canvasHeight;
+    const offCtx = offscreen.getContext("2d");
+
+    if (!offCtx || isCancelled()) {
       return null;
     }
 
-    return page.render({
-      canvasContext: ctx,
-      canvas,
+    // Start paint task on the offscreen
+
+    const task = page.render({
+      canvasContext: offCtx,
+      canvas: offscreen,
       viewport,
       transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
     });
+
+    // Return values delegate to created task
+
+    return {
+      cancel: () => task.cancel(),
+
+      // When resolved, paint
+
+      promise: task.promise.then(() => {
+        if (isCancelled()) return;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        canvas.style.width = "100%";
+        canvas.style.height = "auto";
+        canvas.getContext("2d")?.drawImage(offscreen, 0, 0);
+      }),
+    } as any;
   }
 
   // Attached to the PDF container div.
@@ -316,6 +366,7 @@
             }
 
             renderTask = task;
+
             await task.promise;
           } catch {
             // Ignore cancel / destroy during navigation or unmount.
@@ -359,7 +410,7 @@
         destroyed = true;
         observer.disconnect();
         cancelPaint();
-        clearCanvas(canvas);
+        // Keep the bitmap so zoom re-attach doesn't flash blank.
       };
     };
   }
@@ -393,6 +444,26 @@
   {:else if error}
     <p class="m-auto text-sm text-red-300">{error}</p>
   {:else if pdfDoc && pageCount > 0}
+    <div
+      class="mx-auto flex w-fit shrink-0 items-center gap-2.5 rounded-xl bg-zinc-900/90 px-3 py-1.5 ring-1 ring-white/10 backdrop-blur-md"
+    >
+      <ZoomIn size={14} strokeWidth={2} class="shrink-0 text-white/55" />
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        bind:value={zoom}
+        aria-label="Zoom"
+        class="h-1 w-32 cursor-pointer appearance-none rounded-full bg-white/15 accent-white [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+      />
+      <span
+        class="w-8 shrink-0 text-right text-[11px] text-white/55 tabular-nums"
+      >
+        {zoom}%
+      </span>
+    </div>
+
     <div class="flex min-h-0 flex-1 gap-3">
       <aside
         data-pdf-scroll
@@ -437,12 +508,13 @@
           {#each pageNumbers as pageNum (pageNum)}
             <div
               data-page={pageNum}
-              class="w-full max-w-[45rem]"
+              class="w-full"
+              style:max-width="{pageWidth}px"
               style:aspect-ratio={pageAspect}
-              {@attach pageAttach(pageNum, pdfDoc, pageWidth)}
+              {@attach pageAttach(pageNum, pdfDoc, renderWidth)}
             >
               <canvas
-                class="mx-auto block bg-white shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)]"
+                class="mx-auto block h-auto w-full bg-white shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)]"
               ></canvas>
             </div>
           {/each}

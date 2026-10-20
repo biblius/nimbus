@@ -1,6 +1,10 @@
 <script lang="ts">
   import { ChevronRight, Folder, RotateCcw, Trash } from "@lucide/svelte";
-  import { treeHasThumbnail } from "../fileKind";
+  import {
+    FILE_ICON_CHIP_CLASS,
+    fileIconChipStyle,
+    treeHasThumbnail,
+  } from "../fileKind";
   import { session } from "../session.svelte";
   import type { FileTree, Root } from "../types";
   import { cn } from "../utils";
@@ -112,7 +116,11 @@
       />
     {:else}
       <span
-        class="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
+        class={cn(
+          "flex size-10 shrink-0 items-center justify-center rounded-md ring-1",
+          FILE_ICON_CHIP_CLASS,
+        )}
+        style={fileIconChipStyle(node.fileType)}
       >
         <FileTypeIcon fileType={node.fileType} size={18} />
       </span>

@@ -31,7 +31,11 @@
   } from "../../types";
   import { kv, type FilesViewMode } from "../../storage";
   import { UploadHandler } from "../../uploadHandler.svelte";
-  import { isPreviewable } from "../../fileKind";
+  import {
+    FILE_ICON_CHIP_CLASS,
+    fileIconChipStyle,
+    isPreviewable,
+  } from "../../fileKind";
   import { hasFinePointerHover } from "../../utils";
   import DestinationPicker, {
     type DestinationRequest,
@@ -1757,7 +1761,8 @@
                     </span>
                   {:else}
                     <span
-                      class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60"
+                      class="flex size-8 shrink-0 items-center justify-center rounded-md ring-1 {FILE_ICON_CHIP_CLASS}"
+                      style={fileIconChipStyle(preview.entry?.file.fileType)}
                     >
                       <FileTypeIcon
                         fileType={preview.entry?.file.fileType}
