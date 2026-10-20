@@ -7,7 +7,7 @@ use crate::{
     db::{
         files::{FileRepository, NewFile, ShareRepository, TrashRepository},
         tx::Transactor,
-        user_folders::UserFolderRepository,
+        user_roots::UserRootRepository,
     },
     error::AppError,
     file::{
@@ -35,7 +35,7 @@ pub struct FileService {
     files: FileRepository,
     share: ShareRepository,
     trash: TrashRepository,
-    folders: UserFolderRepository,
+    folders: UserRootRepository,
     storage: Storage,
     processing: ProcessingQueueHandle,
     tx: Transactor,
@@ -46,7 +46,7 @@ impl FileService {
         files: FileRepository,
         share: ShareRepository,
         trash: TrashRepository,
-        folders: UserFolderRepository,
+        folders: UserRootRepository,
         storage: Storage,
         processing: ProcessingQueueHandle,
         tx: Transactor,
@@ -913,7 +913,7 @@ impl FileService {
     /// Resolve [`UserRootContext`] for `user` on `root_id`.
     ///
     /// Private-root owners and admins get [`AccessMode::FULL`]. Shared members use
-    /// their `user_folders.access_mode`. View is implicit whenever this succeeds.
+    /// their `user_roots.access_mode`. View is implicit whenever this succeeds.
     #[instrument(skip(self, user), fields(user_id = %user.id), err(Debug))]
     pub async fn accessible_root(
         &self,

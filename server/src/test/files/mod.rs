@@ -12,7 +12,7 @@ mod tree;
 mod upload;
 
 use crate::{
-    db::UserFolderRepository,
+    db::UserRootRepository,
     error::AppError,
     file::{
         AccessMode, UserRootContext,
@@ -54,7 +54,7 @@ pub(super) async fn grant(
     user_id: Uuid,
     access_mode: AccessMode,
 ) {
-    UserFolderRepository::new(state.pool.clone())
+    UserRootRepository::new(state.pool.clone())
         .assign(RootAssignment {
             root_id,
             user_id,
@@ -64,7 +64,7 @@ pub(super) async fn grant(
         .unwrap();
 
     // `assign` is insert-only (`ON CONFLICT DO NOTHING`); force the mode.
-    sqlx::query("UPDATE user_folders SET access_mode = $1 WHERE root_id = $2 AND user_id = $3")
+    sqlx::query("UPDATE user_roots SET access_mode = $1 WHERE root_id = $2 AND user_id = $3")
         .bind(access_mode)
         .bind(root_id)
         .bind(user_id)

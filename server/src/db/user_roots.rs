@@ -15,11 +15,11 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct UserFolderRepository {
+pub struct UserRootRepository {
     pool: DbPool,
 }
 
-impl UserFolderRepository {
+impl UserRootRepository {
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
@@ -40,7 +40,7 @@ impl UserFolderRepository {
     {
         sqlx::query!(
             r#"
-            INSERT INTO user_folders (
+            INSERT INTO user_roots (
                 root_id,
                 user_id,
                 access_mode
@@ -76,7 +76,7 @@ impl UserFolderRepository {
         }
 
         let mut query =
-            QueryBuilder::<Db>::new("INSERT INTO user_folders (root_id, user_id, access_mode) ");
+            QueryBuilder::<Db>::new("INSERT INTO user_roots (root_id, user_id, access_mode) ");
 
         query.push_values(members, |mut row, member| {
             row.push_bind(root_id)
@@ -95,7 +95,7 @@ impl UserFolderRepository {
 
     /// Load a root and the caller's membership [`AccessMode`], if any.
     ///
-    /// `None` for the mode means the user is not in `user_folders` (private owner
+    /// `None` for the mode means the user is not in `user_roots` (private owner
     /// or no access). The service layer maps owners/admins to [`AccessMode::FULL`].
     #[instrument(skip(self), err(Debug))]
     pub async fn access(
@@ -114,7 +114,7 @@ impl UserFolderRepository {
                 r.updated_at AS "updated_at: DateTime<Utc>",
                 uf.access_mode AS "access_mode?: AccessMode"
             FROM roots r
-            LEFT JOIN user_folders uf
+            LEFT JOIN user_roots uf
                 ON uf.root_id = r.id AND uf.user_id = $2
             WHERE r.id = $1
             "#,
@@ -150,7 +150,7 @@ impl UserFolderRepository {
                 owner = $2
                 OR EXISTS (
                     SELECT 1
-                    FROM user_folders
+                    FROM user_roots
                     WHERE root_id = roots.id AND user_id = $2
                 )
             )
@@ -181,7 +181,7 @@ impl UserFolderRepository {
                 u.role,
                 uf.access_mode,
                 u.created_at
-            FROM user_folders uf
+            FROM user_roots uf
             JOIN users u ON uf.user_id = u.id
             WHERE root_id = 
             "#,
@@ -192,7 +192,7 @@ impl UserFolderRepository {
         let mut count_q = QueryBuilder::new(
             r#"
             SELECT COUNT(*)
-            FROM user_folders uf
+            FROM user_roots uf
             JOIN users u ON uf.user_id = u.id
             WHERE root_id = 
             "#,
@@ -251,7 +251,7 @@ impl UserFolderRepository {
                 u.role AS "role: Role",
                 uf.access_mode AS "access_mode: AccessMode",
                 u.created_at AS "created_at: DateTime<Utc>"
-            FROM user_folders uf
+            FROM user_roots uf
             JOIN users u ON uf.user_id = u.id
             WHERE root_id = $1
             ORDER BY username
@@ -267,7 +267,7 @@ impl UserFolderRepository {
     pub async fn remove(&self, root_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
         let result = sqlx::query(
             r#"
-            DELETE FROM user_folders
+            DELETE FROM user_roots
             WHERE
                 root_id = $1
             AND user_id = $2
@@ -302,7 +302,7 @@ impl UserFolderRepository {
             return Ok(());
         }
 
-        let mut query = QueryBuilder::<Db>::new("DELETE FROM user_folders WHERE root_id = ");
+        let mut query = QueryBuilder::<Db>::new("DELETE FROM user_roots WHERE root_id = ");
         query.push_bind(root_id).push(" AND user_id IN (");
 
         {

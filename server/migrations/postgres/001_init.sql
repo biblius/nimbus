@@ -142,11 +142,11 @@ CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 
-CREATE TABLE user_folders (
+CREATE TABLE user_roots (
   root_id UUID NOT NULL REFERENCES roots (id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   access_mode BIGINT NOT NULL,
   UNIQUE (root_id, user_id)
 );
 
-CREATE INDEX user_folders_user_idx ON user_folders (user_id);
+CREATE INDEX user_roots_user_idx ON user_roots (user_id);

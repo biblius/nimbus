@@ -302,7 +302,7 @@ pub struct RootView {
     /// Caller's effective [`super::access::AccessMode`] on this root.
     ///
     /// Private owners and admins are [`AccessMode::FULL`](super::access::AccessMode::FULL).
-    /// Shared members use their `user_folders.access_mode`.
+    /// Shared members use their `user_roots.access_mode`.
     ///
     /// Admins have this set to full regardless of root.
     pub access_mode: super::access::AccessMode,

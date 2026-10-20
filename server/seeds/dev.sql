@@ -142,7 +142,7 @@ FROM
 -- access_mode 3 = write | share (AccessMode::DEFAULT in the app).
 -- Seed shared: seed-01 .. seed-15
 INSERT INTO
-  user_folders (root_id, user_id, access_mode)
+  user_roots (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c0',
   (
@@ -154,7 +154,7 @@ FROM
 
 -- Team Alpha: seed-01 .. seed-05
 INSERT INTO
-  user_folders (root_id, user_id, access_mode)
+  user_roots (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c2',
   (
@@ -166,7 +166,7 @@ FROM
 
 -- Team Beta: seed-04 .. seed-10 (overlaps Alpha)
 INSERT INTO
-  user_folders (root_id, user_id, access_mode)
+  user_roots (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c3',
   (
@@ -178,7 +178,7 @@ FROM
 
 -- Design: seed-11 .. seed-15
 INSERT INTO
-  user_folders (root_id, user_id, access_mode)
+  user_roots (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c4',
   (
@@ -190,7 +190,7 @@ FROM
 
 -- All hands: seed-01 .. seed-20
 INSERT INTO
-  user_folders (root_id, user_id, access_mode)
+  user_roots (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c5',
   (

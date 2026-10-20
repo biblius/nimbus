@@ -156,7 +156,7 @@ impl FileRepository {
                 r.created_at AS "created_at: DateTime<Utc>",
                 r.updated_at AS "updated_at: DateTime<Utc>"
             FROM roots r
-            LEFT JOIN user_folders uf
+            LEFT JOIN user_roots uf
                 ON uf.root_id = r.id AND uf.user_id = $1
             WHERE r.owner = $1
                OR uf.user_id IS NOT NULL

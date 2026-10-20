@@ -1,7 +1,7 @@
 pub(crate) mod files;
 pub(crate) mod sessions;
 pub(crate) mod tx;
-pub(crate) mod user_folders;
+pub(crate) mod user_roots;
 pub(crate) mod users;
 
 use crate::error::AppError;
@@ -10,7 +10,7 @@ use std::time::Duration;
 pub use files::{FileRepository, ShareRepository, TrashRepository};
 pub use sessions::SessionRepository;
 pub use tx::Transactor;
-pub use user_folders::UserFolderRepository;
+pub use user_roots::UserRootRepository;
 pub use users::UserRepository;
 
 /// Every repository backed by the database pool.
@@ -18,7 +18,7 @@ pub use users::UserRepository;
 pub struct Repository {
     pub users: UserRepository,
     pub sessions: SessionRepository,
-    pub folders: UserFolderRepository,
+    pub folders: UserRootRepository,
     pub files: FileRepository,
     pub share: ShareRepository,
     pub trash: TrashRepository,
@@ -30,7 +30,7 @@ impl Repository {
         Self {
             users: UserRepository::new(pool.clone()),
             sessions: SessionRepository::new(pool.clone()),
-            folders: UserFolderRepository::new(pool.clone()),
+            folders: UserRootRepository::new(pool.clone()),
             files: FileRepository::new(pool.clone()),
             share: ShareRepository::new(pool.clone()),
             trash: TrashRepository::new(pool.clone()),

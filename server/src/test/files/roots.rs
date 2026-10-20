@@ -103,7 +103,7 @@ mod roots {
         assert_eq!(
             count!(
                 state,
-                "SELECT COUNT(*) FROM user_folders WHERE user_id = $1",
+                "SELECT COUNT(*) FROM user_roots WHERE user_id = $1",
                 ada.id
             ),
             0
@@ -348,7 +348,7 @@ mod roots {
         assert_eq!(
             count!(
                 state,
-                "SELECT COUNT(*) FROM user_folders WHERE root_id = $1",
+                "SELECT COUNT(*) FROM user_roots WHERE root_id = $1",
                 root
             ),
             0

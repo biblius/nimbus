@@ -524,10 +524,10 @@ mod access {
 
     #[test]
     async fn full_member_can_write_and_share(state: TestState) {
-        let (_writer, subject, root, file, _dir) =
-            fixture(state, "full", AccessMode::DEFAULT).await;
+        let mode = AccessMode::WRITE | AccessMode::SHARE;
+        let (_writer, subject, root, file, _dir) = fixture(state, "full", mode).await;
         let ctx = ctx(state, &subject, root).await;
-        assert_eq!(ctx.access, AccessMode::DEFAULT);
+        assert_eq!(ctx.access, mode);
 
         state
             .services
