@@ -8,6 +8,8 @@
   import Checkbox from "../ui/checkbox/checkbox.svelte";
   import Field from "../ui/field/field.svelte";
   import InfiniteList from "../ui/infinite-list/infinite-list.svelte";
+  import AccessPills from "./AccessPills.svelte";
+  import MemberAvatar from "./MemberAvatar.svelte";
   import QuotaField from "./QuotaField.svelte";
 
   let {
@@ -138,16 +140,45 @@
   }
 </script>
 
-<form class="overflow-hidden rounded-xl border bg-card" onsubmit={onSubmit}>
-  <div class="border-b px-5 py-4">
-    <h3 class="text-sm font-semibold tracking-tight">{title}</h3>
-    <p class="mt-1 text-sm text-muted-foreground">{description}</p>
+<form class="space-y-5" onsubmit={onSubmit}>
+  <div class="flex items-end justify-between gap-3 border-b pb-3">
+    <div class="min-w-0">
+      <h3 class="text-sm font-semibold tracking-tight">{title}</h3>
+      <p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
+    </div>
+    <div class="flex shrink-0 items-center gap-1.5">
+      {#if cancel}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onclick={cancel}
+        >
+          Cancel
+        </Button>
+      {/if}
+      <Button
+        type="submit"
+        size="sm"
+        disabled={busy || !membersReady || (creating && selectedCount < 1)}
+      >
+        Save
+      </Button>
+    </div>
   </div>
 
-  <div class="space-y-4 px-5 py-4">
+  <section class="space-y-3">
+    <p
+      class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+    >
+      Details
+    </p>
+
     <Field
       label="Name"
       id="folder-name"
+      dense
       bind:value={name}
       error={validation?.field("name")}
       required
@@ -159,26 +190,44 @@
       bind:valid={quotaValid}
       serverError={validation?.field("quota_bytes")}
     />
+  </section>
 
-    <div class="space-y-2">
-      <div class="flex items-baseline justify-between gap-3">
-        <span class="text-sm leading-none font-medium">Members</span>
-        <span class="text-xs text-muted-foreground">
-          {selectedCount} selected
-        </span>
-      </div>
-      {#if membersError}
-        <p class="text-xs text-destructive">
-          {membersError.message || membersError.code}
-        </p>
+  <section class="space-y-3 border-t pt-4">
+    <div class="flex items-center gap-2">
+      <p
+        class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+      >
+        People with access
+      </p>
+      <span
+        class="inline-flex min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-primary"
+      >
+        {selectedCount}
+      </span>
+    </div>
+
+    {#if membersError}
+      <p class="text-xs text-destructive">
+        {membersError.message || membersError.code}
+      </p>
+    {/if}
+    {#if creating && selectedCount < 1}
+      <p class="text-xs text-muted-foreground">
+        Select at least one person to share this folder with.
+      </p>
+    {/if}
+
+    {#if !membersReady && !membersFailed}
+      <p class="text-sm text-muted-foreground">Loading…</p>
+    {:else}
+      {#if membersFailed}
+        <p class="text-sm text-muted-foreground">Could not load members.</p>
       {/if}
-      {#if !membersReady && !membersFailed}
-        <p class="text-sm text-muted-foreground">Loading…</p>
-      {:else}
-        {#if membersFailed}
-          <p class="text-sm text-muted-foreground">Could not load members.</p>
-        {/if}
+      <div class="overflow-hidden rounded-lg border bg-card shadow-sm">
         <InfiniteList
+          class="space-y-0"
+          searchClass="border-b bg-muted/25 p-2"
+          scrollerClass="max-h-80 rounded-none border-0"
           columns={searchColumns}
           errorMessage="Could not load users."
           load={(query) =>
@@ -189,78 +238,64 @@
         >
           {#snippet children(users: UserView[])}
             {#if users.length === 0}
-              <p class="px-3 py-6 text-center text-sm text-muted-foreground">
+              <p class="px-4 py-8 text-center text-sm text-muted-foreground">
                 No users to assign.
               </p>
             {:else}
-              <ul class="divide-y">
+              <ul class="divide-y divide-border/60">
                 {#each users as user (user.id)}
                   {@const mode = selected[user.id]}
                   {@const isSelected = mode !== undefined}
                   <li
-                    class="flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-accent"
+                    class={[
+                      "transition-colors",
+                      isSelected
+                        ? "bg-primary/[0.06]"
+                        : "hover:bg-accent/40",
+                    ]}
                   >
-                    <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                      <Checkbox
-                        checked={isSelected}
-                        onchange={() => toggleMembership(user.id)}
-                      />
-                      <span class="min-w-0">
-                        <span class="block truncate">{user.username}</span>
-                        {#if user.email}
-                          <span
-                            class="block truncate text-xs text-muted-foreground"
-                          >
-                            {user.email}
+                    <div
+                      class="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+                    >
+                      <label
+                        class="flex min-w-0 flex-1 cursor-pointer items-center gap-3"
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onchange={() => toggleMembership(user.id)}
+                          aria-label={`Share with ${user.username}`}
+                        />
+                        <MemberAvatar name={user.username} seed={user.id} />
+                        <span class="min-w-0">
+                          <span class="block truncate text-sm font-medium">
+                            {user.username}
                           </span>
-                        {/if}
-                      </span>
-                    </label>
-                    {#if isSelected}
-                      <div class="flex shrink-0 items-center gap-3">
-                        <label
-                          class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
-                        >
-                          <Checkbox
-                            checked={(mode & AccessMode.WRITE) !== 0}
-                            onchange={() =>
-                              toggleFlag(user.id, AccessMode.WRITE)}
+                          {#if user.email}
+                            <span
+                              class="block truncate text-xs text-muted-foreground"
+                            >
+                              {user.email}
+                            </span>
+                          {/if}
+                        </span>
+                      </label>
+                      {#if isSelected}
+                        <div class="flex shrink-0 pl-8 sm:pl-0">
+                          <AccessPills
+                            accessMode={mode}
+                            interactive
+                            onToggle={(flag) => toggleFlag(user.id, flag)}
                           />
-                          Write
-                        </label>
-                        <label
-                          class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
-                        >
-                          <Checkbox
-                            checked={(mode & AccessMode.SHARE) !== 0}
-                            onchange={() =>
-                              toggleFlag(user.id, AccessMode.SHARE)}
-                          />
-                          Share
-                        </label>
-                      </div>
-                    {/if}
+                        </div>
+                      {/if}
+                    </div>
                   </li>
                 {/each}
               </ul>
             {/if}
           {/snippet}
         </InfiniteList>
-      {/if}
-    </div>
-  </div>
-
-  <div
-    class="flex items-center justify-end gap-2 border-t bg-muted/30 px-5 py-3"
-  >
-    {#if cancel}
-      <Button type="button" variant="outline" onclick={cancel}>Cancel</Button>
+      </div>
     {/if}
-    <Button
-      type="submit"
-      disabled={busy || !membersReady || (creating && selectedCount < 1)}
-    >
-      Save
-    </Button>
-  </div>
+  </section>
 </form>

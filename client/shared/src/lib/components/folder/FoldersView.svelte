@@ -102,7 +102,7 @@
   </div>
 
   {#if creating}
-    <div class="mx-auto w-full max-w-lg">
+    <div class="mx-auto w-full max-w-2xl">
       <SharedRootForm
         title="Add folder"
         description="Set a storage cap and choose who can use this folder."

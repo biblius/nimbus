@@ -156,7 +156,7 @@
   {#if expanded}
     <div class="border-t bg-muted/25 px-3 py-4 sm:px-4">
       {#if editing}
-        <div class="mx-auto max-w-lg">
+        <div class="mx-auto max-w-2xl">
           {#if shared}
             <SharedRootForm
               {folder}

@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount, tick, type Snippet } from "svelte";
+  import { cn } from "../../../utils";
 
   let {
     loadNext,
     loadAmount = $bindable(10),
+    class: className,
     children,
   }: {
     /**
@@ -16,6 +18,7 @@
      * The first page uses the same amount.
      */
     loadAmount?: number;
+    class?: string;
     children: Snippet;
   } = $props();
 
@@ -90,7 +93,10 @@
 
 <div
   bind:this={scroller}
-  class="max-h-64 overflow-y-auto overscroll-contain rounded-lg border bg-card"
+  class={cn(
+    "max-h-64 overflow-y-auto overscroll-contain rounded-lg border bg-card",
+    className,
+  )}
   aria-busy={loading}
 >
   {@render children()}

@@ -63,16 +63,39 @@
   }
 </script>
 
-<form class="overflow-hidden rounded-xl border bg-card" onsubmit={onSubmit}>
-  <div class="border-b px-5 py-4">
-    <h3 class="text-sm font-semibold tracking-tight">{title}</h3>
-    <p class="mt-1 text-sm text-muted-foreground">{description}</p>
+<form class="space-y-5" onsubmit={onSubmit}>
+  <div class="flex items-end justify-between gap-3 border-b pb-3">
+    <div class="min-w-0">
+      <h3 class="text-sm font-semibold tracking-tight">{title}</h3>
+      <p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
+    </div>
+    <div class="flex shrink-0 items-center gap-1.5">
+      {#if cancel}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onclick={cancel}
+        >
+          Cancel
+        </Button>
+      {/if}
+      <Button type="submit" size="sm" disabled={busy}>Save</Button>
+    </div>
   </div>
 
-  <div class="space-y-4 px-5 py-4">
+  <section class="space-y-3">
+    <p
+      class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+    >
+      Details
+    </p>
+
     <Field
       label="Name"
       id="folder-name"
+      dense
       bind:value={name}
       error={validation?.field("name")}
       required
@@ -84,14 +107,5 @@
       bind:valid={quotaValid}
       serverError={validation?.field("quota_bytes")}
     />
-  </div>
-
-  <div
-    class="flex items-center justify-end gap-2 border-t bg-muted/30 px-5 py-3"
-  >
-    {#if cancel}
-      <Button type="button" variant="outline" onclick={cancel}>Cancel</Button>
-    {/if}
-    <Button type="submit" disabled={busy}>Save</Button>
-  </div>
+  </section>
 </form>

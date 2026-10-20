@@ -168,7 +168,7 @@
   {:else if !folder}
     <p class="text-sm text-muted-foreground">Loading…</p>
   {:else if editing}
-    <div class="mx-auto max-w-lg">
+    <div class="mx-auto max-w-2xl">
       {#if shared}
         <SharedRootForm
           {folder}

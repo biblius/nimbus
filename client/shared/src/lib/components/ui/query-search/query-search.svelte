@@ -26,20 +26,39 @@
 
   let timer: ReturnType<typeof setTimeout> | undefined;
 
+  /**
+   * Last search that was reported to the parent.
+   * Empty string means "no search filter" (matches InfiniteList's initial load).
+   */
+  let lastEmitted = "";
+
+  function searchKey() {
+    const q = query.q.trim();
+    return q ? `${query.column}\0${q}` : "";
+  }
+
+  function emit() {
+    const key = searchKey();
+    if (key === lastEmitted) {
+      return;
+    }
+    lastEmitted = key;
+    onUpdate?.();
+  }
+
   function queue() {
     if (timer) {
       clearTimeout(timer);
     }
-    timer = setTimeout(() => {
-      onUpdate?.();
-    }, 250);
+    timer = setTimeout(emit, 250);
   }
 
   function columnChanged() {
     if (timer) {
       clearTimeout(timer);
     }
-    onUpdate?.();
+    // Column only affects the request when there is a non-empty query.
+    emit();
   }
 
   onDestroy(() => {

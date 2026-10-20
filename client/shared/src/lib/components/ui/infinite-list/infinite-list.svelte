@@ -2,6 +2,7 @@
   import { untrack, type Snippet } from "svelte";
   import { toastError } from "../../../toast";
   import type { ListQuery, ListSearch, Page } from "../../../types";
+  import { cn } from "../../../utils";
   import QuerySearch, {
     type QueryColumn,
   } from "../query-search/query-search.svelte";
@@ -13,6 +14,9 @@
     loadAmount = $bindable(10),
     total = $bindable<number>(0),
     errorMessage = "Could not load.",
+    class: className,
+    searchClass,
+    scrollerClass,
     children,
   }: {
     /**
@@ -24,6 +28,9 @@
     loadAmount?: number;
     total?: number | null;
     errorMessage?: string;
+    class?: string;
+    searchClass?: string;
+    scrollerClass?: string;
     children: Snippet<[T[]]>;
   } = $props();
 
@@ -137,10 +144,15 @@
   }
 </script>
 
-<div class="space-y-1.5">
-  <QuerySearch {columns} bind:query={search} onUpdate={onSearch} />
+<div class={cn("space-y-1.5", className)}>
+  <QuerySearch
+    {columns}
+    class={searchClass}
+    bind:query={search}
+    onUpdate={onSearch}
+  />
   {#key generation}
-    <InfiniteScroller {loadNext} bind:loadAmount>
+    <InfiniteScroller {loadNext} bind:loadAmount class={scrollerClass}>
       {#if failed && !items}
         <p class="px-3 py-2 text-sm text-muted-foreground">{errorMessage}</p>
       {:else if items}
