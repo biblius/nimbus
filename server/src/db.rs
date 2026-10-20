@@ -98,7 +98,7 @@ pub async fn connect_with_retry(url: &str) -> DbPool {
             Err(error) => {
                 tracing::warn!(%error, attempt, "database is not ready");
                 last = Some(error);
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
     }

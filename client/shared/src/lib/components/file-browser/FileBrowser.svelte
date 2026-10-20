@@ -1421,7 +1421,9 @@
   {/if}
   <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
     <div class="flex min-w-0 flex-1 items-center gap-1.5">
-      <RootAccessBadges accessMode={root.accessMode} />
+      {#if root.owner == null}
+        <RootAccessBadges accessMode={root.accessMode} />
+      {/if}
       <FilePathCrumbs
         crumbs={trail}
         onNavigate={(index, crumb) => {
