@@ -499,7 +499,11 @@ impl UserService {
         self.users.get_by_id(user_id).await?;
 
         self.folders
-            .assign(RootAssignment { root_id, user_id })
+            .assign(RootAssignment {
+                root_id,
+                user_id,
+                access_mode: crate::file::AccessMode::DEFAULT,
+            })
             .await
     }
 

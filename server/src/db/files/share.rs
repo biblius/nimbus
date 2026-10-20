@@ -265,7 +265,9 @@ impl ShareRepository {
         query.push_bind(share_expires_at);
         query.push(", updated_at = ");
         query.push_bind(now);
-        query.push(" WHERE id IN (SELECT id FROM tree)");
+        query.push(" WHERE root_id = ");
+        query.push_bind(root_id);
+        query.push(" AND id IN (SELECT id FROM tree)");
 
         query.build().execute(&self.pool).await?;
 

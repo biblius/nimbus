@@ -46,7 +46,10 @@ mod sharing {
         state
             .services
             .files
-            .share_files(&session.user, root, share_download(file.id))
+            .share_files(
+                &super::super::ctx(state, &session.user, root).await,
+                share_download(file.id),
+            )
             .await
             .unwrap();
 
@@ -75,7 +78,10 @@ mod sharing {
         state
             .services
             .files
-            .share_files(&session.user, root, share_view(file.id))
+            .share_files(
+                &super::super::ctx(state, &session.user, root).await,
+                share_view(file.id),
+            )
             .await
             .unwrap();
 
@@ -102,7 +108,10 @@ mod sharing {
         state
             .services
             .files
-            .share_files(&session.user, root, share_download(file.id))
+            .share_files(
+                &super::super::ctx(state, &session.user, root).await,
+                share_download(file.id),
+            )
             .await
             .unwrap();
 
@@ -140,14 +149,20 @@ mod sharing {
         state
             .services
             .files
-            .share_files(&session.user, root, share_download(file.id))
+            .share_files(
+                &super::super::ctx(state, &session.user, root).await,
+                share_download(file.id),
+            )
             .await
             .unwrap();
 
         state
             .services
             .files
-            .unshare_files(&session.user, root, UnshareFiles { ids: vec![file.id] })
+            .unshare_files(
+                &super::super::ctx(state, &session.user, root).await,
+                UnshareFiles { ids: vec![file.id] },
+            )
             .await
             .unwrap();
 
@@ -165,8 +180,7 @@ mod sharing {
             .services
             .files
             .create_directory(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 CreateDirectory {
                     name: "docs".into(),
                     parent: None,
@@ -180,8 +194,7 @@ mod sharing {
             .services
             .files
             .create_directory(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 CreateDirectory {
                     name: "nested".into(),
                     parent: Some(dir.id),
@@ -207,8 +220,7 @@ mod sharing {
             .services
             .files
             .share_files(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 ShareFiles {
                     ids: vec![dir.id],
                     sharing_mode: SharingMode::View,
@@ -257,7 +269,10 @@ mod sharing {
         state
             .services
             .files
-            .unshare_files(&session.user, root, UnshareFiles { ids: vec![dir.id] })
+            .unshare_files(
+                &super::super::ctx(state, &session.user, root).await,
+                UnshareFiles { ids: vec![dir.id] },
+            )
             .await
             .unwrap();
 
@@ -281,8 +296,7 @@ mod sharing {
             .services
             .files
             .create_directory(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 CreateDirectory {
                     name: "public".into(),
                     parent: None,
@@ -298,8 +312,7 @@ mod sharing {
             .services
             .files
             .share_files(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 ShareFiles {
                     ids: vec![dir.id],
                     sharing_mode: SharingMode::Download,
@@ -313,8 +326,7 @@ mod sharing {
             .services
             .files
             .create_directory(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 CreateDirectory {
                     name: "nested".into(),
                     parent: Some(dir.id),
@@ -359,7 +371,7 @@ mod sharing {
         let denied = state
             .services
             .files
-            .share_files(&bob.user, root, share_download(file.id))
+            .accessible_root(&bob.user, root)
             .await
             .unwrap_err();
 

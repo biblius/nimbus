@@ -29,6 +29,7 @@ enum ProcessingKind {
 /// Minimal payload for background preview generation.
 #[derive(Debug)]
 pub struct ProcessingRequest {
+    root_id: Uuid,
     file_id: Uuid,
     hash: String,
     kind: ProcessingKind,
@@ -83,6 +84,7 @@ impl ProcessingQueue {
 
         handle
             .send(ProcessingRequest {
+                root_id: file.root_id,
                 file_id: file.id,
                 hash: hash.clone(),
                 kind,
@@ -104,17 +106,28 @@ impl ProcessingQueue {
         });
     }
 
-    #[instrument(skip(self, request), fields(file_id = %request.file_id), err(Debug))]
+    #[instrument(skip(self, request), fields(root_id = %request.root_id, file_id = %request.file_id), err(Debug))]
     async fn process(&self, request: ProcessingRequest) -> Result<(), AppError> {
         match request.kind {
-            ProcessingKind::Image => self.process_image(request.file_id, request.hash).await,
-            ProcessingKind::Video => self.process_video(request.file_id, request.hash).await,
+            ProcessingKind::Image => {
+                self.process_image(request.root_id, request.file_id, request.hash)
+                    .await
+            }
+            ProcessingKind::Video => {
+                self.process_video(request.root_id, request.file_id, request.hash)
+                    .await
+            }
         }
     }
 
     /// Resize an image to 64×64 and 256×256 WebP icons and store them content-addressed.
-    #[instrument(skip(self, hash), fields(file_id = %file_id), err(Debug))]
-    async fn process_image(&self, file_id: Uuid, hash: String) -> Result<(), AppError> {
+    #[instrument(skip(self, hash), fields(root_id = %root_id, file_id = %file_id), err(Debug))]
+    async fn process_image(
+        &self,
+        root_id: Uuid,
+        file_id: Uuid,
+        hash: String,
+    ) -> Result<(), AppError> {
         let source_path = self.storage.path(&hash);
 
         let pair = tokio::task::spawn_blocking(move || encode_preview_pair(&source_path))
@@ -124,12 +137,17 @@ impl ProcessingQueue {
                 AppError::Internal
             })??;
 
-        self.store_previews(file_id, &pair).await
+        self.store_previews(root_id, file_id, &pair).await
     }
 
     /// Extract one video frame with system `ffmpeg`, then store both WebP sizes.
-    #[instrument(skip(self, hash), fields(file_id = %file_id), err(Debug))]
-    async fn process_video(&self, file_id: Uuid, hash: String) -> Result<(), AppError> {
+    #[instrument(skip(self, hash), fields(root_id = %root_id, file_id = %file_id), err(Debug))]
+    async fn process_video(
+        &self,
+        root_id: Uuid,
+        file_id: Uuid,
+        hash: String,
+    ) -> Result<(), AppError> {
         let source_path = self.storage.path(&hash);
 
         let pair = tokio::task::spawn_blocking(move || encode_video_preview_pair(&source_path))
@@ -139,10 +157,15 @@ impl ProcessingQueue {
                 AppError::Internal
             })??;
 
-        self.store_previews(file_id, &pair).await
+        self.store_previews(root_id, file_id, &pair).await
     }
 
-    async fn store_previews(&self, file_id: uuid::Uuid, pair: &PreviewPair) -> Result<(), AppError> {
+    async fn store_previews(
+        &self,
+        root_id: Uuid,
+        file_id: Uuid,
+        pair: &PreviewPair,
+    ) -> Result<(), AppError> {
         let icon_hash = hex::encode(Sha256::digest(&pair.icon));
         let tile_hash = hex::encode(Sha256::digest(&pair.tile));
 
@@ -154,7 +177,9 @@ impl ProcessingQueue {
             preview_256: Some(tile_hash),
         };
 
-        self.files.set_metadata(file_id, &metadata).await?;
+        self.files
+            .set_metadata(root_id, file_id, &metadata)
+            .await?;
 
         tracing::info!(
             file=%file_id,

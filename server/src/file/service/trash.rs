@@ -2,15 +2,14 @@ use crate::{
     db::{
         files::{FileRepository, FileTable, TrashRepository},
         tx::Transactor,
-        user_folders::UserFolderRepository,
     },
     error::AppError,
     file::{
+        access::{AccessMode, UserRootContext},
         model::{FileKind, RestoreFile},
         queue::{DeletionQueue, DeletionQueueHandle, DeletionResult, PendingDeletion},
         tree::FileTree,
     },
-    user::model::User,
 };
 use tokio::sync::mpsc;
 use tracing::instrument;
@@ -20,41 +19,30 @@ use uuid::Uuid;
 pub struct TrashFileService {
     trash: TrashRepository,
     files: FileRepository,
-    folders: UserFolderRepository,
     tx: Transactor,
 }
 
 impl TrashFileService {
-    pub fn new(
-        trash: TrashRepository,
-        files: FileRepository,
-        folders: UserFolderRepository,
-        tx: Transactor,
-    ) -> Self {
-        Self {
-            trash,
-            files,
-            folders,
-            tx,
-        }
+    pub fn new(trash: TrashRepository, files: FileRepository, tx: Transactor) -> Self {
+        Self { trash, files, tx }
     }
 
     /// Permanently delete one trashed item and its descendants.
-    #[instrument(skip(self, user, handle), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
+    #[instrument(skip(self, ctx, handle), fields(user_id = %ctx.user.id, root_id = %ctx.root.id, file_id = %id), err(Debug))]
     pub async fn delete_trash(
         &self,
-        user: &User,
-        root_id: Uuid,
+        ctx: &UserRootContext,
         id: Uuid,
         handle: DeletionQueueHandle,
     ) -> Result<mpsc::Receiver<DeletionResult>, AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
+        ctx.require(AccessMode::WRITE)?;
+
+        let root_id = ctx.root.id;
 
         let file = self
             .trash
-            .get_trashed(id)
+            .get_trashed(root_id, id)
             .await?
-            .filter(|file| file.root_id == root_id)
             .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
         let files = self.trash.list_trashed_tree_ids(root_id, file.id).await?;
@@ -70,24 +58,19 @@ impl TrashFileService {
     }
 
     /// Move a trashed item and its descendants back into `files` under `input.parent`.
-    #[instrument(skip(self, user, input), fields(user_id = %user.id, root_id = %root_id, file_id = %id), err(Debug))]
+    #[instrument(skip(self, ctx, input), fields(user_id = %ctx.user.id, root_id = %ctx.root.id, file_id = %id), err(Debug))]
     pub async fn restore(
         &self,
-        user: &User,
-        root_id: Uuid,
+        ctx: &UserRootContext,
         id: Uuid,
         input: RestoreFile,
     ) -> Result<(), AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
+        ctx.require(AccessMode::WRITE)?;
 
-        let Some(trashed_root) = self.trash.get_file_root_id(id).await? else {
+        let root_id = ctx.root.id;
+
+        if self.trash.get_trashed(root_id, id).await?.is_none() {
             return Err(AppError::ResourceMissing("File does not exist".into()));
-        };
-
-        if trashed_root != root_id {
-            return Err(AppError::Unprocessable(
-                "Files can only be restored to their original roots".into(),
-            ));
         }
 
         self.validate_restore_parent(root_id, input.parent).await?;
@@ -102,7 +85,7 @@ impl TrashFileService {
 
         let mut tx = self.tx.begin().await?;
 
-        let mut restored = self.trash.delete_tree(&mut *tx, root_id, id).await?;
+        let mut restored = self.trash.delete_tree(&mut tx, root_id, id).await?;
 
         let bytes: i64 = restored
             .iter()
@@ -129,14 +112,15 @@ impl TrashFileService {
     }
 
     /// Restore every trashed item in a root under `input.parent`.
-    #[instrument(skip(self, user, target), fields(user_id = %user.id, root_id = %root_id), err(Debug))]
+    #[instrument(skip(self, ctx, target), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
     pub async fn restore_all(
         &self,
-        user: &User,
-        root_id: Uuid,
+        ctx: &UserRootContext,
         target: RestoreFile,
     ) -> Result<(), AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
+        ctx.require(AccessMode::WRITE)?;
+
+        let root_id = ctx.root.id;
 
         self.validate_restore_parent(root_id, target.parent).await?;
 
@@ -150,7 +134,7 @@ impl TrashFileService {
 
         let mut tx = self.tx.begin().await?;
 
-        let mut restored = self.trash.delete_all(&mut *tx, root_id).await?;
+        let mut restored = self.trash.delete_all(&mut tx, root_id).await?;
 
         if restored.is_empty() {
             tx.commit().await?;
@@ -193,24 +177,22 @@ impl TrashFileService {
 
         let entry = self
             .files
-            .get_live(parent)
+            .get_live(root_id, parent)
             .await?
             .ok_or_else(|| AppError::Unprocessable("Target directory does not exist".into()))?;
 
-        if entry.root_id != root_id || entry.kind != FileKind::Directory {
+        if entry.kind != FileKind::Directory {
             return Err(AppError::Unprocessable("Target is not a directory".into()));
         }
 
         Ok(())
     }
 
-    pub async fn get_trash_tree(&self, user: &User, root_id: Uuid) -> Result<FileTree, AppError> {
-        super::accessible(&self.folders, user, root_id).await?;
-
-        let files = self.trash.list_trash(root_id).await?;
+    pub async fn get_trash_tree(&self, ctx: &UserRootContext) -> Result<FileTree, AppError> {
+        let files = self.trash.list_trash(ctx.root.id).await?;
 
         Ok(FileTree {
-            id: root_id,
+            id: ctx.root.id,
             name: String::new(),
             kind: FileKind::Directory,
             file_type: None,

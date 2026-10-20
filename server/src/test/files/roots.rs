@@ -33,8 +33,7 @@ mod roots {
             .services
             .files
             .create_directory(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
@@ -71,11 +70,19 @@ mod roots {
             .unwrap();
         state.await_deletion(rx).await;
 
+        assert!(matches!(
+            state
+                .services
+                .files
+                .accessible_root(&session.user, root)
+                .await,
+            Err(AppError::ResourceMissing(_))
+        ));
         for id in [notes.id, nested.id, top.id, copy.id] {
-            assert!(matches!(
-                state.services.files.metadata(&session.user, id).await,
-                Err(AppError::ResourceMissing(_))
-            ));
+            assert_eq!(
+                count!(state, "SELECT COUNT(*) FROM files WHERE id = $1", id),
+                0
+            );
         }
         assert_eq!(
             count!(state, "SELECT COUNT(*) FROM files WHERE root_id = $1", root),
@@ -122,7 +129,10 @@ mod roots {
         let kept = state
             .services
             .files
-            .content_for_download(&bob.user, bob_file.id)
+            .content_for_download(
+                &super::super::ctx(state, &bob.user, bob_root).await,
+                bob_file.id,
+            )
             .await
             .unwrap();
         assert_eq!(kept.0, bob_file.name);
@@ -178,7 +188,7 @@ mod roots {
         let still_there = state
             .services
             .files
-            .content_for_download(&admin.user, file.id)
+            .content_for_download(&super::super::ctx(state, &admin.user, root).await, file.id)
             .await
             .unwrap();
         assert_eq!(still_there.0, file.name);
@@ -216,10 +226,18 @@ mod roots {
             state
                 .services
                 .files
-                .metadata(&extra_session.user, extra_file.id)
+                .accessible_root(&extra_session.user, extra_root)
                 .await,
             Err(AppError::ResourceMissing(_))
         ));
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM files WHERE id = $1",
+                extra_file.id
+            ),
+            0
+        );
         assert_eq!(
             count!(state, "SELECT COUNT(*) FROM users WHERE id = $1", extra.id),
             0

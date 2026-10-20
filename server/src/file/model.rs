@@ -229,6 +229,7 @@ impl FileEntry {
 #[derive(Debug, Clone, Copy)]
 pub struct FileRef {
     pub id: Uuid,
+    pub root_id: Uuid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -306,6 +307,7 @@ pub struct RootView {
 pub struct RootAssignment {
     pub root_id: Uuid,
     pub user_id: Uuid,
+    pub access_mode: super::access::AccessMode,
 }
 
 /// Where a trashed item should be put back. If `parent` is null, the file is stored directly in root.

@@ -281,13 +281,17 @@ impl FileRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn get_live(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
-        self.get_live_with(&self.pool, id).await
+    pub async fn get_live(&self, root_id: Uuid, id: Uuid) -> Result<Option<FileEntry>, AppError> {
+        self.get_live_with(&self.pool, root_id, id).await
     }
 
-    /// Live rows for every id in `ids`. Missing ids are omitted.
+    /// Live rows for every id in `ids` within `root_id`. Missing ids are omitted.
     #[instrument(skip(self, ids), err(Debug))]
-    pub async fn get_live_many(&self, ids: &[Uuid]) -> Result<Vec<FileEntry>, AppError> {
+    pub async fn get_live_many(
+        &self,
+        root_id: Uuid,
+        ids: &[Uuid],
+    ) -> Result<Vec<FileEntry>, AppError> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -312,9 +316,12 @@ impl FileRepository {
                 f.updated_at
             FROM files f
             LEFT JOIN file_metadata m ON m.file_id = f.id
-            WHERE f.id IN (
+            WHERE f.root_id =
             "#,
         );
+
+        query.push_bind(root_id);
+        query.push(" AND f.id IN (");
 
         {
             let mut selected = query.separated(", ");
@@ -427,6 +434,7 @@ impl FileRepository {
     pub async fn get_live_with<'e, E>(
         &self,
         executor: E,
+        root_id: Uuid,
         id: Uuid,
     ) -> Result<Option<FileEntry>, AppError>
     where
@@ -452,9 +460,10 @@ impl FileRepository {
                 f.updated_at
             FROM files f
             LEFT JOIN file_metadata m ON m.file_id = f.id
-            WHERE f.id = $1
+            WHERE f.root_id = $1 AND f.id = $2
             "#,
         )
+        .bind(root_id)
         .bind(id)
         .fetch_optional(executor)
         .await
@@ -494,8 +503,8 @@ impl FileRepository {
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9,
-                (SELECT p.sharing_mode FROM files p WHERE p.id = $6),
-                (SELECT p.share_expires_at FROM files p WHERE p.id = $6),
+                (SELECT p.sharing_mode FROM files p WHERE p.root_id = $2 AND p.id = $6),
+                (SELECT p.share_expires_at FROM files p WHERE p.root_id = $2 AND p.id = $6),
                 $10, $11
             )
             RETURNING
@@ -722,9 +731,10 @@ impl FileRepository {
     }
 
     /// Store generated preview metadata on a live file row.
-    #[instrument(skip(self, metadata), fields(file_id = %file_id), err(Debug))]
+    #[instrument(skip(self, metadata), fields(root_id = %root_id, file_id = %file_id), err(Debug))]
     pub async fn set_metadata(
         &self,
+        root_id: Uuid,
         file_id: Uuid,
         metadata: &FileMetadata,
     ) -> Result<(), AppError> {
@@ -733,9 +743,10 @@ impl FileRepository {
         let result = sqlx::query!(
             r#"
             UPDATE files
-            SET updated_at = $2
-            WHERE id = $1
+            SET updated_at = $3
+            WHERE root_id = $1 AND id = $2
             "#,
+            root_id,
             file_id,
             now
         )
@@ -765,10 +776,11 @@ impl FileRepository {
     }
 
     /// Replace the content-addressed fields of an existing live file.
-    #[instrument(skip(self, executor, file_type, hash), fields(file_id = %id), err(Debug))]
+    #[instrument(skip(self, executor, file_type, hash), fields(root_id = %root_id, file_id = %id), err(Debug))]
     pub async fn update_content<'e, E>(
         &self,
         executor: E,
+        root_id: Uuid,
         id: Uuid,
         hash: &str,
         size_bytes: i64,
@@ -783,13 +795,14 @@ impl FileRepository {
             r#"
             UPDATE files
             SET
-                hash = $2,
-                size_bytes = $3,
-                format = $4,
-                updated_at = $5
-            WHERE id = $1
+                hash = $3,
+                size_bytes = $4,
+                format = $5,
+                updated_at = $6
+            WHERE root_id = $1 AND id = $2
             "#,
         )
+        .bind(root_id)
         .bind(id)
         .bind(hash)
         .bind(size_bytes)
@@ -806,19 +819,20 @@ impl FileRepository {
     }
 
     /// Update only the display name of a live file or directory.
-    #[instrument(skip(self, name), fields(file_id = %id, name = %name), err(Debug))]
-    pub async fn update_name(&self, id: Uuid, name: &str) -> Result<(), AppError> {
+    #[instrument(skip(self, name), fields(root_id = %root_id, file_id = %id, name = %name), err(Debug))]
+    pub async fn update_name(&self, root_id: Uuid, id: Uuid, name: &str) -> Result<(), AppError> {
         let now = Utc::now();
 
         let result = sqlx::query(
             r#"
             UPDATE files
             SET
-                name = $2,
-                updated_at = $3
-            WHERE id = $1
+                name = $3,
+                updated_at = $4
+            WHERE root_id = $1 AND id = $2
             "#,
         )
+        .bind(root_id)
         .bind(id)
         .bind(name)
         .bind(now)
@@ -1120,18 +1134,20 @@ impl FileRepository {
         Ok(())
     }
 
-    /// Delete rows for `ids`. Returns the ids that were actually removed.
+    /// Delete rows for `ids` in `root_id`. Returns the ids that were actually removed.
     ///
     /// Also removes matching `file_metadata` rows (hard delete).
     #[instrument(skip(self, ids), err(Debug))]
-    pub async fn delete_many(&self, ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
+    pub async fn delete_many(&self, root_id: Uuid, ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut tx = self.pool.begin().await?;
 
-        let mut query = QueryBuilder::<Db>::new("DELETE FROM files WHERE id IN (");
+        let mut query = QueryBuilder::<Db>::new("DELETE FROM files WHERE root_id = ");
+        query.push_bind(root_id);
+        query.push(" AND id IN (");
         {
             let mut selected = query.separated(", ");
             for id in ids {
@@ -1193,7 +1209,9 @@ impl FileRepository {
         sqlx::query_as!(
             FileRef,
             r#"
-            SELECT id AS "id: Uuid"
+            SELECT
+                id AS "id: Uuid",
+                root_id AS "root_id: Uuid"
             FROM files
             WHERE root_id = $1
             "#,

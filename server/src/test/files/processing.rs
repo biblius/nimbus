@@ -34,14 +34,14 @@ mod processing {
         }
     }
 
-    async fn await_previews(state: &TestState, file_id: Uuid) -> (String, String) {
+    async fn await_previews(state: &TestState, root_id: Uuid, file_id: Uuid) -> (String, String) {
         let files = FileRepository::new(state.pool.clone());
 
         wait_until(std::time::Duration::from_secs(5), || {
             let files = files.clone();
             async move {
                 matches!(
-                    files.get_live(file_id).await,
+                    files.get_live(root_id, file_id).await,
                     Ok(Some(row))
                         if row.metadata.preview_64.is_some() && row.metadata.preview_256.is_some()
                 )
@@ -50,7 +50,7 @@ mod processing {
         .await;
 
         let meta = files
-            .get_live(file_id)
+            .get_live(root_id, file_id)
             .await
             .unwrap()
             .expect("file row")
@@ -128,7 +128,7 @@ mod processing {
         let png = png_bytes(220, 40, 40);
         let entry = test::upload(state, &session.user, root, "photo.png", &png).await;
 
-        let (icon_hash, tile_hash) = await_previews(state, entry.id).await;
+        let (icon_hash, tile_hash) = await_previews(state, root, entry.id).await;
         assert_ne!(icon_hash, tile_hash);
 
         let icon_path = test::preview_path(state.storage_dir(), &icon_hash);
@@ -152,8 +152,8 @@ mod processing {
         let first = test::upload(state, &session.user, root, "a.png", &png).await;
         let second = test::upload(state, &session.user, root, "b.png", &png).await;
 
-        let (first_icon, first_tile) = await_previews(state, first.id).await;
-        let (second_icon, second_tile) = await_previews(state, second.id).await;
+        let (first_icon, first_tile) = await_previews(state, root, first.id).await;
+        let (second_icon, second_tile) = await_previews(state, root, second.id).await;
 
         assert_eq!(first_icon, second_icon);
         assert_eq!(first_tile, second_tile);
@@ -183,8 +183,8 @@ mod processing {
         )
         .await;
 
-        let (red_icon, red_tile) = await_previews(state, red.id).await;
-        let (green_icon, green_tile) = await_previews(state, green.id).await;
+        let (red_icon, red_tile) = await_previews(state, root, red.id).await;
+        let (green_icon, green_tile) = await_previews(state, root, green.id).await;
 
         assert_ne!(red_icon, green_icon);
         assert_ne!(red_tile, green_tile);
@@ -204,7 +204,7 @@ mod processing {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
         let file = FileRepository::new(state.pool.clone())
-            .get_live(entry.id)
+            .get_live(root, entry.id)
             .await
             .unwrap()
             .expect("file row");
@@ -222,7 +222,7 @@ mod processing {
         let mp4 = mp4_bytes();
         let entry = test::upload(state, &session.user, root, "clip.mp4", &mp4).await;
 
-        let (icon_hash, tile_hash) = await_previews(state, entry.id).await;
+        let (icon_hash, tile_hash) = await_previews(state, root, entry.id).await;
         assert_ne!(icon_hash, tile_hash);
 
         assert_webp_size(
@@ -238,7 +238,7 @@ mod processing {
         let icon = state
             .services
             .files
-            .preview(&session.user, entry.id, PreviewSize::Icon)
+            .preview(&super::super::ctx(state, &session.user, root).await, entry.id, PreviewSize::Icon)
             .await
             .unwrap();
         assert_eq!(icon.mime, "image/webp");
@@ -247,7 +247,7 @@ mod processing {
         let tile = state
             .services
             .files
-            .preview(&session.user, entry.id, PreviewSize::Tile)
+            .preview(&super::super::ctx(state, &session.user, root).await, entry.id, PreviewSize::Tile)
             .await
             .unwrap();
         assert_eq!(tile.mime, "image/webp");
@@ -262,12 +262,12 @@ mod processing {
 
         let png = png_bytes(10, 20, 30);
         let uploaded = test::upload(state, &session.user, root, "listed.png", &png).await;
-        let (icon_hash, tile_hash) = await_previews(state, uploaded.id).await;
+        let (icon_hash, tile_hash) = await_previews(state, root, uploaded.id).await;
 
         let listed = state
             .services
             .files
-            .list(&session.user, root, None)
+            .list(&super::super::ctx(state, &session.user, root).await, None)
             .await
             .unwrap();
 

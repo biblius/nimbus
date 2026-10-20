@@ -144,7 +144,6 @@ impl AppState {
         let trash_service = TrashFileService::new(
             repository.trash.clone(),
             repository.files.clone(),
-            repository.folders.clone(),
             transactor,
         );
 

@@ -6,7 +6,10 @@ use uuid::Uuid;
 use crate::{
     db::{Db, DbPool},
     error::AppError,
-    file::model::RootAssignment,
+    file::{
+        access::AccessMode,
+        model::{Root, RootAssignment},
+    },
     model::{List, PaginationSort, ToSearchColumn},
     user::model::{Member, Role, UserSearch, UserSort},
 };
@@ -44,13 +47,15 @@ impl UserFolderRepository {
             r#"
             INSERT INTO user_folders (
                 root_id,
-                user_id
+                user_id,
+                access_mode
             )
-            VALUES ($1, $2)
+            VALUES ($1, $2, $3)
             ON CONFLICT DO NOTHING
             "#,
             assignment.root_id,
             assignment.user_id,
+            assignment.access_mode as _,
         )
         .execute(executor)
         .await?;
@@ -58,6 +63,8 @@ impl UserFolderRepository {
     }
 
     /// Assign many users to a root in one statement. Unknown user ids fail the FK.
+    ///
+    /// New rows get [`AccessMode::DEFAULT`].
     #[instrument(skip(self, executor, user_ids), fields(root_id = %root_id, n = user_ids.len()), err(Debug))]
     pub async fn insert_many<'e, E>(
         &self,
@@ -72,10 +79,15 @@ impl UserFolderRepository {
             return Ok(());
         }
 
-        let mut query = QueryBuilder::<Db>::new("INSERT INTO user_folders (root_id, user_id) ");
+        let access_mode = AccessMode::DEFAULT;
+
+        let mut query =
+            QueryBuilder::<Db>::new("INSERT INTO user_folders (root_id, user_id, access_mode) ");
 
         query.push_values(user_ids, |mut row, user_id| {
-            row.push_bind(root_id).push_bind(*user_id);
+            row.push_bind(root_id)
+                .push_bind(*user_id)
+                .push_bind(access_mode);
         });
 
         query.push(" ON CONFLICT DO NOTHING");
@@ -83,6 +95,52 @@ impl UserFolderRepository {
         query.build().execute(executor).await?;
 
         Ok(())
+    }
+
+    /// Load a root and the caller's membership [`AccessMode`], if any.
+    ///
+    /// `None` for the mode means the user is not in `user_folders` (private owner
+    /// or no access). The service layer maps owners/admins to [`AccessMode::FULL`].
+    #[instrument(skip(self), err(Debug))]
+    pub async fn access(
+        &self,
+        user_id: Uuid,
+        root_id: Uuid,
+    ) -> Result<Option<(Root, Option<AccessMode>)>, AppError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                r.id AS "id: Uuid",
+                r.name,
+                r.quota_bytes AS quota,
+                r.owner AS "owner?: Uuid",
+                r.created_at AS "created_at: DateTime<Utc>",
+                r.updated_at AS "updated_at: DateTime<Utc>",
+                uf.access_mode AS "access_mode?: AccessMode"
+            FROM roots r
+            LEFT JOIN user_folders uf
+                ON uf.root_id = r.id AND uf.user_id = $2
+            WHERE r.id = $1
+            "#,
+            root_id,
+            user_id,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|row| {
+            (
+                Root {
+                    id: row.id,
+                    name: row.name,
+                    quota: row.quota,
+                    owner: row.owner,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                },
+                row.access_mode,
+            )
+        }))
     }
 
     #[instrument(skip(self), err(Debug))]

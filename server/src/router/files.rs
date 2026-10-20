@@ -2,6 +2,7 @@ use crate::{
     auth::session::Session,
     error::AppError,
     file::{
+        UserRootContext,
         model::{
             CopyFiles, CreateDirectory, CreateTextFile, DownloadFiles, FileEntry, FileView,
             MoveFiles, PreviewSize, RenameFile, RestoreFile, RootView, ShareFiles, SharedFileView,
@@ -52,57 +53,36 @@ pub(crate) async fn roots(
 }
 
 pub(crate) async fn list(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Query(query): Query<ParentQuery>,
 ) -> Result<Json<Vec<FileView>>, AppError> {
-    Ok(Json(
-        state
-            .services
-            .files
-            .list(&session.user, root_id, query.parent)
-            .await?,
-    ))
+    Ok(Json(state.services.files.list(&ctx, query.parent).await?))
 }
 
 pub(crate) async fn tree(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
 ) -> Result<Json<FileTree>, AppError> {
-    Ok(Json(
-        state
-            .services
-            .files
-            .get_tree(&session.user, root_id, None)
-            .await?,
-    ))
+    Ok(Json(state.services.files.get_tree(&ctx, None).await?))
 }
 
 pub(crate) async fn trash(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
 ) -> Result<Json<FileTree>, AppError> {
-    Ok(Json(
-        state
-            .services
-            .trash
-            .get_trash_tree(&session.user, root_id)
-            .await?,
-    ))
+    Ok(Json(state.services.trash.get_trash_tree(&ctx).await?))
 }
 
 pub(crate) async fn delete_trash(
-    Path((root_id, id)): Path<(Uuid, Uuid)>,
+    Path((_, id)): Path<(Uuid, Uuid)>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>> + Send>, AppError> {
     let rx = state
         .services
         .trash
-        .delete_trash(&session.user, root_id, id, state.queue)
+        .delete_trash(&ctx, id, state.queue)
         .await?;
 
     Ok(sse(rx, |result| {
@@ -118,76 +98,52 @@ pub(crate) async fn delete_trash(
 }
 
 pub(crate) async fn restore_file(
-    Path((root_id, id)): Path<(Uuid, Uuid)>,
+    Path((_, id)): Path<(Uuid, Uuid)>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Json(input): Json<RestoreFile>,
 ) -> Result<StatusCode, AppError> {
-    state
-        .services
-        .trash
-        .restore(&session.user, root_id, id, input)
-        .await?;
+    state.services.trash.restore(&ctx, id, input).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn restore_all(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Json(input): Json<RestoreFile>,
 ) -> Result<StatusCode, AppError> {
-    state
-        .services
-        .trash
-        .restore_all(&session.user, root_id, input)
-        .await?;
+    state.services.trash.restore_all(&ctx, input).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn create_directory(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Json(input): Json<CreateDirectory>,
 ) -> Result<(StatusCode, Json<FileEntry>), AppError> {
-    let entry = state
-        .services
-        .files
-        .create_directory(&session.user, root_id, input)
-        .await?;
+    let entry = state.services.files.create_directory(&ctx, input).await?;
 
     Ok((StatusCode::CREATED, Json(entry)))
 }
 
 pub(crate) async fn create_text_file(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Json(input): Json<CreateTextFile>,
 ) -> Result<(StatusCode, Json<FileEntry>), AppError> {
-    let entry = state
-        .services
-        .files
-        .create_text_file(&session.user, root_id, input)
-        .await?;
+    let entry = state.services.files.create_text_file(&ctx, input).await?;
 
     Ok((StatusCode::CREATED, Json(entry)))
 }
 
 pub(crate) async fn upload(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     mut multipart: Multipart,
 ) -> Result<Json<Vec<FileEntry>>, AppError> {
-    state
-        .services
-        .files
-        .accessible(&session.user, root_id)
-        .await?;
+    ctx.require(crate::file::AccessMode::WRITE)?;
 
     let mut parent = None;
     let mut staged = Vec::new();
@@ -214,11 +170,7 @@ pub(crate) async fn upload(
                     continue;
                 };
 
-                let mut writer = state
-                    .services
-                    .files
-                    .start_upload(&session.user, root_id, name)
-                    .await?;
+                let mut writer = state.services.files.start_upload(&ctx, name).await?;
 
                 while let Some(chunk) = field.chunk().await.map_err(|error| {
                     tracing::error!(%error, "multipart chunk failed");
@@ -256,7 +208,7 @@ pub(crate) async fn upload(
     let files = state
         .services
         .files
-        .finish_upload_all(&session.user, root_id, parent, vec![], staged)
+        .finish_upload(&ctx, parent, vec![], staged)
         .await?;
 
     Ok(Json(files))
@@ -267,16 +219,11 @@ pub(crate) async fn upload(
 /// (e.g. `Photos/2024/pic.jpg`, set by webkitdirectory).
 /// Intermediate directories are created as needed.
 pub(crate) async fn upload_dir(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     mut multipart: Multipart,
 ) -> Result<Json<Vec<FileEntry>>, AppError> {
-    state
-        .services
-        .files
-        .accessible(&session.user, root_id)
-        .await?;
+    ctx.require(crate::file::AccessMode::WRITE)?;
 
     let mut parent = None;
     let mut staged_dirs = Vec::new();
@@ -343,7 +290,7 @@ pub(crate) async fn upload_dir(
                 let mut writer = state
                     .services
                     .files
-                    .start_upload(&session.user, root_id, name.to_owned())
+                    .start_upload(&ctx, name.to_owned())
                     .await?;
 
                 while let Some(chunk) = field.chunk().await.map_err(|error| {
@@ -379,7 +326,7 @@ pub(crate) async fn upload_dir(
     let entries = state
         .services
         .files
-        .finish_upload_all(&session.user, root_id, parent, staged_dirs, staged_files)
+        .finish_upload(&ctx, parent, staged_dirs, staged_files)
         .await?;
 
     Ok(Json(entries))
@@ -406,43 +353,27 @@ fn split_relative_path(path: &str) -> Result<(Vec<&str>, &str), AppError> {
 
 pub(crate) async fn ancestors(
     State(state): State<AppState>,
-    session: Session,
-    Path((root_id, file_id)): Path<(Uuid, Uuid)>,
+    ctx: UserRootContext,
+    Path((_, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Vec<FileEntry>>, AppError> {
-    Ok(Json(
-        state
-            .services
-            .files
-            .ancestors(&session.user, root_id, file_id)
-            .await?,
-    ))
+    Ok(Json(state.services.files.ancestors(&ctx, file_id).await?))
 }
 
 pub(crate) async fn metadata(
     State(state): State<AppState>,
-    session: Session,
-    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
+    ctx: UserRootContext,
+    Path((_, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<FileEntry>, AppError> {
-    Ok(Json(
-        state
-            .services
-            .files
-            .metadata(&session.user, file_id)
-            .await?,
-    ))
+    Ok(Json(state.services.files.metadata(&ctx, file_id).await?))
 }
 
 pub(crate) async fn overwrite(
-    Path((root_id, file_id)): Path<(Uuid, Uuid)>,
+    Path((_, file_id)): Path<(Uuid, Uuid)>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     mut multipart: Multipart,
 ) -> Result<StatusCode, AppError> {
-    let (existing, mut writer) = state
-        .services
-        .files
-        .start_overwrite(&session.user, root_id, file_id)
-        .await?;
+    let (existing, mut writer) = state.services.files.start_overwrite(&ctx, file_id).await?;
 
     let mut saw_file = false;
 
@@ -483,7 +414,7 @@ pub(crate) async fn overwrite(
     state
         .services
         .files
-        .finish_overwrite(&session.user, existing, file)
+        .finish_overwrite(&ctx, existing, file)
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -491,14 +422,9 @@ pub(crate) async fn overwrite(
 
 pub(crate) async fn download_root(
     State(state): State<AppState>,
-    session: Session,
-    Path(root_id): Path<Uuid>,
+    ctx: UserRootContext,
 ) -> Result<Response, AppError> {
-    let (name, body) = state
-        .services
-        .files
-        .content_for_root_download(&session.user, root_id)
-        .await?;
+    let (name, body) = state.services.files.content_for_root_download(&ctx).await?;
 
     body.into_response(name).await
 }
@@ -511,8 +437,7 @@ pub struct DownloadFilesQuery {
 
 pub(crate) async fn download_dir(
     State(state): State<AppState>,
-    session: Session,
-    Path(root_id): Path<Uuid>,
+    ctx: UserRootContext,
     Query(query): Query<DownloadFilesQuery>,
 ) -> Result<Response, AppError> {
     let ids = query
@@ -526,7 +451,7 @@ pub(crate) async fn download_dir(
     let (name, body) = state
         .services
         .files
-        .download_dir(&session.user, root_id, DownloadFiles { ids })
+        .download_dir(&ctx, DownloadFiles { ids })
         .await?;
 
     body.into_response(name).await
@@ -534,13 +459,13 @@ pub(crate) async fn download_dir(
 
 pub(crate) async fn download(
     State(state): State<AppState>,
-    session: Session,
-    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
+    ctx: UserRootContext,
+    Path((_, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, AppError> {
     let (name, body) = state
         .services
         .files
-        .content_for_download(&session.user, file_id)
+        .content_for_download(&ctx, file_id)
         .await?;
 
     body.into_response(name).await
@@ -548,14 +473,14 @@ pub(crate) async fn download(
 
 pub(crate) async fn download_chunk(
     State(state): State<AppState>,
-    session: Session,
-    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
+    ctx: UserRootContext,
+    Path((_, file_id)): Path<(Uuid, Uuid)>,
     range: Option<TypedHeader<Range>>,
 ) -> Result<Response, AppError> {
     let (name, path, mime) = state
         .services
         .files
-        .content_for_stream(&session.user, file_id)
+        .content_for_stream(&ctx, file_id)
         .await?;
 
     chunked_download(&path, &name, mime, range).await
@@ -563,16 +488,12 @@ pub(crate) async fn download_chunk(
 
 pub(crate) async fn preview(
     State(state): State<AppState>,
-    session: Session,
-    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
+    ctx: UserRootContext,
+    Path((_, file_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<PreviewQuery>,
 ) -> Result<Response, AppError> {
     let size = PreviewSize::from_px(query.size.unwrap_or(64))?;
-    let preview = state
-        .services
-        .files
-        .preview(&session.user, file_id, size)
-        .await?;
+    let preview = state.services.files.preview(&ctx, file_id, size).await?;
 
     Response::builder()
         .header(header::CONTENT_TYPE, preview.mime)
@@ -586,67 +507,48 @@ pub(crate) async fn preview(
 }
 
 pub(crate) async fn rename_file(
-    Path((root_id, id)): Path<(Uuid, Uuid)>,
+    Path((_, id)): Path<(Uuid, Uuid)>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Json(input): Json<RenameFile>,
 ) -> Result<StatusCode, AppError> {
-    state
-        .services
-        .files
-        .rename(&session.user, root_id, id, input)
-        .await?;
+    state.services.files.rename(&ctx, id, input).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn move_files(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Json(input): Json<MoveFiles>,
 ) -> Result<StatusCode, AppError> {
-    state
-        .services
-        .files
-        .move_files(&session.user, root_id, input)
-        .await?;
+    state.services.files.move_files(&ctx, input).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn copy_files(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Json(input): Json<CopyFiles>,
 ) -> Result<StatusCode, AppError> {
-    state
-        .services
-        .files
-        .copy_files(&session.user, root_id, input)
-        .await?;
+    state.services.files.copy_files(&ctx, input).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn delete_file(
     State(state): State<AppState>,
-    session: Session,
-    Path((_root_id, file_id)): Path<(Uuid, Uuid)>,
+    ctx: UserRootContext,
+    Path((_, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
-    state.services.files.delete(&session.user, file_id).await?;
+    state.services.files.delete(&ctx, file_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn delete_files(
     State(state): State<AppState>,
-    session: Session,
-    Path(root_id): Path<Uuid>,
+    ctx: UserRootContext,
     Json(input): Json<TrashFiles>,
 ) -> Result<StatusCode, AppError> {
-    state
-        .services
-        .files
-        .delete_many(&session.user, root_id, input)
-        .await?;
+    state.services.files.delete_many(&ctx, input).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -703,31 +605,21 @@ pub(crate) async fn shared_preview(
 }
 
 pub(crate) async fn share_files(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Json(input): Json<ShareFiles>,
 ) -> Result<StatusCode, AppError> {
-    state
-        .services
-        .files
-        .share_files(&session.user, root_id, input)
-        .await?;
+    state.services.files.share_files(&ctx, input).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn unshare_files(
-    Path(root_id): Path<Uuid>,
     State(state): State<AppState>,
-    session: Session,
+    ctx: UserRootContext,
     Json(input): Json<UnshareFiles>,
 ) -> Result<StatusCode, AppError> {
-    state
-        .services
-        .files
-        .unshare_files(&session.user, root_id, input)
-        .await?;
+    state.services.files.unshare_files(&ctx, input).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

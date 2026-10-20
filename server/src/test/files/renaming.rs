@@ -25,10 +25,7 @@ mod renaming {
         state
             .services
             .files
-            .rename(
-                &session.user,
-                root,
-                file.id,
+            .rename(&super::super::ctx(state, &session.user, root).await, file.id,
                 RenameFile {
                     name: "journal.txt".into(),
                 },
@@ -39,7 +36,7 @@ mod renaming {
         let renamed = state
             .services
             .files
-            .metadata(&session.user, file.id)
+            .metadata(&super::super::ctx(state, &session.user, root).await, file.id)
             .await
             .unwrap();
 
@@ -56,10 +53,7 @@ mod renaming {
         let folder = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "photos".into(),
                     ..Default::default()
@@ -71,10 +65,7 @@ mod renaming {
         state
             .services
             .files
-            .rename(
-                &session.user,
-                root,
-                folder.id,
+            .rename(&super::super::ctx(state, &session.user, root).await, folder.id,
                 RenameFile {
                     name: "albums".into(),
                 },
@@ -85,7 +76,7 @@ mod renaming {
         let renamed = state
             .services
             .files
-            .metadata(&session.user, folder.id)
+            .metadata(&super::super::ctx(state, &session.user, root).await, folder.id)
             .await
             .unwrap();
 
@@ -103,10 +94,7 @@ mod renaming {
         let err = state
             .services
             .files
-            .rename(
-                &session.user,
-                root,
-                file.id,
+            .rename(&super::super::ctx(state, &session.user, root).await, file.id,
                 RenameFile { name: "   ".into() },
             )
             .await

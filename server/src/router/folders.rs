@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::{
     auth::session::Session,
     error::AppError,
-    file::model::RootView,
+    file::{UserRootContext, model::RootView},
     model::{List, PaginationSort},
     router::sse,
     state::AppState,
@@ -20,12 +20,9 @@ use crate::{
 
 pub(crate) async fn usage(
     State(state): State<AppState>,
-    session: Session,
-    Path(root_id): Path<Uuid>,
+    ctx: UserRootContext,
 ) -> Result<Json<i64>, AppError> {
-    Ok(Json(
-        state.services.files.usage(&session.user, root_id).await?,
-    ))
+    Ok(Json(state.services.files.usage(&ctx).await?))
 }
 
 pub(crate) async fn list_members(

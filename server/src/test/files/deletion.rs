@@ -68,10 +68,7 @@ mod deletion {
         let notes = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                shared.id,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, shared.id).await, CreateDirectory {
                     parent: None,
                     name: "notes".into(),
                     ..Default::default()
@@ -94,10 +91,7 @@ mod deletion {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                shared.id,
-                TrashFiles {
+            .delete_many(&super::super::ctx(state, &session.user, shared.id).await, TrashFiles {
                     ids: vec![loose.id, notes.id],
                 },
             )
@@ -150,7 +144,7 @@ mod deletion {
         state
             .services
             .files
-            .delete_many(&session.user, root, TrashFiles { ids: vec![file.id] })
+            .delete_many(&super::super::ctx(state, &session.user, root).await, TrashFiles { ids: vec![file.id] })
             .await
             .unwrap();
 
@@ -181,10 +175,7 @@ mod deletion {
         let directory = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "old".into(),
                     ..Default::default()
@@ -206,10 +197,7 @@ mod deletion {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                root,
-                TrashFiles {
+            .delete_many(&super::super::ctx(state, &session.user, root).await, TrashFiles {
                     ids: vec![directory.id, kept.id],
                 },
             )
@@ -219,7 +207,7 @@ mod deletion {
         let rx = state
             .services
             .trash
-            .delete_trash(&session.user, root, directory.id, state.queue.clone())
+            .delete_trash(&super::super::ctx(state, &session.user, root).await, directory.id, state.queue.clone())
             .await
             .unwrap();
         let results = state.await_deletion(rx).await;
@@ -254,14 +242,14 @@ mod deletion {
         buf
     }
 
-    async fn await_previews(state: &TestState, file_id: Uuid) -> (String, String) {
+    async fn await_previews(state: &TestState, root_id: Uuid, file_id: Uuid) -> (String, String) {
         let files = FileRepository::new(state.pool.clone());
 
         wait_until(std::time::Duration::from_secs(5), || {
             let files = files.clone();
             async move {
                 matches!(
-                    files.get_live(file_id).await,
+                    files.get_live(root_id, file_id).await,
                     Ok(Some(row))
                         if row.metadata.preview_64.is_some() && row.metadata.preview_256.is_some()
                 )
@@ -270,7 +258,7 @@ mod deletion {
         .await;
 
         let meta = files
-            .get_live(file_id)
+            .get_live(root_id, file_id)
             .await
             .unwrap()
             .expect("file row")
@@ -289,7 +277,7 @@ mod deletion {
         let root = test::private_root(state, &session.user).await;
 
         let file = test::upload(state, &session.user, root, "shot.png", &png_bytes()).await;
-        let (icon_hash, tile_hash) = await_previews(state, file.id).await;
+        let (icon_hash, tile_hash) = await_previews(state, root, file.id).await;
         let icon_path = test::preview_path(state.storage_dir(), &icon_hash);
         let tile_path = test::preview_path(state.storage_dir(), &tile_hash);
         assert!(icon_path.is_file());
@@ -300,7 +288,7 @@ mod deletion {
         state
             .services
             .files
-            .delete_many(&session.user, root, TrashFiles { ids: vec![file.id] })
+            .delete_many(&super::super::ctx(state, &session.user, root).await, TrashFiles { ids: vec![file.id] })
             .await
             .unwrap();
 
@@ -329,9 +317,9 @@ mod deletion {
         let first = test::upload(state, &session.user, root, "a.png", &png).await;
         let second = test::upload(state, &session.user, root, "b.png", &png).await;
 
-        let (icon_hash, tile_hash) = await_previews(state, first.id).await;
+        let (icon_hash, tile_hash) = await_previews(state, root, first.id).await;
         assert_eq!(
-            await_previews(state, second.id).await,
+            await_previews(state, root, second.id).await,
             (icon_hash.clone(), tile_hash.clone())
         );
         let icon_path = test::preview_path(state.storage_dir(), &icon_hash);
@@ -340,10 +328,7 @@ mod deletion {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                root,
-                TrashFiles {
+            .delete_many(&super::super::ctx(state, &session.user, root).await, TrashFiles {
                     ids: vec![first.id],
                 },
             )
@@ -369,10 +354,7 @@ mod deletion {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                root,
-                TrashFiles {
+            .delete_many(&super::super::ctx(state, &session.user, root).await, TrashFiles {
                     ids: vec![second.id],
                 },
             )
@@ -414,7 +396,7 @@ mod deletion {
         state
             .services
             .files
-            .delete_many(&session.user, shared.id, TrashFiles { ids: vec![file.id] })
+            .delete_many(&super::super::ctx(state, &session.user, shared.id).await, TrashFiles { ids: vec![file.id] })
             .await
             .unwrap();
 
@@ -495,7 +477,7 @@ mod deletion {
         let content = state
             .services
             .files
-            .content_for_download(&bob_session.user, file.id)
+            .content_for_download(&super::super::ctx(state, &bob_session.user, shared.id).await, file.id)
             .await
             .unwrap();
         assert_eq!(content.0, file.name);
@@ -510,10 +492,7 @@ mod deletion {
         let parent = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "parent".into(),
                     ..Default::default()
@@ -538,6 +517,7 @@ mod deletion {
             request_id,
             vec![PendingDeletion {
                 file_id: parent.id,
+                root_id: root,
                 origin: FileTable::Live,
             }],
             Some(Cleanup::User {

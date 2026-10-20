@@ -1,3 +1,4 @@
+mod access;
 mod copying;
 mod deletion;
 mod moving;
@@ -11,11 +12,73 @@ mod tree;
 mod upload;
 
 use crate::{
-    file::model::FileEntry,
+    db::UserFolderRepository,
+    error::AppError,
+    file::{
+        AccessMode, UserRootContext,
+        model::{FileEntry, RootAssignment},
+    },
     test::TestState,
-    user::model::{CreateUser, Role, User},
+    user::model::{CreateSharedFolder, CreateUser, Role, User},
 };
 use uuid::Uuid;
+
+pub(super) async fn ctx(state: &TestState, user: &User, root: Uuid) -> UserRootContext {
+    state
+        .services
+        .files
+        .accessible_root(user, root)
+        .await
+        .unwrap()
+}
+
+/// Create a shared root whose initial members get [`AccessMode::DEFAULT`].
+pub(super) async fn shared_root(state: &TestState, name: &str, members: &[Uuid]) -> Uuid {
+    state
+        .services
+        .users
+        .create_shared(CreateSharedFolder {
+            name: name.into(),
+            quota_bytes: 0,
+            members: members.to_vec(),
+        })
+        .await
+        .unwrap()
+        .id
+}
+
+/// Insert or keep a membership row with the given access mode.
+pub(super) async fn grant(
+    state: &TestState,
+    root_id: Uuid,
+    user_id: Uuid,
+    access_mode: AccessMode,
+) {
+    UserFolderRepository::new(state.pool.clone())
+        .assign(RootAssignment {
+            root_id,
+            user_id,
+            access_mode,
+        })
+        .await
+        .unwrap();
+
+    // `assign` is insert-only (`ON CONFLICT DO NOTHING`); force the mode.
+    sqlx::query("UPDATE user_folders SET access_mode = $1 WHERE root_id = $2 AND user_id = $3")
+        .bind(access_mode)
+        .bind(root_id)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+}
+
+pub(super) fn assert_forbidden<T: std::fmt::Debug>(result: Result<T, AppError>) {
+    assert!(
+        matches!(result, Err(AppError::Forbidden(_))),
+        "expected Forbidden, got {result:?}"
+    );
+}
 
 pub(super) async fn upload_in(
     state: &TestState,
@@ -25,12 +88,12 @@ pub(super) async fn upload_in(
     name: &str,
     bytes: &[u8],
 ) -> FileEntry {
-    state.services.files.accessible(user, root).await.unwrap();
+    let root_ctx = ctx(state, user, root).await;
 
     let mut writer = state
         .services
         .files
-        .start_upload(user, root, name)
+        .start_upload(&root_ctx, name)
         .await
         .unwrap();
     writer.write(bytes).await.unwrap();
@@ -38,12 +101,12 @@ pub(super) async fn upload_in(
     state
         .services
         .files
-        .finish_upload_all(user, root, parent, vec![], vec![(file, parent)])
+        .finish_upload(&root_ctx, parent, vec![], vec![(file, parent)])
         .await
         .unwrap()
         .into_iter()
         .next()
-        .expect("finish_upload_all returns the uploaded file")
+        .expect("finish_upload returns the uploaded file")
 }
 
 macro_rules! count {

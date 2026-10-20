@@ -7,7 +7,6 @@ pub use share::ShareService;
 pub use trash::TrashFileService;
 
 use crate::{
-    db::user_folders::UserFolderRepository,
     error::AppError,
     file::{
         format::FileType,
@@ -15,7 +14,6 @@ use crate::{
         storage::Storage,
         tree::{FileEntryTree, FileTree},
     },
-    user::model::{Role, User},
 };
 use async_zip::{Compression, ZipEntryBuilder, tokio::write::ZipFileWriter};
 use futures::io::copy;
@@ -68,19 +66,6 @@ pub(crate) async fn blob_paths_for(
     }
 
     Ok(blob_paths)
-}
-
-pub(crate) async fn accessible(
-    folders: &UserFolderRepository,
-    user: &User,
-    root_id: Uuid,
-) -> Result<(), AppError> {
-    if user.role != Role::Admin && !folders.can_access(user.id, root_id).await? {
-        return Err(AppError::Forbidden(
-            "You do not have access to this folder".into(),
-        ));
-    }
-    Ok(())
 }
 
 /// Stream `tree` as a zip archive over a duplex pipe.

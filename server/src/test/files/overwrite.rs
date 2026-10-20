@@ -23,7 +23,10 @@ mod overwrite {
         let (existing, mut writer) = state
             .services
             .files
-            .start_overwrite(&session.user, root, original.id)
+            .start_overwrite(
+                &super::super::ctx(state, &session.user, root).await,
+                original.id,
+            )
             .await
             .unwrap();
 
@@ -33,14 +36,21 @@ mod overwrite {
         state
             .services
             .files
-            .finish_overwrite(&session.user, existing, temp)
+            .finish_overwrite(
+                &super::super::ctx(state, &session.user, root).await,
+                existing,
+                temp,
+            )
             .await
             .unwrap();
 
         let updated = state
             .services
             .files
-            .metadata(&session.user, original.id)
+            .metadata(
+                &super::super::ctx(state, &session.user, root).await,
+                original.id,
+            )
             .await
             .unwrap();
 
@@ -52,7 +62,10 @@ mod overwrite {
         let (_name, body) = state
             .services
             .files
-            .content_for_download(&session.user, updated.id)
+            .content_for_download(
+                &super::super::ctx(state, &session.user, root).await,
+                updated.id,
+            )
             .await
             .unwrap();
 

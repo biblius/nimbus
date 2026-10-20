@@ -76,6 +76,7 @@ async_zip = { version = "0.0.19", default-features = false, features = [
   "tokio",
   "deflate",
 ] }
+bitflags = { version = "2.13.2", features = ["std"] }
 
 [dev-dependencies]
 suitest = "0.1.4"

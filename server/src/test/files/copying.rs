@@ -38,8 +38,7 @@ mod copying {
             .services
             .files
             .copy_files(
-                &session.user,
-                shared.id,
+                &super::super::ctx(state, &session.user, shared.id).await,
                 CopyFiles {
                     ids: vec![source.id],
                     target_root_id: private,
@@ -52,7 +51,10 @@ mod copying {
         let listed = state
             .services
             .files
-            .list(&session.user, private, None)
+            .list(
+                &super::super::ctx(state, &session.user, private).await,
+                None,
+            )
             .await
             .unwrap();
         let copied = listed
@@ -73,7 +75,10 @@ mod copying {
         let original = state
             .services
             .files
-            .metadata(&session.user, source.id)
+            .metadata(
+                &super::super::ctx(state, &session.user, shared.id).await,
+                source.id,
+            )
             .await
             .unwrap();
         assert_eq!(original.root_id, shared.id);
@@ -102,8 +107,7 @@ mod copying {
             .services
             .files
             .copy_files(
-                &session.user,
-                shared.id,
+                &super::super::ctx(state, &session.user, shared.id).await,
                 CopyFiles {
                     ids: vec![first.id, second.id],
                     target_root_id: private,
@@ -116,7 +120,10 @@ mod copying {
         let listed = state
             .services
             .files
-            .list(&session.user, private, None)
+            .list(
+                &super::super::ctx(state, &session.user, private).await,
+                None,
+            )
             .await
             .unwrap();
         let names: Vec<_> = listed
@@ -153,8 +160,7 @@ mod copying {
             .services
             .files
             .create_directory(
-                &session.user,
-                shared.id,
+                &super::super::ctx(state, &session.user, shared.id).await,
                 CreateDirectory {
                     parent: None,
                     name: "photos".into(),
@@ -177,8 +183,7 @@ mod copying {
             .services
             .files
             .copy_files(
-                &session.user,
-                shared.id,
+                &super::super::ctx(state, &session.user, shared.id).await,
                 CopyFiles {
                     ids: vec![folder.id],
                     target_root_id: private,
@@ -191,7 +196,10 @@ mod copying {
         let listed = state
             .services
             .files
-            .list(&session.user, private, None)
+            .list(
+                &super::super::ctx(state, &session.user, private).await,
+                None,
+            )
             .await
             .unwrap();
         let copied_folder = listed
@@ -204,7 +212,10 @@ mod copying {
         let children = state
             .services
             .files
-            .list(&session.user, private, Some(copied_folder.file.id))
+            .list(
+                &super::super::ctx(state, &session.user, private).await,
+                Some(copied_folder.file.id),
+            )
             .await
             .unwrap();
         assert_eq!(children.len(), 1);
@@ -233,8 +244,7 @@ mod copying {
             .services
             .files
             .create_directory(
-                &session.user,
-                shared.id,
+                &super::super::ctx(state, &session.user, shared.id).await,
                 CreateDirectory {
                     parent: None,
                     name: "docs".into(),
@@ -257,8 +267,7 @@ mod copying {
             .services
             .files
             .copy_files(
-                &session.user,
-                shared.id,
+                &super::super::ctx(state, &session.user, shared.id).await,
                 CopyFiles {
                     ids: vec![folder.id, nested.id],
                     target_root_id: private,
@@ -271,7 +280,10 @@ mod copying {
         let listed = state
             .services
             .files
-            .list(&session.user, private, None)
+            .list(
+                &super::super::ctx(state, &session.user, private).await,
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(listed.len(), 1);
@@ -280,7 +292,10 @@ mod copying {
         let children = state
             .services
             .files
-            .list(&session.user, private, Some(listed[0].file.id))
+            .list(
+                &super::super::ctx(state, &session.user, private).await,
+                Some(listed[0].file.id),
+            )
             .await
             .unwrap();
         assert_eq!(children.len(), 1);
@@ -297,8 +312,7 @@ mod copying {
             .services
             .files
             .create_directory(
-                &session.user,
-                private,
+                &super::super::ctx(state, &session.user, private).await,
                 CreateDirectory {
                     parent: None,
                     name: "archive".into(),
@@ -313,8 +327,7 @@ mod copying {
             .services
             .files
             .copy_files(
-                &session.user,
-                private,
+                &super::super::ctx(state, &session.user, private).await,
                 CopyFiles {
                     ids: vec![file.id],
                     target_root_id: private,
@@ -327,7 +340,10 @@ mod copying {
         let children = state
             .services
             .files
-            .list(&session.user, private, Some(destination.id))
+            .list(
+                &super::super::ctx(state, &session.user, private).await,
+                Some(destination.id),
+            )
             .await
             .unwrap();
         assert_eq!(children.len(), 1);
@@ -351,43 +367,23 @@ mod copying {
             })
             .await
             .unwrap();
-        let file = test::upload(state, &session.user, shared.id, "secret.txt", b"x").await;
+        let _file = test::upload(state, &session.user, shared.id, "secret.txt", b"x").await;
 
         let bob = test::login(state, "bob-copy-forbidden", "temporary").await;
-        let bob_private = test::private_root(state, &bob.user).await;
 
         let forbidden = state
             .services
             .files
-            .copy_files(
-                &bob.user,
-                shared.id,
-                CopyFiles {
-                    ids: vec![file.id],
-                    target_root_id: bob_private,
-                    parent: None,
-                },
-            )
+            .accessible_root(&bob.user, shared.id)
             .await;
         assert!(matches!(forbidden, Err(AppError::Forbidden(_))));
 
         let still_forbidden = state
             .services
             .files
-            .copy_files(
-                &bob.user,
-                private,
-                CopyFiles {
-                    ids: vec![file.id],
-                    target_root_id: bob_private,
-                    parent: None,
-                },
-            )
+            .accessible_root(&bob.user, private)
             .await;
-        assert!(matches!(
-            still_forbidden,
-            Err(AppError::Forbidden(_) | AppError::ResourceMissing(_))
-        ));
+        assert!(matches!(still_forbidden, Err(AppError::Forbidden(_))));
     }
 
     #[test]
@@ -412,8 +408,7 @@ mod copying {
             .services
             .files
             .copy_files(
-                &session.user,
-                private,
+                &super::super::ctx(state, &session.user, private).await,
                 CopyFiles {
                     ids: vec![file.id],
                     target_root_id: shared.id,

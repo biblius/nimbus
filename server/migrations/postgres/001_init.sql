@@ -142,10 +142,10 @@ CREATE INDEX trashed_files_hash_idx ON trashed_files (hash);
 
 CREATE INDEX trashed_files_trashed_at_idx ON trashed_files (trashed_at);
 
--- Membership of a shared root. Private roots are not recorded here.
 CREATE TABLE user_folders (
   root_id UUID NOT NULL REFERENCES roots (id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  access_mode BIGINT NOT NULL,
   UNIQUE (root_id, user_id)
 );
 

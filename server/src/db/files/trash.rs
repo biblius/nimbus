@@ -27,14 +27,19 @@ impl TrashRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn get_trashed(&self, id: Uuid) -> Result<Option<FileEntry>, AppError> {
-        self.get_trashed_with(&self.pool, id).await
+    pub async fn get_trashed(
+        &self,
+        root_id: Uuid,
+        id: Uuid,
+    ) -> Result<Option<FileEntry>, AppError> {
+        self.get_trashed_with(&self.pool, root_id, id).await
     }
 
     #[instrument(skip(self, executor), err(Debug))]
     pub async fn get_trashed_with<'e, E>(
         &self,
         executor: E,
+        root_id: Uuid,
         id: Uuid,
     ) -> Result<Option<FileEntry>, AppError>
     where
@@ -60,18 +65,23 @@ impl TrashRepository {
                 f.updated_at
             FROM trashed_files f
             LEFT JOIN file_metadata m ON m.file_id = f.id
-            WHERE f.id = $1
+            WHERE f.root_id = $1 AND f.id = $2
             "#,
         )
+        .bind(root_id)
         .bind(id)
         .fetch_optional(executor)
         .await
         .map_err(AppError::from)
     }
 
-    /// Trashed rows for every id in `ids`. Missing ids are omitted.
+    /// Trashed rows for every id in `ids` within `root_id`. Missing ids are omitted.
     #[instrument(skip(self, ids), err(Debug))]
-    pub async fn get_trashed_many(&self, ids: &[Uuid]) -> Result<Vec<FileEntry>, AppError> {
+    pub async fn get_trashed_many(
+        &self,
+        root_id: Uuid,
+        ids: &[Uuid],
+    ) -> Result<Vec<FileEntry>, AppError> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -96,9 +106,12 @@ impl TrashRepository {
                 f.updated_at
             FROM trashed_files f
             LEFT JOIN file_metadata m ON m.file_id = f.id
-            WHERE f.id IN (
+            WHERE f.root_id =
             "#,
         );
+
+        query.push_bind(root_id);
+        query.push(" AND f.id IN (");
 
         {
             let mut selected = query.separated(", ");
@@ -203,7 +216,9 @@ impl TrashRepository {
 
         let removed: HashSet<Uuid> = trashed.iter().map(|file| file.id).collect();
 
-        let mut delete = QueryBuilder::<Db>::new("DELETE FROM files WHERE id IN (");
+        let mut delete = QueryBuilder::<Db>::new("DELETE FROM files WHERE root_id = ");
+        delete.push_bind(root_id);
+        delete.push(" AND id IN (");
         {
             let mut selected = delete.separated(", ");
             for id in &removed {
@@ -264,22 +279,6 @@ impl TrashRepository {
         Ok(())
     }
 
-    /// Root of one trashed row.
-    #[instrument(skip(self), err(Debug))]
-    pub async fn get_file_root_id(&self, id: Uuid) -> Result<Option<Uuid>, AppError> {
-        sqlx::query_scalar!(
-            r#"
-            SELECT root_id AS "root_id: Uuid"
-            FROM trashed_files
-            WHERE id = $1
-            "#,
-            id
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(AppError::from)
-    }
-
     /// Delete `id` and its descendants from `trashed_files`. Returns the removed rows.
     ///
     /// Does not touch `file_metadata` because the same IDs are reused on restore.
@@ -335,7 +334,9 @@ impl TrashRepository {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         }
 
-        let mut delete = QueryBuilder::<Db>::new("DELETE FROM trashed_files WHERE id IN (");
+        let mut delete = QueryBuilder::<Db>::new("DELETE FROM trashed_files WHERE root_id = ");
+        delete.push_bind(root_id);
+        delete.push(" AND id IN (");
         {
             let mut selected = delete.separated(", ");
             for row in &restored {
@@ -397,18 +398,20 @@ impl TrashRepository {
         Ok(restored)
     }
 
-    /// Delete trashed rows for `ids`. Returns the ids that were actually removed.
+    /// Delete trashed rows for `ids` in `root_id`. Returns the ids that were actually removed.
     ///
     /// Also removes matching `file_metadata` rows (hard delete).
     #[instrument(skip(self, ids), err(Debug))]
-    pub async fn delete_many(&self, ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
+    pub async fn delete_many(&self, root_id: Uuid, ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut tx = self.pool.begin().await?;
 
-        let mut query = QueryBuilder::<Db>::new("DELETE FROM trashed_files WHERE id IN (");
+        let mut query = QueryBuilder::<Db>::new("DELETE FROM trashed_files WHERE root_id = ");
+        query.push_bind(root_id);
+        query.push(" AND id IN (");
         {
             let mut selected = query.separated(", ");
             for id in ids {
@@ -445,7 +448,9 @@ impl TrashRepository {
         sqlx::query_as!(
             FileRef,
             r#"
-            SELECT id AS "id: Uuid"
+            SELECT
+                id AS "id: Uuid",
+                root_id AS "root_id: Uuid"
             FROM trashed_files
             WHERE root_id = $1
             "#,
@@ -467,18 +472,20 @@ impl TrashRepository {
             FileRef,
             r#"
             WITH RECURSIVE tree AS (
-                SELECT id
+                SELECT id, root_id
                 FROM trashed_files
                 WHERE id = $1
                   AND root_id = $2
 
                 UNION ALL
 
-                SELECT child.id
+                SELECT child.id, child.root_id
                 FROM trashed_files child
                 JOIN tree parent ON child.parent = parent.id
             )
-            SELECT id AS "id!: Uuid"
+            SELECT
+                id AS "id!: Uuid",
+                root_id AS "root_id!: Uuid"
             FROM tree
             "#,
             id,
@@ -498,7 +505,9 @@ impl TrashRepository {
         sqlx::query_as!(
             FileRef,
             r#"
-            SELECT id AS "id: Uuid"
+            SELECT
+                id AS "id: Uuid",
+                root_id AS "root_id: Uuid"
             FROM trashed_files
             WHERE trashed_at < $1
             "#,

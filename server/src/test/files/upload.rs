@@ -65,8 +65,7 @@ mod upload {
             .services
             .files
             .create_directory(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
@@ -79,8 +78,7 @@ mod upload {
             .services
             .files
             .create_directory(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
@@ -96,7 +94,7 @@ mod upload {
         let listed = state
             .services
             .files
-            .list(&session.user, root, None)
+            .list(&super::super::ctx(state, &session.user, root).await, None)
             .await
             .unwrap();
         assert_eq!(
@@ -180,8 +178,7 @@ mod upload {
             .services
             .files
             .create_directory(
-                &session.user,
-                root,
+                &super::super::ctx(state, &session.user, root).await,
                 CreateDirectory {
                     parent: None,
                     name: "Inbox".into(),
@@ -194,7 +191,10 @@ mod upload {
         let mut first = state
             .services
             .files
-            .start_upload(&session.user, root, "a.txt")
+            .start_upload(
+                &super::super::ctx(state, &session.user, root).await,
+                "a.txt",
+            )
             .await
             .unwrap();
         first.write(b"a").await.unwrap();
@@ -203,7 +203,10 @@ mod upload {
         let mut second = state
             .services
             .files
-            .start_upload(&session.user, root, "b.txt")
+            .start_upload(
+                &super::super::ctx(state, &session.user, root).await,
+                "b.txt",
+            )
             .await
             .unwrap();
         second.write(b"b").await.unwrap();
@@ -212,9 +215,8 @@ mod upload {
         let created = state
             .services
             .files
-            .finish_upload_all(
-                &session.user,
-                root,
+            .finish_upload(
+                &super::super::ctx(state, &session.user, root).await,
                 Some(folder.id),
                 vec![],
                 vec![(first, Some(folder.id)), (second, Some(folder.id))],
@@ -228,7 +230,10 @@ mod upload {
         let listed = state
             .services
             .files
-            .list(&session.user, root, Some(folder.id))
+            .list(
+                &super::super::ctx(state, &session.user, root).await,
+                Some(folder.id),
+            )
             .await
             .unwrap();
         assert_eq!(listed.len(), 2);
@@ -252,7 +257,10 @@ mod upload {
         let mut nested = state
             .services
             .files
-            .start_upload(&session.user, root, "shot.txt")
+            .start_upload(
+                &super::super::ctx(state, &session.user, root).await,
+                "shot.txt",
+            )
             .await
             .unwrap();
         nested.write(b"nested").await.unwrap();
@@ -261,7 +269,10 @@ mod upload {
         let mut top = state
             .services
             .files
-            .start_upload(&session.user, root, "readme.txt")
+            .start_upload(
+                &super::super::ctx(state, &session.user, root).await,
+                "readme.txt",
+            )
             .await
             .unwrap();
         top.write(b"top").await.unwrap();
@@ -270,9 +281,8 @@ mod upload {
         let created = state
             .services
             .files
-            .finish_upload_all(
-                &session.user,
-                root,
+            .finish_upload(
+                &super::super::ctx(state, &session.user, root).await,
                 None,
                 vec![
                     CreateDirectory::new(photos, "Photos".into(), None),
@@ -296,7 +306,10 @@ mod upload {
         let under_photos = state
             .services
             .files
-            .list(&session.user, root, Some(photos))
+            .list(
+                &super::super::ctx(state, &session.user, root).await,
+                Some(photos),
+            )
             .await
             .unwrap();
         assert_eq!(under_photos.len(), 2);
@@ -314,7 +327,10 @@ mod upload {
         let under_album = state
             .services
             .files
-            .list(&session.user, root, Some(album))
+            .list(
+                &super::super::ctx(state, &session.user, root).await,
+                Some(album),
+            )
             .await
             .unwrap();
         assert_eq!(under_album.len(), 1);

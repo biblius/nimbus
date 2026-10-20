@@ -33,6 +33,7 @@ pub struct DeletionResult {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PendingDeletion {
     pub file_id: Uuid,
+    pub root_id: Uuid,
     pub origin: FileTable,
 }
 
@@ -42,6 +43,7 @@ impl PendingDeletion {
             .iter()
             .map(|file| Self {
                 file_id: file.id,
+                root_id: file.root_id,
                 origin,
             })
             .collect()
@@ -192,18 +194,37 @@ impl DeletionQueue {
     ) -> Result<(), AppError> {
         let mut failed = false;
 
-        let mut live_ids = Vec::new();
-        let mut trash_ids = Vec::new();
+        // Group by root so deletes hit `(root_id, id)` indexes.
+        let mut live_by_root: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        let mut trash_by_root: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
 
         for entry in files.iter() {
             match entry.origin {
-                FileTable::Live => live_ids.push(entry.file_id),
-                FileTable::Trashed => trash_ids.push(entry.file_id),
+                FileTable::Live => live_by_root
+                    .entry(entry.root_id)
+                    .or_default()
+                    .push(entry.file_id),
+                FileTable::Trashed => trash_by_root
+                    .entry(entry.root_id)
+                    .or_default()
+                    .push(entry.file_id),
             }
         }
 
-        let live = self.repository.files.get_live_many(&live_ids).await?;
-        let trashed = self.repository.trash.get_trashed_many(&trash_ids).await?;
+        let mut live = Vec::new();
+        for (root_id, ids) in &live_by_root {
+            live.extend(self.repository.files.get_live_many(*root_id, ids).await?);
+        }
+
+        let mut trashed = Vec::new();
+        for (root_id, ids) in &trash_by_root {
+            trashed.extend(
+                self.repository
+                    .trash
+                    .get_trashed_many(*root_id, ids)
+                    .await?,
+            );
+        }
 
         let cap = live.len() + trashed.len();
 
@@ -215,10 +236,13 @@ impl DeletionQueue {
             },
         );
 
-        let deleted_live = self.repository.files.delete_many(&live_ids).await?;
-        let deleted_trash = self.repository.trash.delete_many(&trash_ids).await?;
-
-        let deleted: HashSet<Uuid> = deleted_live.into_iter().chain(deleted_trash).collect();
+        let mut deleted = HashSet::new();
+        for (root_id, ids) in &live_by_root {
+            deleted.extend(self.repository.files.delete_many(*root_id, ids).await?);
+        }
+        for (root_id, ids) in &trash_by_root {
+            deleted.extend(self.repository.trash.delete_many(*root_id, ids).await?);
+        }
 
         let mut content_hashes = HashSet::new();
         let mut preview_hashes = HashSet::new();

@@ -31,10 +31,7 @@ mod trash {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                root,
-                TrashFiles {
+            .delete_many(&super::super::ctx(state, &session.user, root).await, TrashFiles {
                     ids: vec![first.id, second.id, second.id],
                 },
             )
@@ -45,7 +42,7 @@ mod trash {
             state
                 .services
                 .files
-                .content_for_download(&session.user, first.id)
+                .content_for_download(&super::super::ctx(state, &session.user, root).await, first.id)
                 .await,
             Err(AppError::ResourceMissing(_))
         ));
@@ -53,7 +50,7 @@ mod trash {
             state
                 .services
                 .files
-                .content_for_download(&session.user, second.id)
+                .content_for_download(&super::super::ctx(state, &session.user, root).await, second.id)
                 .await,
             Err(AppError::ResourceMissing(_))
         ));
@@ -61,7 +58,7 @@ mod trash {
             state
                 .services
                 .files
-                .content_for_download(&session.user, kept.id)
+                .content_for_download(&super::super::ctx(state, &session.user, root).await, kept.id)
                 .await
                 .is_ok()
         );
@@ -74,10 +71,7 @@ mod trash {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                root,
-                TrashFiles {
+            .delete_many(&super::super::ctx(state, &session.user, root).await, TrashFiles {
                     ids: vec![first.id, kept.id, foreign.id],
                 },
             )
@@ -88,7 +82,7 @@ mod trash {
             state
                 .services
                 .files
-                .content_for_download(&session.user, kept.id)
+                .content_for_download(&super::super::ctx(state, &session.user, root).await, kept.id)
                 .await,
             Err(AppError::ResourceMissing(_))
         ));
@@ -96,7 +90,7 @@ mod trash {
             state
                 .services
                 .files
-                .content_for_download(&bob.user, foreign.id)
+                .content_for_download(&super::super::ctx(state, &bob.user, other).await, foreign.id)
                 .await
                 .is_ok()
         );
@@ -112,10 +106,7 @@ mod trash {
         let notes = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "notes".into(),
                     ..Default::default()
@@ -135,10 +126,7 @@ mod trash {
         let nested = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: Some(notes.id),
                     name: "nested".into(),
                     ..Default::default()
@@ -176,10 +164,7 @@ mod trash {
         let archive = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: Some(notes.id),
                     name: "archive".into(),
                     ..Default::default()
@@ -199,10 +184,7 @@ mod trash {
         let deep = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: Some(archive.id),
                     name: "deep".into(),
                     ..Default::default()
@@ -223,10 +205,7 @@ mod trash {
         let kept = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "kept".into(),
                     ..Default::default()
@@ -247,10 +226,7 @@ mod trash {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                root,
-                TrashFiles {
+            .delete_many(&super::super::ctx(state, &session.user, root).await, TrashFiles {
                     ids: vec![
                         notes.id, gone.id, loose.id, inner.id, buried.id, archive.id, deep.id,
                     ],
@@ -262,7 +238,7 @@ mod trash {
         let tree = state
             .services
             .trash
-            .get_trash_tree(&session.user, root)
+            .get_trash_tree(&super::super::ctx(state, &session.user, root).await)
             .await
             .unwrap();
         assert_eq!(tree.id, root);
@@ -394,10 +370,7 @@ mod trash {
         let inbox = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "inbox".into(),
                     ..Default::default()
@@ -408,10 +381,7 @@ mod trash {
         let notes = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "notes".into(),
                     ..Default::default()
@@ -433,10 +403,7 @@ mod trash {
         state
             .services
             .files
-            .delete_many(
-                &session.user,
-                root,
-                TrashFiles {
+            .delete_many(&super::super::ctx(state, &session.user, root).await, TrashFiles {
                     ids: vec![notes.id, loose.id],
                 },
             )
@@ -446,10 +413,7 @@ mod trash {
         state
             .services
             .trash
-            .restore_all(
-                &session.user,
-                root,
-                RestoreFile {
+            .restore_all(&super::super::ctx(state, &session.user, root).await, RestoreFile {
                     parent: Some(inbox.id),
                 },
             )
@@ -459,7 +423,7 @@ mod trash {
         let trash = state
             .services
             .trash
-            .get_trash_tree(&session.user, root)
+            .get_trash_tree(&super::super::ctx(state, &session.user, root).await)
             .await
             .unwrap();
         assert!(trash.children.is_empty());
@@ -467,7 +431,7 @@ mod trash {
         let restored_notes = state
             .services
             .files
-            .metadata(&session.user, notes.id)
+            .metadata(&super::super::ctx(state, &session.user, root).await, notes.id)
             .await
             .unwrap();
         assert_eq!(restored_notes.parent, Some(inbox.id));
@@ -475,7 +439,7 @@ mod trash {
         let restored_loose = state
             .services
             .files
-            .metadata(&session.user, loose.id)
+            .metadata(&super::super::ctx(state, &session.user, root).await, loose.id)
             .await
             .unwrap();
         assert_eq!(restored_loose.parent, Some(inbox.id));
@@ -483,7 +447,7 @@ mod trash {
         let restored_leaf = state
             .services
             .files
-            .metadata(&session.user, leaf.id)
+            .metadata(&super::super::ctx(state, &session.user, root).await, leaf.id)
             .await
             .unwrap();
         assert_eq!(restored_leaf.parent, Some(notes.id));
@@ -498,10 +462,7 @@ mod trash {
         let notes = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "notes".into(),
                     ..Default::default()
@@ -529,7 +490,7 @@ mod trash {
         state
             .services
             .files
-            .delete(&session.user, inside.id)
+            .delete(&super::super::ctx(state, &session.user, root).await, inside.id)
             .await
             .unwrap();
 
@@ -551,10 +512,7 @@ mod trash {
         let missing_folder = state
             .services
             .trash
-            .restore(
-                &session.user,
-                root,
-                inside.id,
+            .restore(&super::super::ctx(state, &session.user, root).await, inside.id,
                 RestoreFile {
                     parent: Some(Uuid::new_v4()),
                 },
@@ -565,10 +523,7 @@ mod trash {
         state
             .services
             .trash
-            .restore(
-                &session.user,
-                root,
-                inside.id,
+            .restore(&super::super::ctx(state, &session.user, root).await, inside.id,
                 RestoreFile {
                     parent: Some(notes.id),
                 },
@@ -579,7 +534,7 @@ mod trash {
         let back = state
             .services
             .files
-            .metadata(&session.user, inside.id)
+            .metadata(&super::super::ctx(state, &session.user, root).await, inside.id)
             .await
             .unwrap();
         assert_eq!(back.parent, Some(notes.id));
@@ -588,21 +543,21 @@ mod trash {
         state
             .services
             .files
-            .delete(&session.user, notes.id)
+            .delete(&super::super::ctx(state, &session.user, root).await, notes.id)
             .await
             .unwrap();
 
         state
             .services
             .trash
-            .restore(&session.user, root, inside.id, RestoreFile { parent: None })
+            .restore(&super::super::ctx(state, &session.user, root).await, inside.id, RestoreFile { parent: None })
             .await
             .unwrap();
 
         let moved = state
             .services
             .files
-            .metadata(&session.user, inside.id)
+            .metadata(&super::super::ctx(state, &session.user, root).await, inside.id)
             .await
             .unwrap();
         assert_eq!(moved.parent, None);
@@ -611,10 +566,7 @@ mod trash {
         let boxed = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "box".into(),
                     ..Default::default()
@@ -635,21 +587,21 @@ mod trash {
         state
             .services
             .files
-            .delete(&session.user, boxed.id)
+            .delete(&super::super::ctx(state, &session.user, root).await, boxed.id)
             .await
             .unwrap();
 
         state
             .services
             .trash
-            .restore(&session.user, root, boxed.id, RestoreFile { parent: None })
+            .restore(&super::super::ctx(state, &session.user, root).await, boxed.id, RestoreFile { parent: None })
             .await
             .unwrap();
 
         let restored_leaf = state
             .services
             .files
-            .metadata(&session.user, leaf.id)
+            .metadata(&super::super::ctx(state, &session.user, root).await, leaf.id)
             .await
             .unwrap();
         assert_eq!(restored_leaf.parent, Some(boxed.id));
@@ -691,7 +643,7 @@ mod trash {
             let files = files.clone();
             async move {
                 matches!(
-                    files.get_live(file.id).await,
+                    files.get_live(root, file.id).await,
                     Ok(Some(row))
                         if row.metadata.preview_64.is_some()
                 )
@@ -700,7 +652,7 @@ mod trash {
         .await;
 
         let preview_hash = files
-            .get_live(file.id)
+            .get_live(root, file.id)
             .await
             .unwrap()
             .expect("live row")
@@ -711,14 +663,14 @@ mod trash {
         state
             .services
             .files
-            .delete(&session.user, file.id)
+            .delete(&super::super::ctx(state, &session.user, root).await, file.id)
             .await
             .unwrap();
 
         let tree = state
             .services
             .trash
-            .get_trash_tree(&session.user, root)
+            .get_trash_tree(&super::super::ctx(state, &session.user, root).await)
             .await
             .unwrap();
         let node = tree
@@ -737,9 +689,7 @@ mod trash {
         let preview = state
             .services
             .files
-            .preview(
-                &session.user,
-                file.id,
+            .preview(&super::super::ctx(state, &session.user, root).await, file.id,
                 crate::file::model::PreviewSize::Icon,
             )
             .await

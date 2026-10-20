@@ -240,7 +240,6 @@ async fn build_services(
     let trash = TrashFileService::new(
         repository.trash.clone(),
         repository.files.clone(),
-        repository.folders.clone(),
         Transactor::new(pool),
     );
     let share = crate::file::service::ShareService::new(repository.share.clone(), storage.clone());
@@ -327,20 +326,18 @@ pub async fn submit(
     root: Uuid,
     files: Vec<(&str, &[u8])>,
 ) -> Vec<Result<FileEntry, AppError>> {
-    // Mirrors the router: check access once before staging / finish_upload_all.
-    if let Err(error) = state.services.files.accessible(user, root).await {
+    let ctx = match state.services.files.accessible_root(user, root).await {
+        Ok(ctx) => ctx,
+        Err(error) => return vec![Err(error)],
+    };
+    if let Err(error) = ctx.require(crate::file::AccessMode::WRITE) {
         return vec![Err(error)];
     }
 
     let mut staged = Vec::with_capacity(files.len());
 
     for (name, bytes) in files {
-        let mut writer = match state
-            .services
-            .files
-            .start_upload(user, root, name)
-            .await
-        {
+        let mut writer = match state.services.files.start_upload(&ctx, name).await {
             Ok(writer) => writer,
             Err(error) => return vec![Err(error)],
         };
@@ -351,7 +348,7 @@ pub async fn submit(
     match state
         .services
         .files
-        .finish_upload_all(user, root, None, vec![], staged)
+        .finish_upload(&ctx, None, vec![], staged)
         .await
     {
         Ok(entries) => entries.into_iter().map(Ok).collect(),

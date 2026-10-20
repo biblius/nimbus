@@ -114,57 +114,63 @@ VALUES
     timestamptz '2026-01-01 00:00:00+00'
   ) ON CONFLICT (id) DO NOTHING;
 
+-- access_mode 3 = write | share (AccessMode::DEFAULT in the app).
 -- Seed shared: seed-01 .. seed-15
 INSERT INTO
-  user_folders (root_id, user_id)
+  user_folders (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c0',
   (
     '00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0')
-  )::uuid
+  )::uuid,
+  3
 FROM
   generate_series(1, 15) AS n ON CONFLICT (root_id, user_id) DO NOTHING;
 
 -- Team Alpha: seed-01 .. seed-05
 INSERT INTO
-  user_folders (root_id, user_id)
+  user_folders (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c2',
   (
     '00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0')
-  )::uuid
+  )::uuid,
+  3
 FROM
   generate_series(1, 5) AS n ON CONFLICT (root_id, user_id) DO NOTHING;
 
 -- Team Beta: seed-04 .. seed-10 (overlaps Alpha)
 INSERT INTO
-  user_folders (root_id, user_id)
+  user_folders (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c3',
   (
     '00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0')
-  )::uuid
+  )::uuid,
+  3
 FROM
   generate_series(4, 10) AS n ON CONFLICT (root_id, user_id) DO NOTHING;
 
 -- Design: seed-11 .. seed-15
 INSERT INTO
-  user_folders (root_id, user_id)
+  user_folders (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c4',
   (
     '00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0')
-  )::uuid
+  )::uuid,
+  3
 FROM
   generate_series(11, 15) AS n ON CONFLICT (root_id, user_id) DO NOTHING;
 
 -- All hands: seed-01 .. seed-20
 INSERT INTO
-  user_folders (root_id, user_id)
+  user_folders (root_id, user_id, access_mode)
 SELECT
   '00000000-0000-4000-8000-0000000000c5',
   (
     '00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0')
-  )::uuid
+  )::uuid,
+  3
 FROM
   generate_series(1, 20) AS n ON CONFLICT (root_id, user_id) DO NOTHING;

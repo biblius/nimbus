@@ -23,10 +23,7 @@ mod tree {
         let notes = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "notes".into(),
                     ..Default::default()
@@ -37,10 +34,7 @@ mod tree {
         let nested = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: Some(notes.id),
                     name: "nested".into(),
                     ..Default::default()
@@ -51,10 +45,7 @@ mod tree {
         let deeper = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: Some(nested.id),
                     name: "deeper".into(),
                     ..Default::default()
@@ -123,10 +114,7 @@ mod tree {
         let notes = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "notes".into(),
                     ..Default::default()
@@ -146,10 +134,7 @@ mod tree {
         let nested = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: Some(notes.id),
                     name: "nested".into(),
                     ..Default::default()
@@ -169,10 +154,7 @@ mod tree {
         let deeper = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: Some(nested.id),
                     name: "deeper".into(),
                     ..Default::default()
@@ -218,10 +200,7 @@ mod tree {
         let notes = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: None,
                     name: "notes".into(),
                     ..Default::default()
@@ -234,10 +213,7 @@ mod tree {
         let nested = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: Some(notes.id),
                     name: "nested".into(),
                     ..Default::default()
@@ -249,10 +225,7 @@ mod tree {
         let empty = state
             .services
             .files
-            .create_directory(
-                &session.user,
-                root,
-                CreateDirectory {
+            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
                     parent: Some(notes.id),
                     name: "empty".into(),
                     ..Default::default()
@@ -273,7 +246,7 @@ mod tree {
         let tree = state
             .services
             .files
-            .get_tree(&session.user, root, Some(notes.id))
+            .get_tree(&super::super::ctx(state, &session.user, root).await, Some(notes.id))
             .await
             .unwrap();
         assert_eq!(tree.id, notes.id);
@@ -294,7 +267,7 @@ mod tree {
         let empty_tree = state
             .services
             .files
-            .get_tree(&session.user, root, Some(empty.id))
+            .get_tree(&super::super::ctx(state, &session.user, root).await, Some(empty.id))
             .await
             .unwrap();
         assert_eq!(empty_tree.id, empty.id);
@@ -303,7 +276,7 @@ mod tree {
         let root_tree = state
             .services
             .files
-            .get_tree(&session.user, root, None)
+            .get_tree(&super::super::ctx(state, &session.user, root).await, None)
             .await
             .unwrap();
         assert_eq!(root_tree.id, root);
