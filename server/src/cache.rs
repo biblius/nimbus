@@ -1,27 +1,22 @@
 //! Global process cache.
 //!
-//! Always includes an in-memory store. With the `valkey` feature, Valkey is
-//! tried first and memory is used when Valkey fails.
+//! Always includes an in-memory store. When a Valkey URL is configured, Valkey
+//! is tried first and memory is used when Valkey fails.
 
 mod memory;
-
-#[cfg(feature = "valkey")]
 mod valkey;
 
 use crate::error::AppError;
 
 pub use memory::MemoryCache;
-
-#[cfg(feature = "valkey")]
 pub use valkey::ValkeyCache;
 
 pub type Cache = NimbusCache;
 
-/// Prefer Valkey when compiled in; fall back to the in-memory store on failure.
+/// Prefer Valkey when configured; fall back to the in-memory store on failure.
 #[derive(Clone)]
 pub struct NimbusCache {
     memory: MemoryCache,
-    #[cfg(feature = "valkey")]
     valkey: Option<ValkeyCache>,
 }
 
@@ -29,12 +24,10 @@ impl NimbusCache {
     pub fn new() -> Self {
         Self {
             memory: MemoryCache::new(),
-            #[cfg(feature = "valkey")]
             valkey: None,
         }
     }
 
-    #[cfg(feature = "valkey")]
     pub fn connect(url: &str) -> Result<Self, AppError> {
         Ok(Self {
             memory: MemoryCache::new(),
@@ -43,7 +36,6 @@ impl NimbusCache {
     }
 
     pub async fn set_ex(&self, key: &str, value: &str, ttl_secs: u64) -> Result<(), AppError> {
-        #[cfg(feature = "valkey")]
         if let Some(valkey) = &self.valkey {
             match valkey.set_ex(key, value, ttl_secs).await {
                 Ok(()) => {
@@ -61,7 +53,6 @@ impl NimbusCache {
     }
 
     pub async fn get(&self, key: &str) -> Result<Option<String>, AppError> {
-        #[cfg(feature = "valkey")]
         if let Some(valkey) = &self.valkey {
             match valkey.get(key).await {
                 Ok(value) => {
@@ -79,7 +70,6 @@ impl NimbusCache {
     }
 
     pub async fn get_del(&self, key: &str) -> Result<Option<String>, AppError> {
-        #[cfg(feature = "valkey")]
         if let Some(valkey) = &self.valkey {
             match valkey.get_del(key).await {
                 Ok(value) => {
@@ -97,7 +87,6 @@ impl NimbusCache {
     }
 
     pub async fn del(&self, key: &str) -> Result<(), AppError> {
-        #[cfg(feature = "valkey")]
         if let Some(valkey) = &self.valkey {
             match valkey.del(key).await {
                 Ok(()) => {

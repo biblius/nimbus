@@ -6,11 +6,10 @@ publish = false
 
 [features]
 # Production/release builds omit defaults when needed, e.g.:
-#   cargo build --release --no-default-features --features postgres,valkey
-default = ["postgres", "valkey"]
+#   cargo build --release --no-default-features --features postgres
+default = ["postgres"]
 postgres = ["sqlx/postgres", "sqlx/tls-rustls-aws-lc-rs"]
 sqlite = ["sqlx/sqlite"]
-valkey = ["dep:deadpool-redis"]
 
 [dependencies]
 tokio = { version = "1.53.3", features = [
@@ -60,7 +59,7 @@ lettre = { version = "0.11.23", default-features = false, features = [
   "builder",
   "hostname",
 ] }
-deadpool-redis = { version = "0.23.1", optional = true }
+deadpool-redis = "0.23.1"
 serde_with = "3.24.0"
 infer = "0.22.0"
 tokio-stream = "0.1.19"

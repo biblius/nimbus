@@ -21,7 +21,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY server ./server
 COPY --from=web /src/client/web/dist ./client/web/dist
 
-RUN cargo build --release -p nimbus-server --no-default-features --features postgres,valkey
+RUN cargo build --release -p nimbus-server --no-default-features --features postgres
 
 FROM debian:bookworm-slim
 

@@ -60,11 +60,13 @@ impl AppState {
             .await
             .expect("unable to migrate the database");
 
-        #[cfg(feature = "valkey")]
-        let cache = Cache::connect(&args.valkey_url()).expect("unable to create the valkey pool");
-
-        #[cfg(not(feature = "valkey"))]
-        let cache = Cache::new();
+        let valkey_url = args.valkey_url();
+        let cache = if valkey_url.is_empty() {
+            tracing::info!("VALKEY_URL unset; using in-memory cache");
+            Cache::new()
+        } else {
+            Cache::connect(&valkey_url).expect("unable to create the valkey pool")
+        };
 
         let nimbus_origin: Arc<str> = args.nimbus_origin().trim_end_matches('/').into();
         let rp_origin = webauthn_rs::prelude::Url::parse(&nimbus_origin).unwrap_or_else(|error| {

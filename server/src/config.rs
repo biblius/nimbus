@@ -42,8 +42,7 @@ pub struct StartArgs {
     #[arg(long)]
     db_url: Option<String>,
 
-    /// Valkey URL. Valkey speaks the Redis protocol.
-    #[cfg(feature = "valkey")]
+    /// Valkey URL. Valkey speaks the Redis protocol. Empty uses in-memory cache only.
     #[arg(long)]
     valkey_url: Option<String>,
 
@@ -203,12 +202,7 @@ arg!(
     default "sqlite://./data/nimbus.db?mode=rwc".to_string()
 );
 
-#[cfg(feature = "valkey")]
-arg!(
-    valkey_url,
-    "VALKEY_URL",
-    default "redis://127.0.0.1:6379".to_string()
-);
+arg!(valkey_url, "VALKEY_URL", default String::new());
 
 arg!(upload_dir, "UPLOAD_DIR", default "./data".to_string());
 arg!(preview_dir, "PREVIEW_DIR", default "./preview".to_string());
@@ -266,8 +260,7 @@ impl fmt::Display for StartArgs {
         writeln!(f, "cookie_secure: {}", self.cookie_secure())?;
         #[cfg(debug_assertions)]
         writeln!(f, "db_url: {}", self.db_url())?;
-        #[cfg(feature = "valkey")]
-        writeln!(f, "valkey_url: {}", self.valkey_url())?;
+        writeln!(f, "valkey_url: {}", show(&self.valkey_url()))?;
         writeln!(f, "upload_dir: {}", self.upload_dir())?;
         writeln!(f, "preview_dir: {}", self.preview_dir())?;
         writeln!(f, "tmp_dir: {}", self.tmp_dir())?;

@@ -1,8 +1,8 @@
 //! Test suites and harness.
 //!
 //! The database engine follows the crate features: `postgres` starts a Postgres
-//! container, `sqlite` uses a temporary file. With `valkey`, tests start a
-//! Valkey container; otherwise the in-memory cache is used.
+//! container, `sqlite` uses a temporary file. Tests always start a Valkey
+//! container for the cache.
 //!
 //! Keep [`TestState`] alive in suitest [`before_all`](suitest::before_all) so
 //! containers are not dropped mid-suite.
@@ -31,13 +31,11 @@ use crate::{
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-#[cfg(any(feature = "postgres", feature = "valkey"))]
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, runners::AsyncRunner};
 
 #[cfg(feature = "postgres")]
 type PostgresContainer = ContainerAsync<GenericImage>;
 
-#[cfg(feature = "valkey")]
 type ValkeyContainer = ContainerAsync<GenericImage>;
 
 /// Application services plus the resources that keep the suite's database alive.
@@ -48,7 +46,6 @@ pub struct TestState {
     storage_dir: PathBuf,
     #[cfg(feature = "postgres")]
     _postgres: PostgresContainer,
-    #[cfg(feature = "valkey")]
     _valkey: ValkeyContainer,
     pub queue: DeletionQueueHandle,
 }
@@ -70,11 +67,7 @@ impl TestState {
         #[cfg(feature = "postgres")]
         let (pool, postgres) = init_postgres().await;
 
-        #[cfg(feature = "valkey")]
         let (cache, valkey) = init_valkey().await;
-
-        #[cfg(not(feature = "valkey"))]
-        let cache = Cache::new();
 
         let (services, repository, storage) =
             build_services(pool.clone(), cache.clone(), &storage_dir).await;
@@ -90,7 +83,6 @@ impl TestState {
             storage_dir,
             #[cfg(feature = "postgres")]
             _postgres: postgres,
-            #[cfg(feature = "valkey")]
             _valkey: valkey,
             queue,
         }
@@ -160,7 +152,6 @@ async fn init_postgres() -> (DbPool, PostgresContainer) {
     (pool, postgres)
 }
 
-#[cfg(feature = "valkey")]
 async fn init_valkey() -> (Cache, ValkeyContainer) {
     use testcontainers::core::{IntoContainerPort, WaitFor};
 
