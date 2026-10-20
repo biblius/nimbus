@@ -282,7 +282,7 @@ mod members_service {
             .create_shared(CreateSharedFolder {
                 name: name.into(),
                 quota_bytes: 0,
-                members: members.to_vec(),
+                members: members.iter().copied().map(Into::into).collect(),
             })
             .await
             .unwrap()

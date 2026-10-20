@@ -123,7 +123,7 @@ mod upload {
             .create_shared(CreateSharedFolder {
                 name: "family".into(),
                 quota_bytes: 10,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();
@@ -152,7 +152,7 @@ mod upload {
             .create_shared(CreateSharedFolder {
                 name: "private-share".into(),
                 quota_bytes: 0,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();

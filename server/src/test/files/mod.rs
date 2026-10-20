@@ -40,7 +40,7 @@ pub(super) async fn shared_root(state: &TestState, name: &str, members: &[Uuid])
         .create_shared(CreateSharedFolder {
             name: name.into(),
             quota_bytes: 0,
-            members: members.to_vec(),
+            members: members.iter().copied().map(Into::into).collect(),
         })
         .await
         .unwrap()

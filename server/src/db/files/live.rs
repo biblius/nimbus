@@ -5,6 +5,7 @@ use crate::{
     },
     error::AppError,
     file::{
+        AccessMode,
         format::FileType,
         model::{FileEntry, FileMetadata, FileRef, FileView, MAX_ANCESTOR_DEPTH, Root, RootView},
         tree::FileEntryTree,
@@ -85,6 +86,8 @@ impl FileRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn list_private_roots(&self) -> Result<Vec<RootView>, AppError> {
+        let full = AccessMode::FULL;
+
         sqlx::query_as!(
             RootView,
             r#"
@@ -93,12 +96,14 @@ impl FileRepository {
                 name,
                 quota_bytes AS quota,
                 owner AS "owner?: Uuid",
+                $1 AS "access_mode!: AccessMode",
                 created_at AS "created_at: DateTime<Utc>",
                 updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
             WHERE owner IS NOT NULL
             ORDER BY name
-            "#
+            "#,
+            full as _
         )
         .fetch_all(&self.pool)
         .await
@@ -107,6 +112,8 @@ impl FileRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn list_shared_roots(&self) -> Result<Vec<RootView>, AppError> {
+        let full = AccessMode::FULL;
+
         sqlx::query_as!(
             RootView,
             r#"
@@ -115,12 +122,14 @@ impl FileRepository {
                 name,
                 quota_bytes AS quota,
                 owner AS "owner?: Uuid",
+                $1 AS "access_mode!: AccessMode",
                 created_at AS "created_at: DateTime<Utc>",
                 updated_at AS "updated_at: DateTime<Utc>"
             FROM roots
             WHERE owner IS NULL
             ORDER BY name
-            "#
+            "#,
+            full as _
         )
         .fetch_all(&self.pool)
         .await
@@ -130,26 +139,31 @@ impl FileRepository {
     /// Private root plus every shared root this user belongs to. The private root comes first.
     #[instrument(skip(self), err(Debug))]
     pub async fn list_accessible_roots(&self, user_id: Uuid) -> Result<Vec<RootView>, AppError> {
+        let full = AccessMode::FULL;
+
         sqlx::query_as!(
             RootView,
             r#"
             SELECT
-                id AS "id: Uuid",
-                name,
-                quota_bytes AS quota,
-                owner AS "owner?: Uuid",
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
-            FROM roots
-            WHERE owner = $1
-            OR id IN (
-                 SELECT root_id
-                 FROM user_folders
-                 WHERE user_id = $1
-            )
-            ORDER BY owner IS NULL, name
+                r.id AS "id: Uuid",
+                r.name,
+                r.quota_bytes AS quota,
+                r.owner AS "owner?: Uuid",
+                CASE
+                    WHEN r.owner = $1 THEN $2
+                    ELSE uf.access_mode
+                END AS "access_mode!: AccessMode",
+                r.created_at AS "created_at: DateTime<Utc>",
+                r.updated_at AS "updated_at: DateTime<Utc>"
+            FROM roots r
+            LEFT JOIN user_folders uf
+                ON uf.root_id = r.id AND uf.user_id = $1
+            WHERE r.owner = $1
+               OR uf.user_id IS NOT NULL
+            ORDER BY r.owner IS NULL, r.name
             "#,
-            user_id
+            user_id,
+            full as _
         )
         .fetch_all(&self.pool)
         .await
@@ -163,6 +177,21 @@ impl FileRepository {
         name: &str,
         quota_bytes: i64,
     ) -> Result<Root, AppError> {
+        self.update_root_with(&self.pool, id, name, quota_bytes)
+            .await
+    }
+
+    #[instrument(skip(self, executor), err(Debug))]
+    pub async fn update_root_with<'e, E>(
+        &self,
+        executor: E,
+        id: Uuid,
+        name: &str,
+        quota_bytes: i64,
+    ) -> Result<Root, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
         let now = Utc::now();
 
         sqlx::query_as!(
@@ -187,7 +216,7 @@ impl FileRepository {
             now,
             id
         )
-        .fetch_optional(&self.pool)
+        .fetch_optional(executor)
         .await?
         .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))
     }

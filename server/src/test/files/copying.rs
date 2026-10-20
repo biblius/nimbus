@@ -27,7 +27,7 @@ mod copying {
             .create_shared(CreateSharedFolder {
                 name: "team-copy".into(),
                 quota_bytes: 0,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();
@@ -95,7 +95,7 @@ mod copying {
             .create_shared(CreateSharedFolder {
                 name: "many-copy".into(),
                 quota_bytes: 0,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();
@@ -151,7 +151,7 @@ mod copying {
             .create_shared(CreateSharedFolder {
                 name: "tree-copy".into(),
                 quota_bytes: 0,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();
@@ -235,7 +235,7 @@ mod copying {
             .create_shared(CreateSharedFolder {
                 name: "overlap-copy".into(),
                 quota_bytes: 0,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();
@@ -363,7 +363,7 @@ mod copying {
             .create_shared(CreateSharedFolder {
                 name: "locked-copy".into(),
                 quota_bytes: 0,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();
@@ -397,7 +397,7 @@ mod copying {
             .create_shared(CreateSharedFolder {
                 name: "tiny-copy".into(),
                 quota_bytes: 4,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();

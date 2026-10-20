@@ -262,7 +262,7 @@ mod roots {
             .create_shared(CreateSharedFolder {
                 name: "old-name".into(),
                 quota_bytes: 10,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();
@@ -294,7 +294,7 @@ mod roots {
                 UpdateRoot {
                     name: "new-name".into(),
                     quota_bytes: 64,
-                    members: vec![ada.id],
+                    members: vec![ada.id.into()],
                 },
             )
             .await
@@ -331,7 +331,7 @@ mod roots {
                 UpdateRoot {
                     name: "shared-attempt".into(),
                     quota_bytes: 0,
-                    members: vec![ada.id, bob.id],
+                    members: vec![ada.id.into(), bob.id.into()],
                 },
             )
             .await;

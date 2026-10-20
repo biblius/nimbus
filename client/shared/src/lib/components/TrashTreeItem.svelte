@@ -16,6 +16,7 @@
     node,
     depth,
     expanded,
+    canWrite = true,
     onToggle,
     onRestore,
     onDelete,
@@ -24,10 +25,14 @@
     node: FileTree;
     depth: number;
     expanded: boolean;
+    /** False when the caller lacks WRITE on this root. */
+    canWrite?: boolean;
     onToggle: () => void;
     onRestore: () => void;
     onDelete: () => void;
   } = $props();
+
+  const writeDeniedTitle = "You do not have write access";
 
   const hasChildren = $derived(node.children.length > 0);
   const showThumbnail = $derived(
@@ -138,26 +143,34 @@
   </div>
 
   <div class="flex items-center">
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      class="text-muted-foreground"
-      aria-label="Restore {node.name}"
-      onclick={onRestore}
-    >
-      <RotateCcw size={16} />
-      Restore
-    </Button>
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      class="text-muted-foreground hover:text-destructive"
-      aria-label="Permanently delete {node.name}"
-      onclick={onDelete}
-    >
-      <Trash size={16} />
-    </Button>
+    <span class="inline-flex" title={canWrite ? undefined : writeDeniedTitle}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="text-muted-foreground"
+        disabled={!canWrite}
+        aria-label={canWrite ? `Restore ${node.name}` : writeDeniedTitle}
+        onclick={onRestore}
+      >
+        <RotateCcw size={16} />
+        Restore
+      </Button>
+    </span>
+    <span class="inline-flex" title={canWrite ? undefined : writeDeniedTitle}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        class="text-muted-foreground hover:text-destructive"
+        disabled={!canWrite}
+        aria-label={canWrite
+          ? `Permanently delete ${node.name}`
+          : writeDeniedTitle}
+        onclick={onDelete}
+      >
+        <Trash size={16} />
+      </Button>
+    </span>
   </div>
 </div>

@@ -4,7 +4,7 @@
   import { trackDeletion } from "../deletion.svelte";
   import { session } from "../session.svelte";
   import { toastError } from "../toast";
-  import type { FileTree, Root } from "../types";
+  import { hasWriteAccess, type FileTree, type Root } from "../types";
   import { cn } from "../utils";
   import DeletionBanner from "./DeletionBanner.svelte";
   import DestinationPicker, {
@@ -70,6 +70,10 @@
   }
 
   function openPicker(root: Root, node: FileTree) {
+    if (!hasWriteAccess(root)) {
+      return;
+    }
+
     destination = {
       roots: [root],
       title: `Restore ${node.name}`,
@@ -88,6 +92,10 @@
   }
 
   function openRestoreAll(root: Root) {
+    if (!hasWriteAccess(root)) {
+      return;
+    }
+
     destination = {
       roots: [root],
       title: "Restore all",
@@ -106,7 +114,7 @@
   }
 
   async function confirmDelete() {
-    if (!deleteTarget || deleting) {
+    if (!deleteTarget || deleting || !hasWriteAccess(deleteTarget.root)) {
       return;
     }
 
@@ -127,6 +135,7 @@
 </script>
 
 {#snippet rows(root: Root, nodes: FileTree[], depth: number)}
+  {@const canWrite = hasWriteAccess(root)}
   <ul class="divide-y">
     {#each nodes as node (node.id)}
       <li>
@@ -134,10 +143,15 @@
           {root}
           {node}
           {depth}
+          {canWrite}
           expanded={!!expanded[node.id]}
           onToggle={() => toggleNode(node.id)}
           onRestore={() => openPicker(root, node)}
-          onDelete={() => (deleteTarget = { root, node })}
+          onDelete={() => {
+            if (canWrite) {
+              deleteTarget = { root, node };
+            }
+          }}
         />
         {#if expanded[node.id] && node.children.length > 0}
           <div class="border-t">
@@ -205,16 +219,26 @@
             {/if}
 
             {#if hasTrash}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                class="h-8 shrink-0 gap-1.5 text-muted-foreground"
-                onclick={() => openRestoreAll(root)}
+              {@const canWrite = hasWriteAccess(root)}
+              <span
+                class="inline-flex"
+                title={canWrite ? undefined : "You do not have write access"}
               >
-                <RotateCcw size={14} />
-                Restore all
-              </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  class="h-8 shrink-0 gap-1.5 text-muted-foreground"
+                  disabled={!canWrite}
+                  aria-label={canWrite
+                    ? "Restore all"
+                    : "You do not have write access"}
+                  onclick={() => openRestoreAll(root)}
+                >
+                  <RotateCcw size={14} />
+                  Restore all
+                </Button>
+              </span>
             {/if}
           </header>
 

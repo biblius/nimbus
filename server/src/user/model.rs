@@ -175,6 +175,25 @@ pub struct SetQuota {
     pub quota_bytes: i64,
 }
 
+/// One membership to create or keep on a shared root.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddMember {
+    pub user_id: Uuid,
+    /// Bitflags: `WRITE = 1`, `SHARE = 2` (see [`crate::file::AccessMode`]).
+    pub access_mode: crate::file::AccessMode,
+}
+
+#[cfg(test)]
+impl From<Uuid> for AddMember {
+    fn from(user_id: Uuid) -> Self {
+        Self {
+            user_id,
+            access_mode: crate::file::AccessMode::DEFAULT,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Validify)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSharedFolder {
@@ -187,7 +206,7 @@ pub struct CreateSharedFolder {
     pub quota_bytes: i64,
 
     #[validate(length(min = 1, message = "At least one member must be provided"))]
-    pub members: Vec<Uuid>,
+    pub members: Vec<AddMember>,
 }
 
 /// Name, quota, and members of an existing root.
@@ -204,7 +223,7 @@ pub struct UpdateRoot {
     pub quota_bytes: i64,
 
     #[serde(default)]
-    pub members: Vec<Uuid>,
+    pub members: Vec<AddMember>,
 }
 
 /// A user assigned to a shared root.
@@ -215,5 +234,6 @@ pub struct Member {
     pub username: String,
     pub email: Option<String>,
     pub role: Role,
+    pub access_mode: crate::file::AccessMode,
     pub created_at: DateTime<Utc>,
 }

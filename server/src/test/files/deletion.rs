@@ -60,7 +60,7 @@ mod deletion {
             .create_shared(CreateSharedFolder {
                 name: "doomed".into(),
                 quota_bytes: 0,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();
@@ -387,7 +387,7 @@ mod deletion {
             .create_shared(CreateSharedFolder {
                 name: "requeue-me".into(),
                 quota_bytes: 0,
-                members: vec![ada.id],
+                members: vec![ada.id.into()],
             })
             .await
             .unwrap();
@@ -435,7 +435,7 @@ mod deletion {
             .create_shared(CreateSharedFolder {
                 name: "keeps-files".into(),
                 quota_bytes: 0,
-                members: vec![ada.id, bob.id],
+                members: vec![ada.id.into(), bob.id.into()],
             })
             .await
             .unwrap();

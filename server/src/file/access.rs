@@ -4,7 +4,7 @@ use crate::{
 };
 use axum::extract::{FromRequestParts, Path};
 use bitflags::bitflags;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{Database, Decode, Encode, Type, encode::IsNull, error::BoxDynError};
 use uuid::Uuid;
 
@@ -15,6 +15,8 @@ bitflags! {
     /// View access is implicit for any member.
     /// Private roots and admins are treated as having every defined flag.
     /// Unused high bits are reserved for future permissions.
+    ///
+    /// Serialized to clients as the raw `i64` bitfield.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct AccessMode: i64 {
         /// Upload, move, rename, edit, trash, restore, and empty trash.
@@ -25,11 +27,30 @@ bitflags! {
 }
 
 impl AccessMode {
-    /// Default membership grants: write and share.
-    pub const DEFAULT: Self = Self::all();
+    /// Default membership for a root.
+    pub const DEFAULT: Self = Self::WRITE;
 
     /// Every currently defined permission bit (private owners and admins).
     pub const FULL: Self = Self::all();
+}
+
+impl Serialize for AccessMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_i64(self.bits())
+    }
+}
+
+impl<'de> Deserialize<'de> for AccessMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bits = i64::deserialize(deserializer)?;
+        Ok(Self::from_bits_truncate(bits))
+    }
 }
 
 impl Type<Db> for AccessMode {

@@ -11,7 +11,7 @@ use crate::{
         model::{Root, RootAssignment},
     },
     model::{List, PaginationSort, ToSearchColumn},
-    user::model::{Member, Role, UserSearch, UserSort},
+    user::model::{AddMember, Member, Role, UserSearch, UserSort},
 };
 
 #[derive(Clone)]
@@ -27,11 +27,6 @@ impl UserFolderRepository {
     #[instrument(skip(self, assignment), fields(root_id = %assignment.root_id, user_id = %assignment.user_id), err(Debug))]
     pub async fn assign(&self, assignment: RootAssignment) -> Result<(), AppError> {
         self.insert(&self.pool, assignment).await
-    }
-
-    #[instrument(skip(self, user_ids), fields(root_id = %root_id, n = user_ids.len()), err(Debug))]
-    pub async fn assign_many(&self, root_id: Uuid, user_ids: &[Uuid]) -> Result<(), AppError> {
-        self.insert_many(&self.pool, root_id, user_ids).await
     }
 
     #[instrument(skip(self, executor, assignment), fields(root_id = %assignment.root_id, user_id = %assignment.user_id), err(Debug))]
@@ -51,7 +46,8 @@ impl UserFolderRepository {
                 access_mode
             )
             VALUES ($1, $2, $3)
-            ON CONFLICT DO NOTHING
+            ON CONFLICT (root_id, user_id) DO UPDATE SET
+                access_mode = EXCLUDED.access_mode
             "#,
             assignment.root_id,
             assignment.user_id,
@@ -62,35 +58,35 @@ impl UserFolderRepository {
         Ok(())
     }
 
-    /// Assign many users to a root in one statement. Unknown user ids fail the FK.
+    /// Upsert many memberships. Unknown user ids fail the FK.
     ///
-    /// New rows get [`AccessMode::DEFAULT`].
-    #[instrument(skip(self, executor, user_ids), fields(root_id = %root_id, n = user_ids.len()), err(Debug))]
+    /// Existing rows get their `access_mode` replaced.
+    #[instrument(skip(self, executor, members), fields(root_id = %root_id, n = members.len()), err(Debug))]
     pub async fn insert_many<'e, E>(
         &self,
         executor: E,
         root_id: Uuid,
-        user_ids: &[Uuid],
+        members: &[AddMember],
     ) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Db>,
     {
-        if user_ids.is_empty() {
+        if members.is_empty() {
             return Ok(());
         }
-
-        let access_mode = AccessMode::DEFAULT;
 
         let mut query =
             QueryBuilder::<Db>::new("INSERT INTO user_folders (root_id, user_id, access_mode) ");
 
-        query.push_values(user_ids, |mut row, user_id| {
+        query.push_values(members, |mut row, member| {
             row.push_bind(root_id)
-                .push_bind(*user_id)
-                .push_bind(access_mode);
+                .push_bind(member.user_id)
+                .push_bind(member.access_mode);
         });
 
-        query.push(" ON CONFLICT DO NOTHING");
+        query.push(
+            " ON CONFLICT (root_id, user_id) DO UPDATE SET access_mode = EXCLUDED.access_mode",
+        );
 
         query.build().execute(executor).await?;
 
@@ -183,6 +179,7 @@ impl UserFolderRepository {
                 u.username,
                 u.email,
                 u.role,
+                uf.access_mode,
                 u.created_at
             FROM user_folders uf
             JOIN users u ON uf.user_id = u.id
@@ -252,6 +249,7 @@ impl UserFolderRepository {
                 u.username,
                 u.email,
                 u.role AS "role: Role",
+                uf.access_mode AS "access_mode: AccessMode",
                 u.created_at AS "created_at: DateTime<Utc>"
             FROM user_folders uf
             JOIN users u ON uf.user_id = u.id
@@ -290,8 +288,16 @@ impl UserFolderRepository {
     }
 
     /// Drop many memberships in one statement.
-    #[instrument(skip(self, user_ids), fields(root_id = %root_id, n = user_ids.len()), err(Debug))]
-    pub async fn remove_many(&self, root_id: Uuid, user_ids: &[Uuid]) -> Result<(), AppError> {
+    #[instrument(skip(self, executor, user_ids), fields(root_id = %root_id, n = user_ids.len()), err(Debug))]
+    pub async fn remove_many<'e, E>(
+        &self,
+        executor: E,
+        root_id: Uuid,
+        user_ids: &[Uuid],
+    ) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
         if user_ids.is_empty() {
             return Ok(());
         }
@@ -307,7 +313,7 @@ impl UserFolderRepository {
         }
 
         query.push(")");
-        query.build().execute(&self.pool).await?;
+        query.build().execute(executor).await?;
 
         Ok(())
     }

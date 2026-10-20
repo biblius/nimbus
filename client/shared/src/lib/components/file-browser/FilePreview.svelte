@@ -44,6 +44,7 @@
     rootId,
     files: inputFiles,
     fileId,
+    readonly = false,
     onClose,
     onSelect,
     onUpdated,
@@ -52,6 +53,8 @@
     /** Previewable files in display order. */
     files: FileView[];
     fileId: string;
+    /** When true, text preview cannot enter edit/save mode. */
+    readonly?: boolean;
     onClose: () => void;
     onSelect: (fileId: string) => void;
     onUpdated?: (sizeBytes: number) => void;
@@ -617,6 +620,7 @@
           fileId={current.file.id}
           name={current.file.name}
           credentials="include"
+          {readonly}
           {onUpdated}
           bind:editing
         />

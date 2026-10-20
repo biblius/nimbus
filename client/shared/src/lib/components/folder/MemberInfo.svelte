@@ -1,7 +1,8 @@
 <script lang="ts">
   import InfiniteList from "../ui/infinite-list/infinite-list.svelte";
+  import Checkbox from "../ui/checkbox/checkbox.svelte";
   import { session } from "../../session.svelte";
-  import type { Member } from "../../types";
+  import { AccessMode, type Member } from "../../types";
 
   const searchColumns = [
     { value: "username", label: "Username" },
@@ -46,11 +47,31 @@
                   </span>
                 {/if}
               </span>
-              <span
-                class="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground capitalize"
-              >
-                {member.role}
-              </span>
+              <div class="flex shrink-0 items-center gap-3">
+                <label
+                  class="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  <Checkbox
+                    checked={(member.accessMode & AccessMode.WRITE) !== 0}
+                    disabled
+                  />
+                  Write
+                </label>
+                <label
+                  class="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  <Checkbox
+                    checked={(member.accessMode & AccessMode.SHARE) !== 0}
+                    disabled
+                  />
+                  Share
+                </label>
+                <span
+                  class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground capitalize"
+                >
+                  {member.role}
+                </span>
+              </div>
             </li>
           {/each}
         </ul>

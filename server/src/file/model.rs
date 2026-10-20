@@ -299,6 +299,13 @@ pub struct RootView {
     /// `0` means no quota.
     pub quota: i64,
     pub owner: Option<Uuid>,
+    /// Caller's effective [`super::access::AccessMode`] on this root.
+    ///
+    /// Private owners and admins are [`AccessMode::FULL`](super::access::AccessMode::FULL).
+    /// Shared members use their `user_folders.access_mode`.
+    ///
+    /// Admins have this set to full regardless of root.
+    pub access_mode: super::access::AccessMode,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

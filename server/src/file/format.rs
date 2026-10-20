@@ -233,7 +233,8 @@ impl FileType {
     /// Decide the file type from the leading bytes and the filename extension.
     ///
     /// Magic bytes and the extension must name the same format. When the bytes match nothing,
-    /// the extension's format is used. A name with no extension and no magic bytes is plain text.
+    /// the extension's format is used. A name with no extension and no magic bytes is
+    /// [`FileType::Other`] with an empty extension.
     pub fn infer(name: &str, bytes: &[u8]) -> Self {
         static INFER: OnceLock<infer::Infer> = OnceLock::new();
 
@@ -266,27 +267,27 @@ impl FileType {
                 ),
             ) => ext_type,
             // Types infered from bytes always have priority.
-            (Some(byte_type), _) => byte_type,
+            (Some(byte_type), _) => {
+                tracing::debug!(%name, "inferred type from bytes: {byte_type:?}");
+                byte_type
+            }
             // Types inferred from extensions must either be for text
             // files or unhandled files. Text files cannot be inferred
             // from bytes.
             (None, Some(ext_type)) => match ext_type {
-                FileType::Text(_) | FileType::Other(_) => ext_type,
+                FileType::Text(_) => {
+                    tracing::debug!(%name, "inferred text file from ext: {ext_type:?}");
+                    ext_type
+                }
                 // If this is not a text file or unhandled file we must flag it as
                 // an unhandled file by setting it to other.
-                other => {
-                    tracing::warn!(
-                        "file type from bytes does not match extension: {:?}",
-                        other
-                    );
-                    Self::Other("other".into())
+                ty => {
+                    tracing::debug!(%name, "inferred type 'other' from extension: {ty:?}");
+                    Self::Other(ty.format().into())
                 }
             },
-            // If there is no extension nor byte info, we default to unhandled.
-            (None, None) => match ext {
-                Some(ext) => Self::Other(ext),
-                None => Self::Other("other".into()),
-            },
+            // If there is no extension nor byte info, we cannot infer.
+            (None, None) => Self::Other("".into()),
         }
     }
 
@@ -472,7 +473,7 @@ mod tests {
     #[test]
     fn missing_magic_and_extension_is_other() {
         let kind = FileType::infer("README", b"hello");
-        assert_eq!(kind, FileType::Other("other".into()));
+        assert_eq!(kind, FileType::Other("".into()));
         assert_eq!(FileType::from_extension(kind.format()), kind);
     }
 

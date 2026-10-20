@@ -2,6 +2,7 @@
 --
 -- Admin: username `admin`, password `admin`.
 -- 20 users, seed-01 through seed-20. Password is `password`.
+-- Each seed user gets a private root (same as create_user).
 -- Five shared roots with overlapping memberships (see below).
 --
 -- psql "$DATABASE_URL" -f server/seeds/dev.sql
@@ -113,6 +114,30 @@ VALUES
     timestamptz '2026-01-01 00:00:00+00',
     timestamptz '2026-01-01 00:00:00+00'
   ) ON CONFLICT (id) DO NOTHING;
+
+-- Private root per seed user (mirrors create_user).
+INSERT INTO
+  roots (
+    id,
+    name,
+    quota_bytes,
+    owner,
+    created_at,
+    updated_at
+  )
+SELECT
+  (
+    '00000000-0000-4000-8001-' || lpad(to_hex(n), 12, '0')
+  )::uuid,
+  'seed-' || lpad(n::text, 2, '0'),
+  0,
+  (
+    '00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0')
+  )::uuid,
+  timestamptz '2026-01-01 00:00:00+00',
+  timestamptz '2026-01-01 00:00:00+00' + make_interval(mins => n)
+FROM
+  generate_series(1, 20) AS n ON CONFLICT (id) DO NOTHING;
 
 -- access_mode 3 = write | share (AccessMode::DEFAULT in the app).
 -- Seed shared: seed-01 .. seed-15

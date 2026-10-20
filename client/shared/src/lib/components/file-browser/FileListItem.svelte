@@ -45,6 +45,8 @@
     selected,
     multiSelected = false,
     selectMode = false,
+    canWrite = true,
+    canShare = true,
     onSelect,
     onLongSelect,
     onOpen,
@@ -73,7 +75,11 @@
     multiSelected?: boolean;
     /** When true, plain taps toggle and icon clicks do not open/preview. */
     selectMode?: boolean;
-    /** False when there are no other roots/folders to copy into. */
+    /** False when the caller lacks WRITE on the current root. */
+    canWrite?: boolean;
+    /** False when the caller lacks SHARE on the current root. */
+    canShare?: boolean;
+    /** False when there are no writable folders to copy into. */
     canCopy?: boolean;
     onSelect: (event: MouseEvent) => void;
     /** Long-press: enter select mode with this item as the only selection. */
@@ -109,14 +115,32 @@
   const nameAreaClass = $derived(compact ? "min-h-11" : "min-h-14");
   const textClass = $derived(compact ? "text-xs" : "text-sm");
 
+  const writeDeniedTitle = "You do not have write access";
+  const shareDeniedTitle = "You do not have share access";
+
+  function copyMenuTitle(): string {
+    if (canCopy) {
+      return "Copy";
+    }
+    return "There are no writable folders to copy to";
+  }
+
   const fileId = untrack(() => entry.file.id);
   const directory = untrack(() => entry.file.kind === "directory");
-  const draggable = createDraggable({ id: fileId, type: "entry" });
+  const draggable = createDraggable({
+    id: fileId,
+    type: "entry",
+    get disabled() {
+      return !canWrite;
+    },
+  });
   // Files are not drop targets. A folder is the only valid parent.
   const droppable = createDroppable({
     id: fileId,
     accept: "entry",
-    disabled: !directory,
+    get disabled() {
+      return !directory || !canWrite;
+    },
   });
 
   const previewable = $derived(isPreviewable(entry));
@@ -337,6 +361,10 @@
   }
 
   async function beginRename() {
+    if (!canWrite) {
+      return;
+    }
+
     menuOpen = false;
     shareOpen = false;
     renameValue = file.name;
@@ -619,22 +647,16 @@
           <Share2 size={16} />
         </Button>
       {/snippet}
-      {#if canCopy}
-        <MenuItem onclick={onCopy}>
+      <span class="block w-full" title={canCopy ? undefined : copyMenuTitle()}>
+        <MenuItem
+          disabled={!canCopy}
+          aria-label={copyMenuTitle()}
+          onclick={onCopy}
+        >
           <Share2 size={16} />
           Copy
         </MenuItem>
-      {:else}
-        <span
-          class="block w-full"
-          title="There are no other folders to copy to"
-        >
-          <MenuItem disabled aria-label="There are no other folders to copy to">
-            <Share2 size={16} />
-            Copy
-          </MenuItem>
-        </span>
-      {/if}
+      </span>
       {#if file.sharingMode}
         {#if !bulk}
           <MenuItem onclick={onCopyLink}>
@@ -642,27 +664,42 @@
             Copy public link
           </MenuItem>
         {/if}
-        <MenuItem onclick={onUnshare}>
-          <Link2Off size={16} />
-          Stop sharing
-        </MenuItem>
+        <span class="block w-full" title={canShare ? undefined : shareDeniedTitle}>
+          <MenuItem
+            disabled={!canShare}
+            aria-label={canShare ? "Stop sharing" : shareDeniedTitle}
+            onclick={onUnshare}
+          >
+            <Link2Off size={16} />
+            Stop sharing
+          </MenuItem>
+        </span>
       {:else}
-        <MenuItem onclick={onShare}>
-          <LinkIcon size={16} />
-          Create public link
-        </MenuItem>
+        <span class="block w-full" title={canShare ? undefined : shareDeniedTitle}>
+          <MenuItem
+            disabled={!canShare}
+            aria-label={canShare ? "Create public link" : shareDeniedTitle}
+            onclick={onShare}
+          >
+            <LinkIcon size={16} />
+            Create public link
+          </MenuItem>
+        </span>
       {/if}
     </Menu>
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      class="text-muted-foreground hover:text-destructive"
-      aria-label="Delete {name}"
-      onclick={onDelete}
-    >
-      <Trash size={16} />
-    </Button>
+    <span class="inline-flex" title={canWrite ? undefined : writeDeniedTitle}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        class="text-muted-foreground hover:text-destructive"
+        disabled={!canWrite}
+        aria-label={canWrite ? `Delete ${name}` : writeDeniedTitle}
+        onclick={onDelete}
+      >
+        <Trash size={16} />
+      </Button>
+    </span>
   </div>
 </li>
 
@@ -672,15 +709,27 @@
     {bulk ? "Download as zip" : "Download"}
   </MenuItem>
   {#if !bulk}
-    <MenuItem onclick={() => beginRename()}>
-      <Pencil size={16} />
-      Rename
-    </MenuItem>
+    <span class="block w-full" title={canWrite ? undefined : writeDeniedTitle}>
+      <MenuItem
+        disabled={!canWrite}
+        aria-label={canWrite ? "Rename" : writeDeniedTitle}
+        onclick={() => beginRename()}
+      >
+        <Pencil size={16} />
+        Rename
+      </MenuItem>
+    </span>
   {/if}
-  <MenuItem onclick={onMove}>
-    <FolderInput size={16} />
-    Move
-  </MenuItem>
+  <span class="block w-full" title={canWrite ? undefined : writeDeniedTitle}>
+    <MenuItem
+      disabled={!canWrite}
+      aria-label={canWrite ? "Move" : writeDeniedTitle}
+      onclick={onMove}
+    >
+      <FolderInput size={16} />
+      Move
+    </MenuItem>
+  </span>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="relative"
@@ -702,25 +751,16 @@
         role="menu"
         class="absolute top-0 left-full z-50 ml-0.5 w-44 rounded-xl border bg-card p-1 shadow-lg"
       >
-        {#if canCopy}
-          <MenuItem onclick={onCopy}>
+        <span class="block w-full" title={canCopy ? undefined : copyMenuTitle()}>
+          <MenuItem
+            disabled={!canCopy}
+            aria-label={copyMenuTitle()}
+            onclick={onCopy}
+          >
             <Share2 size={16} />
             Copy
           </MenuItem>
-        {:else}
-          <span
-            class="block w-full"
-            title="There are no other folders to copy to"
-          >
-            <MenuItem
-              disabled
-              aria-label="There are no other folders to copy to"
-            >
-              <Share2 size={16} />
-              Copy
-            </MenuItem>
-          </span>
-        {/if}
+        </span>
         {#if file.sharingMode}
           {#if !bulk}
             <MenuItem onclick={onCopyLink}>
@@ -728,25 +768,47 @@
               Copy public link
             </MenuItem>
           {/if}
-          <MenuItem onclick={onUnshare}>
-            <Link2Off size={16} />
-            Stop sharing
-          </MenuItem>
+          <span
+            class="block w-full"
+            title={canShare ? undefined : shareDeniedTitle}
+          >
+            <MenuItem
+              disabled={!canShare}
+              aria-label={canShare ? "Stop sharing" : shareDeniedTitle}
+              onclick={onUnshare}
+            >
+              <Link2Off size={16} />
+              Stop sharing
+            </MenuItem>
+          </span>
         {:else}
-          <MenuItem onclick={onShare}>
-            <LinkIcon size={16} />
-            Create public link
-          </MenuItem>
+          <span
+            class="block w-full"
+            title={canShare ? undefined : shareDeniedTitle}
+          >
+            <MenuItem
+              disabled={!canShare}
+              aria-label={canShare ? "Create public link" : shareDeniedTitle}
+              onclick={onShare}
+            >
+              <LinkIcon size={16} />
+              Create public link
+            </MenuItem>
+          </span>
         {/if}
       </div>
     {/if}
   </div>
   <MenuSeparator />
-  <MenuItem
-    class="text-destructive hover:text-destructive [&_svg]:text-destructive"
-    onclick={onDelete}
-  >
-    <Trash size={16} />
-    Delete
-  </MenuItem>
+  <span class="block w-full" title={canWrite ? undefined : writeDeniedTitle}>
+    <MenuItem
+      class="text-destructive hover:text-destructive [&_svg]:text-destructive"
+      disabled={!canWrite}
+      aria-label={canWrite ? "Delete" : writeDeniedTitle}
+      onclick={onDelete}
+    >
+      <Trash size={16} />
+      Delete
+    </MenuItem>
+  </span>
 </ContextMenu>

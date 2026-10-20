@@ -99,6 +99,8 @@ export type Root = {
   quota: number;
   /** Set for a user's private root. Null for a shared root. */
   owner: string | null;
+  /** Caller's effective access bitflags on this root. See [`AccessMode`]. */
+  accessMode: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -129,19 +131,43 @@ export type ListQuery = {
   sort?: ListSort;
 };
 
+/** Bitflags matching server `AccessMode` (`WRITE = 1`, `SHARE = 2`). */
+export const AccessMode = {
+  WRITE: 1 << 0,
+  SHARE: 1 << 1,
+  /** Default membership: write and share. */
+  DEFAULT: (1 << 0) | (1 << 1),
+} as const;
+
+export function hasWriteAccess(root: { accessMode: number }): boolean {
+  return (root.accessMode & AccessMode.WRITE) !== 0;
+}
+
+export function hasShareAccess(root: { accessMode: number }): boolean {
+  return (root.accessMode & AccessMode.SHARE) !== 0;
+}
+
 /** A user assigned to a shared root. */
 export type Member = {
   id: string;
   username: string;
   email: string | null;
   role: Role;
+  /** Bitflags: see [`AccessMode`]. */
+  accessMode: number;
   createdAt: string;
+};
+
+/** Membership payload when creating or updating a shared root. */
+export type MemberInput = {
+  userId: string;
+  accessMode: number;
 };
 
 export type RootData = {
   name: string;
   quotaBytes: number;
-  members: string[];
+  members: MemberInput[];
 };
 
 export type CreateUserInput = {

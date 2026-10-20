@@ -10,6 +10,7 @@ use crate::{
     email::EmailSender,
     error::{AppError, AuthFailure},
     file::{
+        AccessMode,
         model::{Cleanup, FileEntry, RootAssignment, RootView},
         queue::{DeletionQueue, DeletionQueueHandle, DeletionResult, PendingDeletion},
     },
@@ -310,6 +311,7 @@ impl UserService {
             name: root.name,
             quota: root.quota,
             owner: root.owner,
+            access_mode: AccessMode::FULL,
             created_at: root.created_at,
             updated_at: root.updated_at,
         })
@@ -338,6 +340,7 @@ impl UserService {
             name: root.name,
             quota: root.quota,
             owner: root.owner,
+            access_mode: AccessMode::FULL,
             created_at: root.created_at,
             updated_at: root.updated_at,
         })
@@ -371,6 +374,7 @@ impl UserService {
                 name: root.name,
                 quota: root.quota,
                 owner: root.owner,
+                access_mode: AccessMode::FULL,
                 created_at: root.created_at,
                 updated_at: root.updated_at,
             });
@@ -378,23 +382,31 @@ impl UserService {
 
         let current = self.folders.list_users_in(id).await?;
         let have: HashSet<Uuid> = current.iter().map(|member| member.id).collect();
-        let want: HashSet<Uuid> = input.members.into_iter().collect();
-        let add: Vec<Uuid> = want.difference(&have).copied().collect();
+        let want: HashSet<Uuid> = input.members.iter().map(|member| member.user_id).collect();
         let remove: Vec<Uuid> = have.difference(&want).copied().collect();
+
+        let mut tx = self.tx.begin().await?;
 
         let root = self
             .files
-            .update_root(id, &input.name, input.quota_bytes)
+            .update_root_with(&mut *tx, id, &input.name, input.quota_bytes)
             .await?;
 
-        self.folders.assign_many(id, &add).await?;
-        self.folders.remove_many(id, &remove).await?;
+        // Upsert sets access_mode to new one for members that stay assigned.
+        self.folders
+            .insert_many(&mut *tx, id, &input.members)
+            .await?;
+
+        self.folders.remove_many(&mut *tx, id, &remove).await?;
+
+        tx.commit().await?;
 
         Ok(RootView {
             id: root.id,
             name: root.name,
             quota: root.quota,
             owner: root.owner,
+            access_mode: AccessMode::FULL,
             created_at: root.created_at,
             updated_at: root.updated_at,
         })
