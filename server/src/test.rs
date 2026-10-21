@@ -1,8 +1,12 @@
 //! Test suites and harness.
 //!
-//! The database engine follows the crate features: `postgres` starts a Postgres
-//! container, `sqlite` uses a temporary file. Tests always start a Valkey
-//! container for the cache.
+//! Feature matrix:
+//!
+//! - `sqlite`: temp-file DB + in-memory cache (no Docker)
+//! - `postgres`: Postgres + Valkey via Testcontainers
+//!
+//! Cache backends are covered by parity unit tests; suites exercise each path
+//! once through this split.
 //!
 //! Keep [`TestState`] alive in suitest [`before_all`](suitest::before_all) so
 //! containers are not dropped mid-suite.
@@ -31,21 +35,25 @@ use crate::{
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+#[cfg(feature = "postgres")]
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, runners::AsyncRunner};
 
 #[cfg(feature = "postgres")]
 type PostgresContainer = ContainerAsync<GenericImage>;
 
+#[cfg(feature = "postgres")]
 type ValkeyContainer = ContainerAsync<GenericImage>;
 
 /// Application services plus the resources that keep the suite's database alive.
 pub struct TestState {
     pub services: ServiceState,
+    pub repository: Repository,
     pub pool: DbPool,
     pub cache: Cache,
     storage_dir: PathBuf,
     #[cfg(feature = "postgres")]
     _postgres: PostgresContainer,
+    #[cfg(feature = "postgres")]
     _valkey: ValkeyContainer,
     pub queue: DeletionQueueHandle,
 }
@@ -67,22 +75,32 @@ impl TestState {
         #[cfg(feature = "postgres")]
         let (pool, postgres) = init_postgres().await;
 
+        #[cfg(feature = "sqlite")]
+        let cache = Cache::new();
+
+        #[cfg(feature = "postgres")]
         let (cache, valkey) = init_valkey().await;
 
         let (services, repository, storage) =
             build_services(pool.clone(), cache.clone(), &storage_dir).await;
 
         // Short sweep so expired-trash integration tests finish quickly.
-        let queue =
-            DeletionQueue::start(repository, storage, std::time::Duration::from_secs(1), 30);
+        let queue = DeletionQueue::start(
+            repository.clone(),
+            storage,
+            std::time::Duration::from_secs(1),
+            30,
+        );
 
         Self {
             services,
+            repository,
             pool,
             cache,
             storage_dir,
             #[cfg(feature = "postgres")]
             _postgres: postgres,
+            #[cfg(feature = "postgres")]
             _valkey: valkey,
             queue,
         }
@@ -152,6 +170,7 @@ async fn init_postgres() -> (DbPool, PostgresContainer) {
     (pool, postgres)
 }
 
+#[cfg(feature = "postgres")]
 async fn init_valkey() -> (Cache, ValkeyContainer) {
     use testcontainers::core::{IntoContainerPort, WaitFor};
 
