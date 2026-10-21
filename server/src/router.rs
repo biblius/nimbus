@@ -2,8 +2,8 @@ pub mod auth;
 pub mod files;
 pub mod folders;
 pub mod middleware;
-mod web;
 pub mod users;
+mod web;
 
 use axum::{
     Router,
@@ -230,11 +230,31 @@ pub fn router(state: AppState) -> Router {
         .layer(cors)
         .layer(
             TraceLayer::new_for_http()
-                .on_request(|request: &axum::http::Request<_>, _span: &Span| {
-                    tracing::info!(method = %request.method(), path = %request.uri().path(), "request");
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    if request.uri().path().starts_with("/api") {
+                        tracing::info_span!("api")
+                    } else {
+                        Span::none()
+                    }
+                })
+                .on_request(|request: &axum::http::Request<_>, span: &Span| {
+                    if span.is_disabled() {
+                        return;
+                    }
+
+                    tracing::info!(
+                        method = %request.method(),
+                        path = %request.uri().path(),
+                        query = %request.uri().query().unwrap_or(""),
+                        "request"
+                    );
                 })
                 .on_response(
-                    |response: &axum::http::Response<_>, latency: Duration, _span: &Span| {
+                    |response: &axum::http::Response<_>, latency: Duration, span: &Span| {
+                        if span.is_disabled() {
+                            return;
+                        }
+
                         tracing::info!(
                             status = %response.status(),
                             elapsed_ms = latency.as_millis(),
