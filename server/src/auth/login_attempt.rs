@@ -9,6 +9,13 @@ use crate::{
 /// How long failed-attempt counters are kept when not cleared by a success.
 const ATTEMPTS_TTL_SECS: u64 = 24 * 60 * 60; // 1 day
 
+/// Every time `total attempts % this == 0`, set a login backoff.
+const ATTEMPT_MOD: u64 = 5;
+
+/// Every [`ATTEMPT_MOD`] attempts, sets the backoff timer to
+/// `(total attempts / ATTEMPT_MOD) * this` minutes.
+const BACKOFF_MULTIPLER: u64 = 10;
+
 /// Cache-backed login throttle keyed by username (password and OTP).
 ///
 /// Values are plain strings: attempt counts as decimal, backoff as an RFC3339
@@ -64,10 +71,10 @@ impl LoginAttemptStore {
             )
             .await?;
 
-        if count % 5 == 0 {
-            let minutes = (count / 10) * 10;
+        if count % ATTEMPT_MOD == 0 {
+            let minutes = (count / ATTEMPT_MOD) * BACKOFF_MULTIPLER;
             let unlock_at = Utc::now() + Duration::minutes(minutes as i64);
-            let ttl_secs = minutes.saturating_mul(60).max(1);
+            let ttl_secs = minutes.saturating_mul(60);
 
             self.cache
                 .set_ex(
