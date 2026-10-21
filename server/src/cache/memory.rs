@@ -11,7 +11,7 @@ struct Entry {
     expires_at: Instant,
 }
 
-/// Process-local cache; always available, and the fallback when Valkey fails.
+/// Process-local cache used when Valkey is not configured.
 #[derive(Clone, Default)]
 pub struct MemoryCache {
     entries: Arc<Mutex<HashMap<String, Entry>>>,
@@ -24,34 +24,6 @@ impl MemoryCache {
         let cache = Self::default();
         cache.spawn_sweeper();
         cache
-    }
-
-    fn spawn_sweeper(&self) {
-        let cache = self.clone();
-
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(SWEEP_INTERVAL);
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            tick.tick().await;
-
-            loop {
-                tick.tick().await;
-                cache.sweep_expired().await;
-            }
-        });
-    }
-
-    async fn sweep_expired(&self) {
-        let mut entries = self.entries.lock().await;
-        let now = Instant::now();
-        let before = entries.len();
-
-        entries.retain(|_, entry| entry.expires_at > now);
-
-        let removed = before - entries.len();
-        if removed > 0 {
-            tracing::debug!(removed, "swept expired memory cache entries");
-        }
     }
 
     pub async fn set_ex(&self, key: &str, value: &str, ttl_secs: u64) -> Result<(), AppError> {
@@ -103,6 +75,34 @@ impl MemoryCache {
         entries.remove(key);
 
         Ok(())
+    }
+
+    fn spawn_sweeper(&self) {
+        let cache = self.clone();
+
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(SWEEP_INTERVAL);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            tick.tick().await;
+
+            loop {
+                tick.tick().await;
+                cache.sweep_expired().await;
+            }
+        });
+    }
+
+    async fn sweep_expired(&self) {
+        let mut entries = self.entries.lock().await;
+        let now = Instant::now();
+        let before = entries.len();
+
+        entries.retain(|_, entry| entry.expires_at > now);
+
+        let removed = before - entries.len();
+        if removed > 0 {
+            tracing::debug!(removed, "swept expired memory cache entries");
+        }
     }
 }
 

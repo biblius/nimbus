@@ -51,7 +51,6 @@ impl ValkeyCache {
         })
     }
 
-    #[allow(dead_code)]
     pub async fn del(&self, key: &str) -> Result<(), AppError> {
         let mut conn = self.connection().await?;
         conn.del::<_, ()>(key).await.map_err(|error| {
