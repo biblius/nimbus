@@ -84,6 +84,8 @@ impl AuthenticationService {
     /// Failed attempts are counted per username. Every 5th failure sets a
     /// backoff of `(attempts / 10) * 10` minutes. A successful login clears
     /// both the attempt counter and any backoff.
+    ///
+    /// For finish with 2FA, see [`Self::login_with_otp`].
     #[instrument(skip(self, credentials), fields(username = %credentials.username), err(Debug))]
     pub async fn login(
         &self,
@@ -93,10 +95,6 @@ impl AuthenticationService {
     ) -> Result<LoginResult, AppError> {
         credentials.validify()?;
 
-        self.login_attempts
-            .ensure_allowed(&credentials.username)
-            .await?;
-
         let user = match self
             .repo
             .users
@@ -105,12 +103,14 @@ impl AuthenticationService {
         {
             Some(user) => user,
             None => {
-                self.login_attempts
-                    .record_failure(&credentials.username)
-                    .await?;
+                // Don't allow arbitrary usernames to flood backoff cache
                 return Err(AppError::Auth(AuthFailure::InvalidCredentials));
             }
         };
+
+        self.login_attempts
+            .ensure_allowed(&credentials.username)
+            .await?;
 
         if !verify_password(&credentials.password, &user.password) {
             self.login_attempts
@@ -119,13 +119,9 @@ impl AuthenticationService {
             return Err(AppError::Auth(AuthFailure::InvalidCredentials));
         }
 
-        // 2FA still required: keep attempt state so OTP failures continue the
+        // 2FA still required, keep attempt state so OTP failures continue the
         // same counter. Clear only when a session is actually created.
-        if user
-            .otp_secret
-            .as_deref()
-            .is_some_and(|secret| !secret.is_empty())
-        {
+        if user.otp_secret.as_deref().is_some() {
             let token = Uuid::new_v4();
 
             self.tokens
@@ -160,12 +156,6 @@ impl AuthenticationService {
         Ok(LoginResult::Session {
             session_id: session.id,
         })
-    }
-
-    /// Expire the session under the given ID.
-    #[instrument(skip_all, err(Debug))]
-    pub async fn logout(&self, session_id: Uuid) -> Result<(), AppError> {
-        self.repo.sessions.expire(session_id).await
     }
 
     /// Finish a TOTP login using the pending-login token from [`Self::login`].
@@ -227,6 +217,12 @@ impl AuthenticationService {
         Ok(LoginResult::Session {
             session_id: session.id,
         })
+    }
+
+    /// Expire the session under the given ID.
+    #[instrument(skip_all, err(Debug))]
+    pub async fn logout(&self, session_id: Uuid) -> Result<(), AppError> {
+        self.repo.sessions.expire(session_id).await
     }
 
     /// Get a session by its ID.
@@ -375,8 +371,7 @@ impl AuthenticationService {
         Ok(())
     }
 
-    /// Consume the token sent by [Self::start_password_reset] and reset the user's password to
-    /// the given one.
+    /// Consume the token sent by [Self::start_password_reset] and reset the user's password to the given one.
     #[instrument(skip(self, token, data), err(Debug))]
     pub async fn finish_password_reset(
         &self,

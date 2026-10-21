@@ -103,7 +103,6 @@ search_column! {
 #[derive(Debug, Deserialize, Validify)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUser {
-    #[modify(trim, lowercase)]
     #[validate(length(min = 1, message = "Username cannot be empty"))]
     #[validate(length(max = 63, message = "Username too long"))]
     #[validate(custom(function = User::valid_username))]

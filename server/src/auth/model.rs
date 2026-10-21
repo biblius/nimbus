@@ -29,18 +29,19 @@ pub enum LoginResult {
 
 #[derive(Debug, Clone, Deserialize, Validify)]
 pub struct LoginCredentials {
-    #[modify(trim, lowercase)]
     #[validate(length(min = 1, message = "Username cannot be empty"))]
     pub username: String,
 
     #[validate(length(min = 1, message = "Password cannot be empty"))]
     pub password: String,
 
-    /// Extend the session to 30 days (web "remember me"). Ignored when `permanent` is set.
+    /// Extend the session to 30 days (web "remember me").
+    /// Ignored when `permanent` is set.
     #[serde(default)]
     pub remember: bool,
 
-    /// Never expire until logout. For native (mobile/desktop) clients that store a Bearer token.
+    /// Never expire until logout. For native (mobile/desktop)
+    /// clients that store a Bearer token. Web never sets this.
     #[serde(default)]
     pub permanent: bool,
 }
@@ -67,7 +68,7 @@ pub struct Otp {
     pub token: Uuid,
 
     /// The OTP 6 digit code.
-    #[modify(trim, lowercase)]
+    #[modify(trim)]
     #[validate(length(equal = 6, message = "Invalid code"))]
     pub otp_code: String,
 }
@@ -77,7 +78,7 @@ pub struct Otp {
 #[serde(rename_all = "camelCase")]
 pub struct DisableOtp {
     /// The OTP 6 digit code from the currently registered authenticator.
-    #[modify(trim, lowercase)]
+    #[modify(trim)]
     #[validate(length(equal = 6, message = "Invalid code"))]
     pub otp_code: String,
 }
