@@ -133,41 +133,28 @@ files with its `parent` field. When a file has no `parent` relation, it is consi
 the top level of the root. A file with a parent field is considered to be nested in that directory,
 the `parent` relation can never point to a file of kind file.
 
-```mermaid
-flowchart TB
-  root --> dir
-  root --> file_a
-  dir --> file_b
-  dir --> nested_dir
-  nested_dir --> file_c
-```
-
 Soft deleted files are files moved from `files` to `trash`. This table is essentially a copy of
 `files`, but stores files removed by users from a root. Trashed files are also taken into
 account when counting hashes for new/deleting BLOBs.
-
-```mermaid
-flowchart LR
-  files -->|soft delete| trash
-```
 
 #### File BLOBs
 
 File BLOBs in Nimbus are stored to `$STORAGE_DIR/data`. BLOBs are stored with their hash
 as the name on the file system. Nimbus dedupes file BLOBs by hash, i.e. for every new BLOB it always checks
-whether a BLOB with the same hash exists prior to writing and stores it only when it doesn't exist.
+whether a BLOB with the same hash exists prior to writing and stores it only when it doesn't already exist.
 Likewise, BLOBs are deleted only when there are no more files pointing to it.
 
-```mermaid
-flowchart LR
-  files -->|hash| blob["$STORAGE_DIR/data / hash"]
-  trash -->|hash| blob
-```
+#### Queues
 
-Nimbus uses tokio `select!` loops to process background tasks. Image/video thumbnail processing
-and expired trash deletion sweeps are implemented as background processes.
+Nimbus uses tokio `select!` loops to process background tasks.
+Image/video thumbnail processing and expired trash deletion sweeps are implemented as background processes.
 
-Thumbnail BLOBs follow the same principles as those of `files` (and `trash`).
+The file processing queue processes files based on their inferred format.
+It uses Rust libraries where possible, but delegates to `ffmpeg` to generate
+video thumbnails.
+
+Thumbnail BLOBs follow the same principles as those of `files` (and `trash`)
+in that they are deduplicated.
 
 #### Clients
 
