@@ -72,12 +72,6 @@ impl FileService {
         self.files.list_accessible_roots(user.id).await
     }
 
-    /// Bytes stored in a root. Directories are not counted.
-    #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
-    pub async fn usage(&self, ctx: &UserRootContext) -> Result<i64, AppError> {
-        self.files.root_quota_usage(ctx.root.id).await
-    }
-
     #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
     pub async fn list(
         &self,
@@ -85,6 +79,20 @@ impl FileService {
         dir_id: Option<Uuid>,
     ) -> Result<Vec<FileView>, AppError> {
         self.files.list_files(ctx.root.id, dir_id).await
+    }
+
+    #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
+    pub async fn get(&self, ctx: &UserRootContext, id: Uuid) -> Result<FileEntry, AppError> {
+        self.files
+            .get_live(ctx.root.id, id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))
+    }
+
+    /// Bytes stored in a root. Directories are not counted.
+    #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
+    pub async fn usage(&self, ctx: &UserRootContext) -> Result<i64, AppError> {
+        self.files.root_quota_usage(ctx.root.id).await
     }
 
     /// Directories from the root down to `file_id`, including `file_id`.
@@ -104,11 +112,21 @@ impl FileService {
     }
 
     #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
-    pub async fn metadata(&self, ctx: &UserRootContext, id: Uuid) -> Result<FileEntry, AppError> {
-        self.files
-            .get_live(ctx.root.id, id)
-            .await?
-            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))
+    pub async fn get_tree(
+        &self,
+        ctx: &UserRootContext,
+        parent: Option<Uuid>,
+    ) -> Result<FileTree, AppError> {
+        let files = self.files.list_descendants(ctx.root.id, parent).await?;
+
+        Ok(FileTree {
+            id: parent.unwrap_or(ctx.root.id),
+            name: String::new(),
+            kind: FileKind::Directory,
+            file_type: None,
+            metadata: Default::default(),
+            children: FileTree::from_entries(files),
+        })
     }
 
     #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
@@ -118,6 +136,7 @@ impl FileService {
         mut input: CreateDirectory,
     ) -> Result<FileEntry, AppError> {
         input.validify()?;
+
         ctx.require(AccessMode::WRITE)?;
 
         let name = FileEntry::valid_name(&input.name)?.to_string();
@@ -830,23 +849,6 @@ impl FileService {
         tx.commit().await?;
 
         Ok(())
-    }
-
-    pub async fn get_tree(
-        &self,
-        ctx: &UserRootContext,
-        parent: Option<Uuid>,
-    ) -> Result<FileTree, AppError> {
-        let files = self.files.list_descendants(ctx.root.id, parent).await?;
-
-        Ok(FileTree {
-            id: parent.unwrap_or(ctx.root.id),
-            name: String::new(),
-            kind: FileKind::Directory,
-            file_type: None,
-            metadata: Default::default(),
-            children: FileTree::from_entries(files),
-        })
     }
 
     /// Mark live files (and every descendant, for directories) as publicly shared.

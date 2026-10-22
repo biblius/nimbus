@@ -364,7 +364,7 @@ pub(crate) async fn metadata(
     ctx: UserRootContext,
     Path((_, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<FileEntry>, AppError> {
-    Ok(Json(state.services.files.metadata(&ctx, file_id).await?))
+    Ok(Json(state.services.files.get(&ctx, file_id).await?))
 }
 
 pub(crate) async fn overwrite(

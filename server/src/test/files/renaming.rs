@@ -25,7 +25,9 @@ mod renaming {
         state
             .services
             .files
-            .rename(&super::super::ctx(state, &session.user, root).await, file.id,
+            .rename(
+                &super::super::ctx(state, &session.user, root).await,
+                file.id,
                 RenameFile {
                     name: "journal.txt".into(),
                 },
@@ -36,7 +38,10 @@ mod renaming {
         let renamed = state
             .services
             .files
-            .metadata(&super::super::ctx(state, &session.user, root).await, file.id)
+            .get(
+                &super::super::ctx(state, &session.user, root).await,
+                file.id,
+            )
             .await
             .unwrap();
 
@@ -53,7 +58,9 @@ mod renaming {
         let folder = state
             .services
             .files
-            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
+            .create_directory(
+                &super::super::ctx(state, &session.user, root).await,
+                CreateDirectory {
                     parent: None,
                     name: "photos".into(),
                     ..Default::default()
@@ -65,7 +72,9 @@ mod renaming {
         state
             .services
             .files
-            .rename(&super::super::ctx(state, &session.user, root).await, folder.id,
+            .rename(
+                &super::super::ctx(state, &session.user, root).await,
+                folder.id,
                 RenameFile {
                     name: "albums".into(),
                 },
@@ -76,7 +85,10 @@ mod renaming {
         let renamed = state
             .services
             .files
-            .metadata(&super::super::ctx(state, &session.user, root).await, folder.id)
+            .get(
+                &super::super::ctx(state, &session.user, root).await,
+                folder.id,
+            )
             .await
             .unwrap();
 
@@ -94,7 +106,9 @@ mod renaming {
         let err = state
             .services
             .files
-            .rename(&super::super::ctx(state, &session.user, root).await, file.id,
+            .rename(
+                &super::super::ctx(state, &session.user, root).await,
+                file.id,
                 RenameFile { name: "   ".into() },
             )
             .await

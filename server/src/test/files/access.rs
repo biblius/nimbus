@@ -128,7 +128,7 @@ mod access {
         state.services.files.list(&ctx, None).await.unwrap();
         state.services.files.list(&ctx, Some(dir.id)).await.unwrap();
         state.services.files.ancestors(&ctx, file.id).await.unwrap();
-        state.services.files.metadata(&ctx, file.id).await.unwrap();
+        state.services.files.get(&ctx, file.id).await.unwrap();
         state
             .services
             .files
@@ -288,7 +288,7 @@ mod access {
         assert_eq!(ctx.access, AccessMode::WRITE);
 
         // Read still works
-        state.services.files.metadata(&ctx, file.id).await.unwrap();
+        state.services.files.get(&ctx, file.id).await.unwrap();
 
         let created = state
             .services
@@ -450,7 +450,7 @@ mod access {
         state
             .services
             .files
-            .metadata(&subject_ctx, file.id)
+            .get(&subject_ctx, file.id)
             .await
             .unwrap();
     }
@@ -461,7 +461,7 @@ mod access {
         let ctx = ctx(state, &subject, root).await;
         assert_eq!(ctx.access, AccessMode::SHARE);
 
-        state.services.files.metadata(&ctx, file.id).await.unwrap();
+        state.services.files.get(&ctx, file.id).await.unwrap();
 
         state
             .services

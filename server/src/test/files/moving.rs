@@ -24,7 +24,9 @@ mod moving {
         let destination = state
             .services
             .files
-            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
+            .create_directory(
+                &super::super::ctx(state, &session.user, root).await,
+                CreateDirectory {
                     parent: None,
                     name: "archive".into(),
                     ..Default::default()
@@ -36,7 +38,9 @@ mod moving {
         let folder = state
             .services
             .files
-            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
+            .create_directory(
+                &super::super::ctx(state, &session.user, root).await,
+                CreateDirectory {
                     parent: None,
                     name: "photos".into(),
                     ..Default::default()
@@ -58,7 +62,9 @@ mod moving {
         state
             .services
             .files
-            .move_files(&super::super::ctx(state, &session.user, root).await, MoveFiles {
+            .move_files(
+                &super::super::ctx(state, &session.user, root).await,
+                MoveFiles {
                     ids: vec![file.id, folder.id, file.id],
                     parent: Some(destination.id),
                 },
@@ -69,25 +75,37 @@ mod moving {
         let moved_file = state
             .services
             .files
-            .metadata(&super::super::ctx(state, &session.user, root).await, file.id)
+            .get(
+                &super::super::ctx(state, &session.user, root).await,
+                file.id,
+            )
             .await
             .unwrap();
         let moved_folder = state
             .services
             .files
-            .metadata(&super::super::ctx(state, &session.user, root).await, folder.id)
+            .get(
+                &super::super::ctx(state, &session.user, root).await,
+                folder.id,
+            )
             .await
             .unwrap();
         let nested = state
             .services
             .files
-            .metadata(&super::super::ctx(state, &session.user, root).await, nested.id)
+            .get(
+                &super::super::ctx(state, &session.user, root).await,
+                nested.id,
+            )
             .await
             .unwrap();
         let kept = state
             .services
             .files
-            .metadata(&super::super::ctx(state, &session.user, root).await, kept.id)
+            .get(
+                &super::super::ctx(state, &session.user, root).await,
+                kept.id,
+            )
             .await
             .unwrap();
 
@@ -105,7 +123,9 @@ mod moving {
         let folder = state
             .services
             .files
-            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
+            .create_directory(
+                &super::super::ctx(state, &session.user, root).await,
+                CreateDirectory {
                     parent: None,
                     name: "box".into(),
                     ..Default::default()
@@ -126,7 +146,9 @@ mod moving {
         state
             .services
             .files
-            .move_files(&super::super::ctx(state, &session.user, root).await, MoveFiles {
+            .move_files(
+                &super::super::ctx(state, &session.user, root).await,
+                MoveFiles {
                     ids: vec![file.id],
                     parent: None,
                 },
@@ -137,7 +159,10 @@ mod moving {
         let moved = state
             .services
             .files
-            .metadata(&super::super::ctx(state, &session.user, root).await, file.id)
+            .get(
+                &super::super::ctx(state, &session.user, root).await,
+                file.id,
+            )
             .await
             .unwrap();
         assert_eq!(moved.parent, None);
@@ -151,7 +176,9 @@ mod moving {
         let folder = state
             .services
             .files
-            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
+            .create_directory(
+                &super::super::ctx(state, &session.user, root).await,
+                CreateDirectory {
                     parent: None,
                     name: "notes".into(),
                     ..Default::default()
@@ -162,7 +189,9 @@ mod moving {
         let nested = state
             .services
             .files
-            .create_directory(&super::super::ctx(state, &session.user, root).await, CreateDirectory {
+            .create_directory(
+                &super::super::ctx(state, &session.user, root).await,
+                CreateDirectory {
                     parent: Some(folder.id),
                     name: "nested".into(),
                     ..Default::default()
@@ -174,7 +203,9 @@ mod moving {
         let error = state
             .services
             .files
-            .move_files(&super::super::ctx(state, &session.user, root).await, MoveFiles {
+            .move_files(
+                &super::super::ctx(state, &session.user, root).await,
+                MoveFiles {
                     ids: vec![folder.id],
                     parent: Some(nested.id),
                 },
@@ -187,7 +218,10 @@ mod moving {
         let folder = state
             .services
             .files
-            .metadata(&super::super::ctx(state, &session.user, root).await, folder.id)
+            .get(
+                &super::super::ctx(state, &session.user, root).await,
+                folder.id,
+            )
             .await
             .unwrap();
         assert_eq!(folder.parent, None);
@@ -204,7 +238,9 @@ mod moving {
         let error = state
             .services
             .files
-            .move_files(&super::super::ctx(state, &session.user, root).await, MoveFiles {
+            .move_files(
+                &super::super::ctx(state, &session.user, root).await,
+                MoveFiles {
                     ids: vec![file.id],
                     parent: Some(target.id),
                 },
@@ -217,7 +253,10 @@ mod moving {
         let file = state
             .services
             .files
-            .metadata(&super::super::ctx(state, &session.user, root).await, file.id)
+            .get(
+                &super::super::ctx(state, &session.user, root).await,
+                file.id,
+            )
             .await
             .unwrap();
         assert_eq!(file.parent, None);

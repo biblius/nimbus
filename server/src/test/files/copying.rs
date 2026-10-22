@@ -75,7 +75,7 @@ mod copying {
         let original = state
             .services
             .files
-            .metadata(
+            .get(
                 &super::super::ctx(state, &session.user, shared.id).await,
                 source.id,
             )

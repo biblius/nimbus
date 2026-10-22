@@ -47,7 +47,7 @@ mod overwrite {
         let updated = state
             .services
             .files
-            .metadata(
+            .get(
                 &super::super::ctx(state, &session.user, root).await,
                 original.id,
             )
