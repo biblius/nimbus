@@ -69,9 +69,8 @@ impl AppState {
         };
 
         let nimbus_origin: Arc<str> = args.nimbus_origin().trim_end_matches('/').into();
-        let rp_origin = webauthn_rs::prelude::Url::parse(&nimbus_origin).unwrap_or_else(|error| {
-            panic!("invalid NIMBUS_ORIGIN `{nimbus_origin}`: {error}")
-        });
+        let rp_origin = webauthn_rs::prelude::Url::parse(&nimbus_origin)
+            .unwrap_or_else(|error| panic!("invalid NIMBUS_ORIGIN `{nimbus_origin}`: {error}"));
 
         let rp_id_override = args.webauthn_rp_id();
         let rp_id = if rp_id_override.is_empty() {
@@ -99,6 +98,7 @@ impl AppState {
             args.tmp_dir().into(),
             args.upload_max_bytes(),
         );
+
         let email = EmailSender::new(
             args.gmail_address(),
             args.gmail_app_password(),

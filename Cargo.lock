@@ -1389,7 +1389,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3630,7 +3630,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4282,21 +4282,18 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "suitest"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "610a312c7c1947cb1b346dc2759d5e85446dade541365521e49176c075b150af"
+checksum = "d4e273dd8d06e62241c40db994181d7ae54f59ff74b018a43c1ea3987f20f03e"
 dependencies = [
- "futures-util",
- "once_cell",
  "suitest_macros",
- "tokio",
 ]
 
 [[package]]
 name = "suitest_macros"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "407b3a39d847030ffa163a3454ed043463760890a45cadc8e32645c73965c19e"
+checksum = "ff01a085b45ea5a01965f825fa17a63ab9b8765ca293e28a102dc94de3e3b784"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -5147,7 +5144,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

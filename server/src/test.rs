@@ -60,10 +60,10 @@ pub struct TestState {
 
 impl TestState {
     pub async fn init() -> Self {
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-            .with_test_writer()
-            .try_init();
+        // let _ = tracing_subscriber::fmt()
+        //     .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        //     .with_test_writer()
+        //     .try_init();
 
         let storage_dir =
             std::env::temp_dir().join(format!("nimbus-{uuid}", uuid = Uuid::new_v4()));

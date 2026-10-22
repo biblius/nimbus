@@ -1,19 +1,3 @@
-//! MC/DC coverage for [`AuthenticationService::login`].
-//!
-//! Decisions and conditions under test (service layer only):
-//!
-//! 1. Validation (`credentials.validify`): username non-empty and password non-empty
-//! 2. User lookup: user found vs missing (missing never records attempts)
-//! 3. Backoff (`ensure_allowed`): backoff key present and unlock_at > now
-//! 4. Password: `verify_password` true vs false
-//! 5. 2FA gate: `otp_secret` is Some and secret non-empty
-//! 6. Session expiry (via `create_session`): permanent, or not permanent and remember
-//!
-//! Each boolean condition has at least one pair of cases that differ only in that
-//! condition and produce different outcomes (independence). Every exit of `login`
-//! is exercised: Validation, LoginBackoff, InvalidCredentials, TwoFactorRequired,
-//! Session.
-
 #[suitest::suite(auth_login)]
 #[suitest::suite_cfg(sequential = true)]
 mod auth_login {
@@ -93,7 +77,7 @@ mod auth_login {
     /// Empty password independently fails validation (username held true).
     #[test]
     async fn rejects_empty_password(state: TestState) {
-        create_user(&state, "login-empty-pw").await;
+        create_user(state, "login-empty-pw").await;
 
         let err = state
             .services
@@ -116,7 +100,7 @@ mod auth_login {
     /// Username is not lowercased: case must match the stored value.
     #[test]
     async fn username_has_to_be_exact(state: TestState) {
-        create_user(&state, "login-Case").await;
+        create_user(state, "login-Case").await;
 
         let err = state
             .services
@@ -161,10 +145,10 @@ mod auth_login {
     /// Active backoff independently blocks (correct password held true).
     #[test]
     async fn active_backoff_blocks_correct_password(state: TestState) {
-        create_user(&state, "login-backoff-active").await;
+        create_user(state, "login-backoff-active").await;
 
         set_backoff(
-            &state,
+            state,
             "login-backoff-active",
             Utc::now() + Duration::minutes(10),
         )
@@ -195,7 +179,7 @@ mod auth_login {
     /// Expired unlock_at allows login
     #[test]
     async fn expired_backoff_allows_login(state: TestState) {
-        create_user(&state, "login-backoff-expired").await;
+        create_user(state, "login-backoff-expired").await;
 
         // TTL must outlive the call; unlock timestamp is in the past.
         state
@@ -227,36 +211,11 @@ mod auth_login {
         assert!(matches!(result, LoginResult::Session { .. }));
     }
 
-    /// No backoff key means login is allowed
-    #[test]
-    async fn missing_backoff_allows_login(state: TestState) {
-        let err = state
-            .services
-            .auth
-            .login(
-                LoginCredentials {
-                    username: "login-no-such-user".into(),
-                    password: "temporary".into(),
-                    remember: false,
-                    permanent: false,
-                },
-                None,
-                None,
-            )
-            .await
-            .unwrap_err();
-
-        assert!(matches!(
-            err,
-            AppError::Auth(AuthFailure::InvalidCredentials)
-        ));
-    }
-
     /// User lookup runs before backoff: unknown usernames never hit the throttle.
     #[test]
     async fn unknown_user_skips_backoff(state: TestState) {
         set_backoff(
-            &state,
+            state,
             "login-unknown-locked",
             Utc::now() + Duration::minutes(5),
         )
@@ -321,7 +280,7 @@ mod auth_login {
     /// Wrong password independently yields InvalidCredentials (user held true).
     #[test]
     async fn wrong_password_is_invalid_credentials(state: TestState) {
-        create_user(&state, "login-bad-pw").await;
+        create_user(state, "login-bad-pw").await;
 
         let err = state
             .services
@@ -399,9 +358,9 @@ mod auth_login {
         ));
     }
 
-    /// Some(non-empty) otp_secret yields TwoFactorRequired.
+    /// `otp_secret.is_some()` yields TwoFactorRequired; attempts are not cleared.
     #[test]
-    async fn non_empty_otp_secret_requires_two_factor(state: TestState) {
+    async fn otp_secret_requires_two_factor(state: TestState) {
         let user = state
             .services
             .users
@@ -498,7 +457,7 @@ mod auth_login {
     /// None otp_secret independently skips 2FA and creates a session.
     #[test]
     async fn absent_otp_secret_creates_session(state: TestState) {
-        create_user(&state, "login-otp-none").await;
+        create_user(state, "login-otp-none").await;
 
         let result = state
             .services
@@ -579,7 +538,7 @@ mod auth_login {
     /// Not permanent and not remember yields about 12h expiry.
     #[test]
     async fn default_session_expires_in_twelve_hours(state: TestState) {
-        create_user(&state, "login-exp-default").await;
+        create_user(state, "login-exp-default").await;
 
         let before = Utc::now();
 
@@ -619,7 +578,7 @@ mod auth_login {
     /// Not permanent and remember independently extends to about 30 days.
     #[test]
     async fn remember_session_expires_in_thirty_days(state: TestState) {
-        create_user(&state, "login-exp-remember").await;
+        create_user(state, "login-exp-remember").await;
 
         let before = Utc::now();
 
@@ -659,7 +618,7 @@ mod auth_login {
     /// Permanent independently clears expiry (remember held false).
     #[test]
     async fn permanent_session_has_no_expiry(state: TestState) {
-        create_user(&state, "login-exp-perm").await;
+        create_user(state, "login-exp-perm").await;
 
         let LoginResult::Session { session_id } = state
             .services
@@ -693,7 +652,7 @@ mod auth_login {
     /// permanent overrides remember; both true still means no expiry.
     #[test]
     async fn permanent_overrides_remember(state: TestState) {
-        create_user(&state, "login-exp-both").await;
+        create_user(state, "login-exp-both").await;
 
         let LoginResult::Session { session_id } = state
             .services
@@ -727,7 +686,7 @@ mod auth_login {
     /// Successful session clears attempt counter (exit: Session after prior failure).
     #[test]
     async fn successful_login_clears_attempts(state: TestState) {
-        create_user(&state, "login-clear").await;
+        create_user(state, "login-clear").await;
 
         state
             .services
@@ -794,7 +753,7 @@ mod auth_login {
     /// Every 5th failure sets backoff; a later success clears it.
     #[test]
     async fn five_failures_engage_backoff_then_success_clears(state: TestState) {
-        create_user(&state, "login-five").await;
+        create_user(state, "login-five").await;
 
         let wrong = LoginCredentials {
             username: "login-five".into(),
@@ -918,10 +877,12 @@ mod auth_login {
             .list_live_for_user(user.id)
             .await
             .unwrap();
+
         let row = live
             .iter()
             .find(|s| s.id == session_id)
             .expect("session row");
+
         assert_eq!(row.remote_address.as_deref(), Some("203.0.113.10"));
         assert_eq!(row.user_agent.as_deref(), Some("nimbus-test/1.0"));
     }

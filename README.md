@@ -27,19 +27,21 @@ Connecting the server API is mostly just duplicating the DTOs
 and writing out requests in `NimbusClient`. Page and component JS was \*\*mostly reviewed.
 The main component `FileBrowser`, the pages, the admin UI components, and the
 preview components were reviewed, mostly focusing on the JS parts because I
-am shit at component layout and design anyway.
+am shit at component layout and design anyway and a quick glance at the screen verifies
+whether the styling is correct.
 
 This project was not vibe coded. I've created Nimbus because I intend to use it.
 
 The goal is to make a fully featured file hosting application that is simple to
-set up and only needs a single binary, with additional infrastructure if desired.
+set up with a single binary, including additional infrastructure if desired.
 Nimbus does not have contacts, calendars, AI worfklows for micro-categorization,
 or Doom - it is just a file hosting application.
 
 Nimbus is not E N T E R P R I S E and is focused toward smaller groups of people
 that need a fast and reliable file sharing system without too much setup.
+Even so, best practices (as far as I am aware of) regarding security.
 
-Anyway, that's enough disclaiming, let's go wild and host files!
+Anyway, that's enough disclaiming, let's get to the good stuff!
 
 ---
 
@@ -149,7 +151,8 @@ Likewise, BLOBs are deleted only when there are no more files pointing to it.
 Nimbus uses tokio `select!` loops to process background tasks.
 Image/video thumbnail processing and expired trash deletion sweeps are implemented as background processes.
 
-The file processing queue processes files based on their inferred format.
+The file processing queue processes files based on their inferred format and
+generates additional metadata (such as preview icons, i.e. thumbnails).
 It uses Rust libraries where possible, but delegates to `ffmpeg` to generate
 video thumbnails.
 
@@ -161,6 +164,50 @@ in that they are deduplicated.
 Clients are further divided into the `web` and `app` directories, intended for web and native devices respectively.
 The `shared` directory contains the code used by both directories - a SPA shell. `web` is built with Vite and
 its `dist` is embedded into `nimbus-server` at compile time. `app` is a Tauri app built with cargo.
+
+### Testing
+
+Nimbus is tested with the following feature matrix.
+
+| Feature    | Description                                                              |
+| ---------- | ------------------------------------------------------------------------ |
+| `postgres` | Uses postgres as the database engine and Valkey as the cache             |
+| `sqlite`   | Uses sqlite as the database engine and an in-memory hashmap as the cache |
+
+`MemoryCache` and `ValkeyCache` functionality is identical. We cover the correctness of both
+in our suites.
+
+Keeping that in mind, once we run both suites we can be certain that the untested paths
+will also work, i.e. `postgres` with `MemoryCache` and `sqlite` with `ValkeyCache`.
+
+The reason for this split is so we have one lightweight test suite (sqlite) that does not
+require testcontainers, and one fully featured test suite that spins up containers and
+verifies Nimbus is working as intended when fully integrated with additional infrastructure.
+
+Testing is [MC/DC](https://en.wikipedia.org/wiki/Modified_condition/decision_coverage)
+inspired wherever it is sane to do so, i.e. every "critical" path of a service
+is checked for each decision and outcome. This rarely includes `get` or `list` methods,
+since they do not mutate the state. The MC/DC is only scoped to service methods.
+
+#### Testing magic commands
+
+- SQLite
+
+```bash
+export DATABASE_URL=sqlite://./data/nimbus.db?mode=rwc
+sqlite3 data/nimbus.db ""
+sqlx migrate run --source server/migrations/sqlite
+cargo test --no-default-features -F sqlite -- --nocapture
+
+```
+
+- Postgres (container must be running for migration)
+
+```bash
+export DATABASE_URL=postgres://nimbus:nimbus@127.0.0.1:5434/nimbus
+sqlx migrate run --source server/migrations/postgres
+cargo test --no-default-features -F postgres -- --nocapture
+```
 
 ## Releases
 

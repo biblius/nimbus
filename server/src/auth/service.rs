@@ -189,7 +189,6 @@ impl AuthenticationService {
         let encoded = user
             .otp_secret
             .as_deref()
-            .filter(|secret| !secret.is_empty())
             .ok_or(AppError::Auth(AuthFailure::InvalidCredentials))?;
 
         if verify_otp(&decode_otp_secret(encoded)?, &otp.otp_code).is_err() {
@@ -351,7 +350,13 @@ impl AuthenticationService {
 
         let user = match self.repo.users.get_by_email(&data.email).await {
             Ok(Some(user)) => user,
-            Ok(None) => return Ok(()),
+            Ok(None) => {
+                tracing::warn!(
+                    email = data.email,
+                    "reset email attempted for non existing email"
+                );
+                return Ok(());
+            }
             Err(error) => {
                 tracing::error!(%error, "error while fetching user for password reset");
                 return Ok(());

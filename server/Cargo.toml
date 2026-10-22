@@ -78,6 +78,6 @@ async_zip = { version = "0.0.19", default-features = false, features = [
 bitflags = { version = "2.13.2", features = ["std"] }
 
 [dev-dependencies]
-suitest = "0.1.4"
+suitest = { version = "0.1.5" }
 testcontainers = "0.28.0"
 tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros"] }
