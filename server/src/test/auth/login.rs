@@ -919,4 +919,56 @@ mod auth_login {
 
         assert_eq!(admin.user.role, Role::Admin);
     }
+
+    /// Logout expires the session so it is no longer live.
+    #[test]
+    async fn logout_expires_session(state: TestState) {
+        create_user(state, "login-logout").await;
+
+        let LoginResult::Session { session_id } = state
+            .services
+            .auth
+            .login(
+                LoginCredentials {
+                    username: "login-logout".into(),
+                    password: "temporary".into(),
+                    remember: false,
+                    permanent: false,
+                },
+                None,
+                None,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("expected Session");
+        };
+
+        let session = state
+            .services
+            .auth
+            .get_session_by_id(session_id)
+            .await
+            .unwrap();
+        assert!(!session.is_expired());
+
+        state.services.auth.logout(session_id).await.unwrap();
+
+        let session = state
+            .services
+            .auth
+            .get_session_by_id(session_id)
+            .await
+            .unwrap();
+        assert!(session.is_expired());
+        assert!(
+            state
+                .repository
+                .sessions
+                .list_live_for_user(session.user.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
 }
