@@ -25,8 +25,10 @@ if [[ " $* " == *" -c "* ]]; then
 	unset CORS_ALLOWED_HEADERS
 	unset COOKIE_NAME
 	unset COOKIE_DOMAIN
-	unset GMAIL_ADDRESS
-	unset GMAIL_APP_PASSWORD
+	unset SMTP_HOST
+	unset SMTP_PORT
+	unset SMTP_USERNAME
+	unset SMTP_PASSWORD
 	unset MAIL_FROM_NAME
 	unset NIMBUS_ORIGIN
 	unset WEBAUTHN_RP_ID

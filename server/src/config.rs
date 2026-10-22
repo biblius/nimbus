@@ -70,13 +70,21 @@ pub struct StartArgs {
     #[arg(long)]
     upload_max_bytes: Option<String>,
 
-    /// Gmail address used as the SMTP username and From address.
+    /// SMTP relay hostname. Empty disables sending.
     #[arg(long)]
-    gmail_address: Option<String>,
+    smtp_host: Option<String>,
 
-    /// Gmail app password. Empty disables sending.
+    /// SMTP port. Defaults to 587 (STARTTLS). Use 465 for implicit TLS.
     #[arg(long)]
-    gmail_app_password: Option<String>,
+    smtp_port: Option<String>,
+
+    /// SMTP username; also used as the From address.
+    #[arg(long)]
+    smtp_username: Option<String>,
+
+    /// SMTP password. Empty disables sending.
+    #[arg(long)]
+    smtp_password: Option<String>,
 
     #[arg(long)]
     mail_from_name: Option<String>,
@@ -221,8 +229,10 @@ arg!(
     usize
 );
 
-arg!(gmail_address, "GMAIL_ADDRESS", default String::new());
-arg!(gmail_app_password, "GMAIL_APP_PASSWORD", default String::new());
+arg!(smtp_host, "SMTP_HOST", default String::new());
+arg!(smtp_port, "SMTP_PORT", default 587, u16);
+arg!(smtp_username, "SMTP_USERNAME", default String::new());
+arg!(smtp_password, "SMTP_PASSWORD", default String::new());
 arg!(mail_from_name, "MAIL_FROM_NAME", default "Nimbus".to_string());
 arg!(nimbus_origin, "NIMBUS_ORIGIN", default "http://localhost:5173".to_string());
 arg!(webauthn_rp_id, "WEBAUTHN_RP_ID", default String::new());
@@ -275,12 +285,10 @@ impl fmt::Display for StartArgs {
             "upload_max_bytes: {} GiB",
             self.upload_max_bytes() as f64 / 1024. / 1024. / 1024.
         )?;
-        writeln!(f, "gmail_address: {}", show(&self.gmail_address()))?;
-        writeln!(
-            f,
-            "gmail_app_password: {}",
-            redact(&self.gmail_app_password())
-        )?;
+        writeln!(f, "smtp_host: {}", show(&self.smtp_host()))?;
+        writeln!(f, "smtp_port: {}", self.smtp_port())?;
+        writeln!(f, "smtp_username: {}", show(&self.smtp_username()))?;
+        writeln!(f, "smtp_password: {}", redact(&self.smtp_password()))?;
         writeln!(f, "mail_from_name: {}", self.mail_from_name())?;
         writeln!(f, "nimbus_origin: {}", self.nimbus_origin())?;
         let rp_id = self.webauthn_rp_id();

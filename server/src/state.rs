@@ -100,8 +100,10 @@ impl AppState {
         );
 
         let email = EmailSender::new(
-            args.gmail_address(),
-            args.gmail_app_password(),
+            args.smtp_host(),
+            args.smtp_port(),
+            args.smtp_username(),
+            args.smtp_password(),
             args.mail_from_name(),
             Arc::clone(&nimbus_origin),
         );

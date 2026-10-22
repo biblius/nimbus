@@ -66,7 +66,7 @@ impl EmailQueue {
             tracing::info!(
                 to = %request.to,
                 subject = %request.subject,
-                "gmail is not configured; email was not sent"
+                "smtp is not configured; email was not sent"
             );
             return Ok(());
         };
@@ -88,14 +88,14 @@ impl EmailQueue {
             })?;
 
         mailer.send(message).await.map_err(|error| {
-            tracing::error!(%error, "gmail smtp send failed");
+            tracing::error!(%error, "smtp send failed");
             AppError::Internal
         })?;
         Ok(())
     }
 }
 
-/// Gmail SMTP sender. An empty app password disables delivery and logs instead.
+/// SMTP sender. Missing host, username, or password disables delivery and logs instead.
 ///
 /// Delivery runs on a background queue so callers are not blocked on SMTP latency.
 #[derive(Clone)]
@@ -108,37 +108,46 @@ pub struct EmailSender {
 
 impl EmailSender {
     pub fn new(
-        address: String,
-        app_password: String,
+        host: String,
+        port: u16,
+        username: String,
+        password: String,
         from_name: String,
         nimbus_origin: impl Into<Arc<str>>,
     ) -> Self {
-        let parsed = if address.is_empty() {
+        let parsed = if username.is_empty() {
             "nimbus@localhost".parse()
         } else {
-            address.parse()
+            username.parse()
         };
 
         let from = match parsed {
             Ok(email) => Mailbox::new(Some(from_name), email),
             Err(error) => {
-                tracing::error!(%error, "invalid gmail from address; email is disabled");
+                tracing::error!(%error, "invalid smtp from address; email is disabled");
                 Mailbox::new(None, "nimbus@localhost".parse().expect("static mailbox"))
             }
         };
 
-        let mailer = if address.is_empty() || app_password.is_empty() {
-            tracing::info!("gmail is not configured; outbound email is disabled");
+        let mailer = if host.is_empty() || username.is_empty() || password.is_empty() {
+            tracing::info!("smtp is not configured; outbound email is disabled");
             None
         } else {
-            match AsyncSmtpTransport::<Tokio1Executor>::starttls_relay("smtp.gmail.com") {
-                Ok(transport) => Some(
-                    transport
-                        .credentials(Credentials::new(address, app_password))
+            let transport = if port == 465 {
+                AsyncSmtpTransport::<Tokio1Executor>::relay(&host)
+            } else {
+                AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&host)
+            };
+
+            match transport {
+                Ok(builder) => Some(
+                    builder
+                        .port(port)
+                        .credentials(Credentials::new(username, password))
                         .build(),
                 ),
                 Err(error) => {
-                    tracing::error!(%error, "gmail transport could not be built; email is disabled");
+                    tracing::error!(%error, "smtp transport could not be built; email is disabled");
                     None
                 }
             }
@@ -184,7 +193,7 @@ impl EmailSender {
 
         #[cfg(debug_assertions)]
         if !self.mailer_configured {
-            tracing::info!(%link, "gmail is not configured; password reset link");
+            tracing::info!(%link, "smtp is not configured; password reset link");
         }
 
         self.enqueue(to, "Reset your Nimbus password", html).await
