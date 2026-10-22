@@ -1,25 +1,23 @@
 mod access;
+mod content;
 mod copying;
-mod deletion;
 mod moving;
 mod overwrite;
-mod processing;
-mod renaming;
+mod read;
+mod rename;
 mod roots;
 mod share;
 mod trash;
-mod tree;
 mod upload;
 
 use crate::{
-    db::UserRootRepository,
     error::AppError,
     file::{
         AccessMode, UserRootContext,
         model::{FileEntry, RootAssignment},
     },
     test::TestState,
-    user::model::{CreateSharedFolder, CreateUser, Role, User},
+    user::model::{CreateSharedFolder, CreateUser, Role, User, UserView},
 };
 use uuid::Uuid;
 
@@ -32,7 +30,6 @@ pub(super) async fn ctx(state: &TestState, user: &User, root: Uuid) -> UserRootC
         .unwrap()
 }
 
-/// Create a shared root whose initial members get [`AccessMode::DEFAULT`].
 pub(super) async fn shared_root(state: &TestState, name: &str, members: &[Uuid]) -> Uuid {
     state
         .services
@@ -47,14 +44,15 @@ pub(super) async fn shared_root(state: &TestState, name: &str, members: &[Uuid])
         .id
 }
 
-/// Insert or keep a membership row with the given access mode.
 pub(super) async fn grant(
     state: &TestState,
     root_id: Uuid,
     user_id: Uuid,
     access_mode: AccessMode,
 ) {
-    UserRootRepository::new(state.pool.clone())
+    state
+        .repository
+        .folders
         .assign(RootAssignment {
             root_id,
             user_id,
@@ -63,7 +61,6 @@ pub(super) async fn grant(
         .await
         .unwrap();
 
-    // `assign` is insert-only (`ON CONFLICT DO NOTHING`); force the mode.
     sqlx::query("UPDATE user_roots SET access_mode = $1 WHERE root_id = $2 AND user_id = $3")
         .bind(access_mode)
         .bind(root_id)
@@ -120,7 +117,7 @@ macro_rules! count {
 }
 pub(super) use count;
 
-pub(super) async fn user(state: &TestState, username: &str) -> crate::user::model::UserView {
+pub(super) async fn user(state: &TestState, username: &str) -> UserView {
     state
         .services
         .users

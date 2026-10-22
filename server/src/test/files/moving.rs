@@ -1,13 +1,15 @@
 #[suitest::suite(files_move)]
 #[suitest::suite_cfg(sequential = true)]
 mod moving {
-    use super::super::{upload_in, user};
+    use super::super::{ctx, upload_in, user};
     use crate::{
+        auth::session::Session,
         error::AppError,
         file::model::{CreateDirectory, MoveFiles},
         test::{self, TestState},
     };
-    use suitest::before_all;
+    use suitest::{before_all, before_each};
+    use uuid::Uuid;
 
     #[before_all]
     async fn setup() -> TestState {
@@ -15,17 +17,68 @@ mod moving {
         test_state
     }
 
-    #[test]
-    async fn moves_selected_live_entries_under_the_target_directory(state: TestState) {
-        let _ada = user(state, "ada-move").await;
-        let session = test::login(state, "ada-move", "temporary").await;
+    /// Private workspace: logged-in user and their root.
+    #[before_each]
+    async fn workspace(state: TestState) -> (Session, Uuid) {
+        let username = format!("move-{}", Uuid::new_v4());
+        user(state, &username).await;
+        let session = test::login(state, &username, "temporary").await;
         let root = test::private_root(state, &session.user).await;
+        (session, root)
+    }
 
+    /// Empty `ids` independently fails validate before any move logic runs.
+    #[test]
+    async fn move_rejects_empty_ids(state: TestState, session: Session, root: Uuid) {
+        let err = state
+            .services
+            .files
+            .move_files(
+                &ctx(state, &session.user, *root).await,
+                MoveFiles {
+                    ids: vec![],
+                    parent: None,
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    /// Missing destination folder independently yields ResourceMissing.
+    #[test]
+    async fn move_parent_missing(state: TestState, session: Session, root: Uuid) {
+        let file = test::upload(state, &session.user, *root, "notes.txt", b"notes").await;
+
+        let err = state
+            .services
+            .files
+            .move_files(
+                &ctx(state, &session.user, *root).await,
+                MoveFiles {
+                    ids: vec![file.id],
+                    parent: Some(Uuid::new_v4()),
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::ResourceMissing(_)));
+    }
+
+    /// Moving selected live entries updates parent; duplicates in `ids` are ignored.
+    #[test]
+    async fn moves_selected_live_entries_under_the_target_directory(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
         let destination = state
             .services
             .files
             .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 CreateDirectory {
                     parent: None,
                     name: "archive".into(),
@@ -34,12 +87,12 @@ mod moving {
             )
             .await
             .unwrap();
-        let file = test::upload(state, &session.user, root, "notes.txt", b"notes").await;
+        let file = test::upload(state, &session.user, *root, "notes.txt", b"notes").await;
         let folder = state
             .services
             .files
             .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 CreateDirectory {
                     parent: None,
                     name: "photos".into(),
@@ -51,19 +104,19 @@ mod moving {
         let nested = upload_in(
             state,
             &session.user,
-            root,
+            *root,
             Some(folder.id),
             "inside.txt",
             b"inside",
         )
         .await;
-        let kept = test::upload(state, &session.user, root, "keep.txt", b"keep").await;
+        let kept = test::upload(state, &session.user, *root, "keep.txt", b"keep").await;
 
         state
             .services
             .files
             .move_files(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 MoveFiles {
                     ids: vec![file.id, folder.id, file.id],
                     parent: Some(destination.id),
@@ -75,37 +128,25 @@ mod moving {
         let moved_file = state
             .services
             .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                file.id,
-            )
+            .get(&ctx(state, &session.user, *root).await, file.id)
             .await
             .unwrap();
         let moved_folder = state
             .services
             .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                folder.id,
-            )
+            .get(&ctx(state, &session.user, *root).await, folder.id)
             .await
             .unwrap();
         let nested = state
             .services
             .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                nested.id,
-            )
+            .get(&ctx(state, &session.user, *root).await, nested.id)
             .await
             .unwrap();
         let kept = state
             .services
             .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                kept.id,
-            )
+            .get(&ctx(state, &session.user, *root).await, kept.id)
             .await
             .unwrap();
 
@@ -115,16 +156,14 @@ mod moving {
         assert_eq!(kept.parent, None);
     }
 
+    /// `parent: None` independently places entries in the workspace root.
     #[test]
-    async fn moves_entries_to_the_root(state: TestState) {
-        let _ada = user(state, "ada-move-root").await;
-        let session = test::login(state, "ada-move-root", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
+    async fn moves_to_root(state: TestState, session: Session, root: Uuid) {
         let folder = state
             .services
             .files
             .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 CreateDirectory {
                     parent: None,
                     name: "box".into(),
@@ -136,7 +175,7 @@ mod moving {
         let file = upload_in(
             state,
             &session.user,
-            root,
+            *root,
             Some(folder.id),
             "leaf.txt",
             b"leaf",
@@ -147,7 +186,7 @@ mod moving {
             .services
             .files
             .move_files(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 MoveFiles {
                     ids: vec![file.id],
                     parent: None,
@@ -159,25 +198,20 @@ mod moving {
         let moved = state
             .services
             .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                file.id,
-            )
+            .get(&ctx(state, &session.user, *root).await, file.id)
             .await
             .unwrap();
         assert_eq!(moved.parent, None);
     }
 
+    /// Moving a directory into its descendant independently fails (cycle).
     #[test]
-    async fn cannot_move_a_directory_into_itself(state: TestState) {
-        let _ada = user(state, "ada-move-cycle").await;
-        let session = test::login(state, "ada-move-cycle", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
+    async fn cannot_move_into_itself(state: TestState, session: Session, root: Uuid) {
         let folder = state
             .services
             .files
             .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 CreateDirectory {
                     parent: None,
                     name: "notes".into(),
@@ -190,7 +224,7 @@ mod moving {
             .services
             .files
             .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 CreateDirectory {
                     parent: Some(folder.id),
                     name: "nested".into(),
@@ -200,11 +234,11 @@ mod moving {
             .await
             .unwrap();
 
-        let error = state
+        let err = state
             .services
             .files
             .move_files(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 MoveFiles {
                     ids: vec![folder.id],
                     parent: Some(nested.id),
@@ -213,33 +247,28 @@ mod moving {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, AppError::Unprocessable(_)));
+        assert!(matches!(err, AppError::Unprocessable(_)));
 
         let folder = state
             .services
             .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                folder.id,
-            )
+            .get(&ctx(state, &session.user, *root).await, folder.id)
             .await
             .unwrap();
         assert_eq!(folder.parent, None);
     }
 
+    /// Non-directory parent independently rejects the move.
     #[test]
-    async fn cannot_move_into_a_file(state: TestState) {
-        let _ada = user(state, "ada-move-file").await;
-        let session = test::login(state, "ada-move-file", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-        let target = test::upload(state, &session.user, root, "target.txt", b"target").await;
-        let file = test::upload(state, &session.user, root, "notes.txt", b"notes").await;
+    async fn cannot_move_into_a_file(state: TestState, session: Session, root: Uuid) {
+        let target = test::upload(state, &session.user, *root, "target.txt", b"target").await;
+        let file = test::upload(state, &session.user, *root, "notes.txt", b"notes").await;
 
-        let error = state
+        let err = state
             .services
             .files
             .move_files(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 MoveFiles {
                     ids: vec![file.id],
                     parent: Some(target.id),
@@ -248,15 +277,12 @@ mod moving {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, AppError::Unprocessable(_)));
+        assert!(matches!(err, AppError::Unprocessable(_)));
 
         let file = state
             .services
             .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                file.id,
-            )
+            .get(&ctx(state, &session.user, *root).await, file.id)
             .await
             .unwrap();
         assert_eq!(file.parent, None);

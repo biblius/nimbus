@@ -1,31 +1,19 @@
 #[suitest::suite(files_share)]
 #[suitest::suite_cfg(sequential = true)]
-mod sharing {
-    use super::super::{upload_in, user};
+mod share {
+    use super::super::{ctx, upload_in, user};
     use crate::{
+        auth::session::Session,
         error::AppError,
-        file::model::{CreateDirectory, FileKind, ShareFiles, SharingMode, UnshareFiles},
+        file::{
+            model::{CreateDirectory, FileKind, ShareFiles, SharingMode, UnshareFiles},
+            service::DownloadBody,
+        },
         test::{self, TestState},
     };
     use chrono::{Duration, Utc};
-    use suitest::before_all;
+    use suitest::{before_all, before_each};
     use uuid::Uuid;
-
-    fn share_download(id: Uuid) -> ShareFiles {
-        ShareFiles {
-            ids: vec![id],
-            sharing_mode: SharingMode::Download,
-            share_expires_at: None,
-        }
-    }
-
-    fn share_view(id: Uuid) -> ShareFiles {
-        ShareFiles {
-            ids: vec![id],
-            sharing_mode: SharingMode::View,
-            share_expires_at: None,
-        }
-    }
 
     #[before_all]
     async fn setup() -> TestState {
@@ -33,13 +21,82 @@ mod sharing {
         test_state
     }
 
-    #[test]
-    async fn share_marks_file_and_allows_public_get(state: TestState) {
-        let _ada = user(state, "ada-share-file").await;
-        let session = test::login(state, "ada-share-file", "temporary").await;
+    /// Private workspace: logged-in user and their root.
+    #[before_each]
+    async fn workspace(state: TestState) -> (Session, Uuid) {
+        let username = format!("share-{}", Uuid::new_v4());
+        user(state, &username).await;
+        let session = test::login(state, &username, "temporary").await;
         let root = test::private_root(state, &session.user).await;
+        (session, root)
+    }
 
-        let file = upload_in(state, &session.user, root, None, "notes.txt", b"hello").await;
+    /// Empty `ids` independently fails validate before share logic runs.
+    #[test]
+    async fn share_rejects_empty_ids(state: TestState, session: Session, root: Uuid) {
+        let err = state
+            .services
+            .files
+            .share_files(
+                &ctx(state, &session.user, *root).await,
+                ShareFiles {
+                    ids: vec![],
+                    sharing_mode: SharingMode::Download,
+                    share_expires_at: None,
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    /// Past `share_expires_at` independently fails before the share layer updates rows.
+    #[test]
+    async fn share_rejects_past_expiry(state: TestState, session: Session, root: Uuid) {
+        let file = upload_in(state, &session.user, *root, None, "notes.txt", b"hello").await;
+
+        let err = state
+            .services
+            .files
+            .share_files(
+                &ctx(state, &session.user, *root).await,
+                ShareFiles {
+                    ids: vec![file.id],
+                    sharing_mode: SharingMode::Download,
+                    share_expires_at: Some(Utc::now() - Duration::hours(1)),
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::Unprocessable(_)));
+    }
+
+    /// Empty `ids` independently fails validate before unshare logic runs.
+    #[test]
+    async fn unshare_rejects_empty_ids(state: TestState, session: Session, root: Uuid) {
+        let err = state
+            .services
+            .files
+            .unshare_files(
+                &ctx(state, &session.user, *root).await,
+                UnshareFiles { ids: vec![] },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    /// Download sharing mode independently enables public metadata and file download.
+    #[test]
+    async fn download_share_marks_file_and_allows_public_get(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let file = upload_in(state, &session.user, *root, None, "notes.txt", b"hello").await;
 
         assert!(file.sharing_mode.is_none());
 
@@ -47,8 +104,12 @@ mod sharing {
             .services
             .files
             .share_files(
-                &super::super::ctx(state, &session.user, root).await,
-                share_download(file.id),
+                &ctx(state, &session.user, *root).await,
+                ShareFiles {
+                    ids: vec![file.id],
+                    sharing_mode: SharingMode::Download,
+                    share_expires_at: None,
+                },
             )
             .await
             .unwrap();
@@ -60,27 +121,32 @@ mod sharing {
 
         let (name, body) = state.services.share.download(file.id).await.unwrap();
         assert_eq!(name, "notes.txt");
-        let crate::file::service::DownloadBody::File { path, mime } = body else {
+        let DownloadBody::File { path, mime } = body else {
             panic!("expected file download body");
         };
         assert!(path.exists());
         assert!(mime.starts_with("text/plain"));
     }
 
+    /// View sharing mode independently allows content reads but denies download.
     #[test]
-    async fn view_share_allows_content_but_denies_download(state: TestState) {
-        let _ada = user(state, "ada-share-view").await;
-        let session = test::login(state, "ada-share-view", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-
-        let file = upload_in(state, &session.user, root, None, "notes.txt", b"hello").await;
+    async fn view_share_allows_content_but_denies_download(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let file = upload_in(state, &session.user, *root, None, "notes.txt", b"hello").await;
 
         state
             .services
             .files
             .share_files(
-                &super::super::ctx(state, &session.user, root).await,
-                share_view(file.id),
+                &ctx(state, &session.user, *root).await,
+                ShareFiles {
+                    ids: vec![file.id],
+                    sharing_mode: SharingMode::View,
+                    share_expires_at: None,
+                },
             )
             .await
             .unwrap();
@@ -97,20 +163,25 @@ mod sharing {
         assert!(matches!(download_denied, AppError::Forbidden(_)));
     }
 
+    /// Expired share timestamp independently hides the file from public get.
     #[test]
-    async fn expired_share_is_not_publicly_readable(state: TestState) {
-        let _ada = user(state, "ada-share-expired").await;
-        let session = test::login(state, "ada-share-expired", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-
-        let file = upload_in(state, &session.user, root, None, "old.txt", b"bye").await;
+    async fn expired_share_is_not_publicly_readable(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let file = upload_in(state, &session.user, *root, None, "old.txt", b"bye").await;
 
         state
             .services
             .files
             .share_files(
-                &super::super::ctx(state, &session.user, root).await,
-                share_download(file.id),
+                &ctx(state, &session.user, *root).await,
+                ShareFiles {
+                    ids: vec![file.id],
+                    sharing_mode: SharingMode::Download,
+                    share_expires_at: None,
+                },
             )
             .await
             .unwrap();
@@ -135,13 +206,10 @@ mod sharing {
         assert!(matches!(missing, AppError::ResourceMissing(_)));
     }
 
+    /// Unshare independently clears public access for a previously shared file.
     #[test]
-    async fn unshared_file_is_not_publicly_readable(state: TestState) {
-        let _ada = user(state, "ada-unshared").await;
-        let session = test::login(state, "ada-unshared", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-
-        let file = upload_in(state, &session.user, root, None, "secret.txt", b"nope").await;
+    async fn unshare_clears_public_access(state: TestState, session: Session, root: Uuid) {
+        let file = upload_in(state, &session.user, *root, None, "secret.txt", b"nope").await;
 
         let missing = state.services.share.get(file.id).await.unwrap_err();
         assert!(matches!(missing, AppError::ResourceMissing(_)));
@@ -150,8 +218,12 @@ mod sharing {
             .services
             .files
             .share_files(
-                &super::super::ctx(state, &session.user, root).await,
-                share_download(file.id),
+                &ctx(state, &session.user, *root).await,
+                ShareFiles {
+                    ids: vec![file.id],
+                    sharing_mode: SharingMode::Download,
+                    share_expires_at: None,
+                },
             )
             .await
             .unwrap();
@@ -160,7 +232,7 @@ mod sharing {
             .services
             .files
             .unshare_files(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 UnshareFiles { ids: vec![file.id] },
             )
             .await
@@ -170,17 +242,18 @@ mod sharing {
         assert!(matches!(missing, AppError::ResourceMissing(_)));
     }
 
+    /// Sharing a directory independently cascades mode and expiry to descendants.
     #[test]
-    async fn sharing_directory_cascades_to_descendants(state: TestState) {
-        let _ada = user(state, "ada-share-dir").await;
-        let session = test::login(state, "ada-share-dir", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-
+    async fn sharing_directory_cascades_to_descendants(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
         let dir = state
             .services
             .files
             .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 CreateDirectory {
                     name: "docs".into(),
                     parent: None,
@@ -194,7 +267,7 @@ mod sharing {
             .services
             .files
             .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 CreateDirectory {
                     name: "nested".into(),
                     parent: Some(dir.id),
@@ -207,7 +280,7 @@ mod sharing {
         let leaf = upload_in(
             state,
             &session.user,
-            root,
+            *root,
             Some(nested.id),
             "leaf.txt",
             b"leaf",
@@ -220,7 +293,7 @@ mod sharing {
             .services
             .files
             .share_files(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 ShareFiles {
                     ids: vec![dir.id],
                     sharing_mode: SharingMode::View,
@@ -270,7 +343,7 @@ mod sharing {
             .services
             .files
             .unshare_files(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 UnshareFiles { ids: vec![dir.id] },
             )
             .await
@@ -282,102 +355,6 @@ mod sharing {
         ));
         assert!(matches!(
             state.services.share.get(leaf.id).await.unwrap_err(),
-            AppError::ResourceMissing(_)
-        ));
-    }
-
-    #[test]
-    async fn upload_into_shared_parent_inherits_shared(state: TestState) {
-        let _ada = user(state, "ada-share-inherit").await;
-        let session = test::login(state, "ada-share-inherit", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-
-        let dir = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    name: "public".into(),
-                    parent: None,
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-
-        let expires_at = Utc::now() + Duration::days(7);
-
-        state
-            .services
-            .files
-            .share_files(
-                &super::super::ctx(state, &session.user, root).await,
-                ShareFiles {
-                    ids: vec![dir.id],
-                    sharing_mode: SharingMode::Download,
-                    share_expires_at: Some(expires_at),
-                },
-            )
-            .await
-            .unwrap();
-
-        let nested = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    name: "nested".into(),
-                    parent: Some(dir.id),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        assert_eq!(nested.sharing_mode, Some(SharingMode::Download));
-        assert!(nested.share_expires_at.is_some());
-
-        let file = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(dir.id),
-            "new.txt",
-            b"fresh",
-        )
-        .await;
-        assert_eq!(file.sharing_mode, Some(SharingMode::Download));
-        assert!(file.share_expires_at.is_some());
-
-        let shared = state.services.share.get(file.id).await.unwrap();
-        assert_eq!(shared.file.name, "new.txt");
-
-        let nested_shared = state.services.share.get(nested.id).await.unwrap();
-        assert_eq!(nested_shared.file.kind, FileKind::Directory);
-    }
-
-    #[test]
-    async fn foreign_user_cannot_share_private_file(state: TestState) {
-        let _ada = user(state, "ada-owner-share").await;
-        let owner = test::login(state, "ada-owner-share", "temporary").await;
-        let root = test::private_root(state, &owner.user).await;
-
-        let file = upload_in(state, &owner.user, root, None, "mine.txt", b"mine").await;
-
-        let _bob = user(state, "bob-share-denied").await;
-        let bob = test::login(state, "bob-share-denied", "temporary").await;
-
-        let denied = state
-            .services
-            .files
-            .accessible_root(&bob.user, root)
-            .await
-            .unwrap_err();
-
-        assert!(matches!(denied, AppError::Forbidden(_)));
-        assert!(matches!(
-            state.services.share.get(file.id).await.unwrap_err(),
             AppError::ResourceMissing(_)
         ));
     }

@@ -1,16 +1,15 @@
 #[suitest::suite(files_trash)]
 #[suitest::suite_cfg(sequential = true)]
 mod trash {
-    use super::super::{count, upload_in, user};
+    use super::super::{ctx, count, shared_root, upload_in, user};
     use crate::{
-        db::FileRepository,
+        auth::session::Session,
         error::AppError,
         file::model::{CreateDirectory, RestoreFile, TrashFiles},
         test::{self, TestState},
     };
-    use chrono::Utc;
-    use image::ImageFormat;
-    use suitest::before_all;
+    use chrono::{Duration, Utc};
+    use suitest::{before_all, before_each};
     use uuid::Uuid;
 
     #[before_all]
@@ -19,674 +18,14 @@ mod trash {
         test_state
     }
 
-    #[test]
-    async fn trash_removes_every_listed_file(state: TestState) {
-        let _ada = user(state, "ada-trash").await;
-        let session = test::login(state, "ada-trash", "temporary").await;
+    /// Private workspace: logged-in user and their root.
+    #[before_each]
+    async fn workspace(state: TestState) -> (Session, Uuid) {
+        let username = format!("trash-{}", Uuid::new_v4());
+        user(state, &username).await;
+        let session = test::login(state, &username, "temporary").await;
         let root = test::private_root(state, &session.user).await;
-        let first = test::upload(state, &session.user, root, "one.txt", b"one").await;
-        let second = test::upload(state, &session.user, root, "two.txt", b"two").await;
-        let kept = test::upload(state, &session.user, root, "keep.txt", b"keep").await;
-
-        state
-            .services
-            .files
-            .delete_many(
-                &super::super::ctx(state, &session.user, root).await,
-                TrashFiles {
-                    ids: vec![first.id, second.id, second.id],
-                },
-            )
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            state
-                .services
-                .files
-                .content_for_download(
-                    &super::super::ctx(state, &session.user, root).await,
-                    first.id
-                )
-                .await,
-            Err(AppError::ResourceMissing(_))
-        ));
-        assert!(matches!(
-            state
-                .services
-                .files
-                .content_for_download(
-                    &super::super::ctx(state, &session.user, root).await,
-                    second.id
-                )
-                .await,
-            Err(AppError::ResourceMissing(_))
-        ));
-        assert!(
-            state
-                .services
-                .files
-                .content_for_download(
-                    &super::super::ctx(state, &session.user, root).await,
-                    kept.id
-                )
-                .await
-                .is_ok()
-        );
-
-        let _bob = user(state, "bob-trash").await;
-        let bob = test::login(state, "bob-trash", "temporary").await;
-        let other = test::private_root(state, &bob.user).await;
-        let foreign = test::upload(state, &bob.user, other, "foreign.txt", b"no").await;
-
-        state
-            .services
-            .files
-            .delete_many(
-                &super::super::ctx(state, &session.user, root).await,
-                TrashFiles {
-                    ids: vec![first.id, kept.id, foreign.id],
-                },
-            )
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            state
-                .services
-                .files
-                .content_for_download(
-                    &super::super::ctx(state, &session.user, root).await,
-                    kept.id
-                )
-                .await,
-            Err(AppError::ResourceMissing(_))
-        ));
-        assert!(
-            state
-                .services
-                .files
-                .content_for_download(
-                    &super::super::ctx(state, &bob.user, other).await,
-                    foreign.id
-                )
-                .await
-                .is_ok()
-        );
-    }
-
-    #[test]
-    async fn trash_tree_roots_are_deleted_and_keep_every_child(state: TestState) {
-        let _ada = user(state, "ada-trash-tree").await;
-        let session = test::login(state, "ada-trash-tree", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-
-        let live = test::upload(state, &session.user, root, "live.txt", b"live").await;
-        let notes = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    parent: None,
-                    name: "notes".into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let live_child = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(notes.id),
-            "live-child.txt",
-            b"live-child",
-        )
-        .await;
-        let nested = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    parent: Some(notes.id),
-                    name: "nested".into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let leaf = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(nested.id),
-            "leaf.txt",
-            b"leaf",
-        )
-        .await;
-        let buried = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(nested.id),
-            "buried.txt",
-            b"buried",
-        )
-        .await;
-        let gone = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(notes.id),
-            "gone.txt",
-            b"gone",
-        )
-        .await;
-        let archive = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    parent: Some(notes.id),
-                    name: "archive".into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let kept_inside = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(archive.id),
-            "kept-inside.txt",
-            b"kept-inside",
-        )
-        .await;
-        let deep = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    parent: Some(archive.id),
-                    name: "deep".into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let bottom = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(deep.id),
-            "bottom.txt",
-            b"bottom",
-        )
-        .await;
-        let loose = test::upload(state, &session.user, root, "loose.txt", b"loose").await;
-        let kept = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    parent: None,
-                    name: "kept".into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let inner = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(kept.id),
-            "inner.txt",
-            b"inner",
-        )
-        .await;
-
-        state
-            .services
-            .files
-            .delete_many(
-                &super::super::ctx(state, &session.user, root).await,
-                TrashFiles {
-                    ids: vec![
-                        notes.id, gone.id, loose.id, inner.id, buried.id, archive.id, deep.id,
-                    ],
-                },
-            )
-            .await
-            .unwrap();
-
-        let tree = state
-            .services
-            .trash
-            .get_trash_tree(&super::super::ctx(state, &session.user, root).await)
-            .await
-            .unwrap();
-        assert_eq!(tree.id, root);
-        assert!(tree.name.is_empty());
-        assert_eq!(
-            tree.children
-                .iter()
-                .map(|entry| entry.name.as_str())
-                .collect::<Vec<_>>(),
-            ["notes", "inner.txt", "loose.txt"]
-        );
-
-        for child in &tree.children {
-            let parent: Option<Uuid> =
-                sqlx::query_scalar("SELECT parent FROM trashed_files WHERE id = $1")
-                    .bind(child.id)
-                    .fetch_one(&state.pool)
-                    .await
-                    .unwrap();
-            assert!(parent.is_none());
-            assert_eq!(
-                count!(state, "SELECT COUNT(*) FROM files WHERE id = $1", child.id),
-                0
-            );
-        }
-
-        let buried_parent: Option<Uuid> =
-            sqlx::query_scalar("SELECT parent FROM trashed_files WHERE id = $1")
-                .bind(buried.id)
-                .fetch_one(&state.pool)
-                .await
-                .unwrap();
-        assert_eq!(buried_parent, Some(nested.id));
-
-        let notes_node = tree
-            .children
-            .iter()
-            .find(|entry| entry.id == notes.id)
-            .unwrap();
-        assert_eq!(
-            notes_node
-                .children
-                .iter()
-                .map(|entry| entry.name.as_str())
-                .collect::<Vec<_>>(),
-            ["archive", "nested", "gone.txt", "live-child.txt"]
-        );
-
-        let archive_node = notes_node
-            .children
-            .iter()
-            .find(|entry| entry.id == archive.id)
-            .unwrap();
-        assert_eq!(
-            archive_node
-                .children
-                .iter()
-                .map(|entry| entry.name.as_str())
-                .collect::<Vec<_>>(),
-            ["deep", "kept-inside.txt"]
-        );
-        assert_eq!(archive_node.children[0].id, deep.id);
-        assert_eq!(archive_node.children[0].children.len(), 1);
-        assert_eq!(archive_node.children[0].children[0].id, bottom.id);
-
-        let nested_node = notes_node
-            .children
-            .iter()
-            .find(|entry| entry.id == nested.id)
-            .unwrap();
-        assert_eq!(
-            nested_node
-                .children
-                .iter()
-                .map(|entry| entry.name.as_str())
-                .collect::<Vec<_>>(),
-            ["buried.txt", "leaf.txt"]
-        );
-        assert_eq!(nested_node.children[1].id, leaf.id);
-
-        for id in [
-            notes.id,
-            live_child.id,
-            nested.id,
-            leaf.id,
-            kept_inside.id,
-            bottom.id,
-            archive.id,
-            deep.id,
-            gone.id,
-            buried.id,
-        ] {
-            assert_eq!(
-                count!(state, "SELECT COUNT(*) FROM files WHERE id = $1", id),
-                0
-            );
-        }
-        assert_eq!(
-            count!(state, "SELECT COUNT(*) FROM files WHERE id = $1", live.id),
-            1
-        );
-        assert_eq!(
-            count!(state, "SELECT COUNT(*) FROM files WHERE id = $1", kept.id),
-            1
-        );
-
-        fn count(tree: &crate::file::tree::FileTree, id: Uuid) -> usize {
-            usize::from(tree.id == id)
-                + tree
-                    .children
-                    .iter()
-                    .map(|child| count(child, id))
-                    .sum::<usize>()
-        }
-        assert_eq!(count(&tree, buried.id), 1);
-        assert_eq!(count(&tree, archive.id), 1);
-        assert_eq!(count(&tree, deep.id), 1);
-        assert_eq!(count(&tree, gone.id), 1);
-        assert_eq!(count(&tree, live.id), 0);
-        assert_eq!(count(&tree, kept.id), 0);
-    }
-
-    #[test]
-    async fn restore_all_puts_every_trash_root_at_the_chosen_parent(state: TestState) {
-        let _ada = user(state, "ada-restore-all").await;
-        let session = test::login(state, "ada-restore-all", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-
-        let inbox = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    parent: None,
-                    name: "inbox".into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let notes = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    parent: None,
-                    name: "notes".into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let leaf = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(notes.id),
-            "leaf.txt",
-            b"leaf",
-        )
-        .await;
-        let loose = test::upload(state, &session.user, root, "loose.txt", b"loose").await;
-
-        state
-            .services
-            .files
-            .delete_many(
-                &super::super::ctx(state, &session.user, root).await,
-                TrashFiles {
-                    ids: vec![notes.id, loose.id],
-                },
-            )
-            .await
-            .unwrap();
-
-        state
-            .services
-            .trash
-            .restore_all(
-                &super::super::ctx(state, &session.user, root).await,
-                RestoreFile {
-                    parent: Some(inbox.id),
-                },
-            )
-            .await
-            .unwrap();
-
-        let trash = state
-            .services
-            .trash
-            .get_trash_tree(&super::super::ctx(state, &session.user, root).await)
-            .await
-            .unwrap();
-        assert!(trash.children.is_empty());
-
-        let restored_notes = state
-            .services
-            .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                notes.id,
-            )
-            .await
-            .unwrap();
-        assert_eq!(restored_notes.parent, Some(inbox.id));
-
-        let restored_loose = state
-            .services
-            .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                loose.id,
-            )
-            .await
-            .unwrap();
-        assert_eq!(restored_loose.parent, Some(inbox.id));
-
-        let restored_leaf = state
-            .services
-            .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                leaf.id,
-            )
-            .await
-            .unwrap();
-        assert_eq!(restored_leaf.parent, Some(notes.id));
-    }
-
-    #[test]
-    async fn restore_puts_the_file_at_the_chosen_parent(state: TestState) {
-        let _ada = user(state, "ada-restore").await;
-        let session = test::login(state, "ada-restore", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-
-        let notes = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    parent: None,
-                    name: "notes".into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let inside = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(notes.id),
-            "inside.txt",
-            b"restore-inside",
-        )
-        .await;
-
-        let created: chrono::DateTime<Utc> =
-            sqlx::query_scalar("SELECT created_at FROM files WHERE id = $1")
-                .bind(inside.id)
-                .fetch_one(&state.pool)
-                .await
-                .unwrap();
-
-        state
-            .services
-            .files
-            .delete(
-                &super::super::ctx(state, &session.user, root).await,
-                inside.id,
-            )
-            .await
-            .unwrap();
-
-        let trashed_at: Option<chrono::DateTime<Utc>> =
-            sqlx::query_scalar("SELECT trashed_at FROM trashed_files WHERE id = $1")
-                .bind(inside.id)
-                .fetch_one(&state.pool)
-                .await
-                .unwrap();
-        assert!(trashed_at.is_some());
-        let stored_created: chrono::DateTime<Utc> =
-            sqlx::query_scalar("SELECT created_at FROM trashed_files WHERE id = $1")
-                .bind(inside.id)
-                .fetch_one(&state.pool)
-                .await
-                .unwrap();
-        assert_eq!(stored_created, created);
-
-        let missing_folder = state
-            .services
-            .trash
-            .restore(
-                &super::super::ctx(state, &session.user, root).await,
-                inside.id,
-                RestoreFile {
-                    parent: Some(Uuid::new_v4()),
-                },
-            )
-            .await;
-        assert!(matches!(missing_folder, Err(AppError::Unprocessable(_))));
-
-        state
-            .services
-            .trash
-            .restore(
-                &super::super::ctx(state, &session.user, root).await,
-                inside.id,
-                RestoreFile {
-                    parent: Some(notes.id),
-                },
-            )
-            .await
-            .unwrap();
-
-        let back = state
-            .services
-            .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                inside.id,
-            )
-            .await
-            .unwrap();
-        assert_eq!(back.parent, Some(notes.id));
-        assert_eq!(back.created_at, created);
-
-        state
-            .services
-            .files
-            .delete(
-                &super::super::ctx(state, &session.user, root).await,
-                notes.id,
-            )
-            .await
-            .unwrap();
-
-        state
-            .services
-            .trash
-            .restore(
-                &super::super::ctx(state, &session.user, root).await,
-                inside.id,
-                RestoreFile { parent: None },
-            )
-            .await
-            .unwrap();
-
-        let moved = state
-            .services
-            .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                inside.id,
-            )
-            .await
-            .unwrap();
-        assert_eq!(moved.parent, None);
-        assert_eq!(moved.created_at, created);
-
-        let boxed = state
-            .services
-            .files
-            .create_directory(
-                &super::super::ctx(state, &session.user, root).await,
-                CreateDirectory {
-                    parent: None,
-                    name: "box".into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let leaf = upload_in(
-            state,
-            &session.user,
-            root,
-            Some(boxed.id),
-            "leaf.txt",
-            b"leaf",
-        )
-        .await;
-
-        state
-            .services
-            .files
-            .delete(
-                &super::super::ctx(state, &session.user, root).await,
-                boxed.id,
-            )
-            .await
-            .unwrap();
-
-        state
-            .services
-            .trash
-            .restore(
-                &super::super::ctx(state, &session.user, root).await,
-                boxed.id,
-                RestoreFile { parent: None },
-            )
-            .await
-            .unwrap();
-
-        let restored_leaf = state
-            .services
-            .files
-            .get(
-                &super::super::ctx(state, &session.user, root).await,
-                leaf.id,
-            )
-            .await
-            .unwrap();
-        assert_eq!(restored_leaf.parent, Some(boxed.id));
+        (session, root)
     }
 
     async fn wait_until<F, Fut>(timeout: std::time::Duration, mut check: F)
@@ -706,48 +45,238 @@ mod trash {
         }
     }
 
+    /// Missing live file independently yields ResourceMissing.
     #[test]
-    async fn trash_tree_and_preview_endpoint_keep_image_thumbs(state: TestState) {
-        let _ada = user(state, "ada-trash-preview").await;
-        let session = test::login(state, "ada-trash-preview", "temporary").await;
-        let root = test::private_root(state, &session.user).await;
-
-        let img = image::RgbImage::from_fn(24, 24, |_, _| image::Rgb([10, 200, 90]));
-        let mut buf = Vec::new();
-        image::DynamicImage::ImageRgb8(img)
-            .write_to(&mut std::io::Cursor::new(&mut buf), ImageFormat::Png)
-            .unwrap();
-
-        let file = test::upload(state, &session.user, root, "thumb.png", &buf).await;
-        let files = FileRepository::new(state.pool.clone());
-
-        wait_until(std::time::Duration::from_secs(5), || {
-            let files = files.clone();
-            async move {
-                matches!(
-                    files.get_live(root, file.id).await,
-                    Ok(Some(row))
-                        if row.metadata.preview_64.is_some()
-                )
-            }
-        })
-        .await;
-
-        let preview_hash = files
-            .get_live(root, file.id)
+    async fn delete_missing_file(state: TestState, session: Session, root: Uuid) {
+        let err = state
+            .services
+            .files
+            .delete(
+                &ctx(state, &session.user, *root).await,
+                Uuid::new_v4(),
+            )
             .await
-            .unwrap()
-            .expect("live row")
-            .metadata
-            .preview_64
-            .expect("preview_64 hash");
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::ResourceMissing(_)));
+    }
+
+    /// Soft-deleting a live file moves it out of `files` and into trash.
+    #[test]
+    async fn delete_moves_live_to_trash(state: TestState, session: Session, root: Uuid) {
+        let file = test::upload(state, &session.user, *root, "notes.txt", b"notes").await;
 
         state
             .services
             .files
             .delete(
-                &super::super::ctx(state, &session.user, root).await,
+                &ctx(state, &session.user, *root).await,
                 file.id,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            count!(state, "SELECT COUNT(*) FROM files WHERE id = $1", file.id),
+            0
+        );
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
+                file.id
+            ),
+            1
+        );
+        assert!(matches!(
+            state
+                .services
+                .files
+                .content_for_download(&ctx(state, &session.user, *root).await, file.id)
+                .await,
+            Err(AppError::ResourceMissing(_))
+        ));
+    }
+
+    /// Empty `ids` independently fails validate before any trash logic runs.
+    #[test]
+    async fn delete_many_rejects_empty_ids(state: TestState, session: Session, root: Uuid) {
+        let err = state
+            .services
+            .files
+            .delete_many(
+                &ctx(state, &session.user, *root).await,
+                TrashFiles { ids: vec![] },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    /// Missing trashed row independently yields ResourceMissing.
+    #[test]
+    async fn restore_missing_trashed(state: TestState, session: Session, root: Uuid) {
+        let err = state
+            .services
+            .trash
+            .restore(
+                &ctx(state, &session.user, *root).await,
+                Uuid::new_v4(),
+                RestoreFile { parent: None },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::ResourceMissing(_)));
+    }
+
+    /// Restore target folder missing independently yields Unprocessable.
+    #[test]
+    async fn restore_parent_missing(state: TestState, session: Session, root: Uuid) {
+        let file = test::upload(state, &session.user, *root, "gone.txt", b"gone").await;
+
+        state
+            .services
+            .files
+            .delete(
+                &ctx(state, &session.user, *root).await,
+                file.id,
+            )
+            .await
+            .unwrap();
+
+        let err = state
+            .services
+            .trash
+            .restore(
+                &ctx(state, &session.user, *root).await,
+                file.id,
+                RestoreFile {
+                    parent: Some(Uuid::new_v4()),
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::Unprocessable(_)));
+    }
+
+    /// Restore target that is not a directory independently yields Unprocessable.
+    #[test]
+    async fn restore_parent_not_directory(state: TestState, session: Session, root: Uuid) {
+        let sibling = test::upload(state, &session.user, *root, "live.txt", b"live").await;
+        let trashed = test::upload(state, &session.user, *root, "trashed.txt", b"trash").await;
+
+        state
+            .services
+            .files
+            .delete(
+                &ctx(state, &session.user, *root).await,
+                trashed.id,
+            )
+            .await
+            .unwrap();
+
+        let err = state
+            .services
+            .trash
+            .restore(
+                &ctx(state, &session.user, *root).await,
+                trashed.id,
+                RestoreFile {
+                    parent: Some(sibling.id),
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::Unprocessable(_)));
+    }
+
+    /// Restoring a trashed file puts it back under the chosen parent and keeps metadata.
+    #[test]
+    async fn restore_success(state: TestState, session: Session, root: Uuid) {
+        let notes = state
+            .services
+            .files
+            .create_directory(
+                &ctx(state, &session.user, *root).await,
+                CreateDirectory {
+                    parent: None,
+                    name: "notes".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let inside = upload_in(
+            state,
+            &session.user,
+            *root,
+            Some(notes.id),
+            "inside.txt",
+            b"restore-inside",
+        )
+        .await;
+
+        let created: chrono::DateTime<Utc> =
+            sqlx::query_scalar("SELECT created_at FROM files WHERE id = $1")
+                .bind(inside.id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+
+        state
+            .services
+            .files
+            .delete(
+                &ctx(state, &session.user, *root).await,
+                inside.id,
+            )
+            .await
+            .unwrap();
+
+        state
+            .services
+            .trash
+            .restore(
+                &ctx(state, &session.user, *root).await,
+                inside.id,
+                RestoreFile {
+                    parent: Some(notes.id),
+                },
+            )
+            .await
+            .unwrap();
+
+        let back = state
+            .services
+            .files
+            .get(&ctx(state, &session.user, *root).await, inside.id)
+            .await
+            .unwrap();
+        assert_eq!(back.parent, Some(notes.id));
+        assert_eq!(back.created_at, created);
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
+                inside.id
+            ),
+            0
+        );
+    }
+
+    /// Restoring when trash is empty is a no-op.
+    #[test]
+    async fn restore_all_empty_trash_no_op(state: TestState, session: Session, root: Uuid) {
+        state
+            .services
+            .trash
+            .restore_all(
+                &ctx(state, &session.user, *root).await,
+                RestoreFile { parent: None },
             )
             .await
             .unwrap();
@@ -755,33 +284,407 @@ mod trash {
         let tree = state
             .services
             .trash
-            .get_trash_tree(&super::super::ctx(state, &session.user, root).await)
+            .get_trash_tree(&ctx(state, &session.user, *root).await)
             .await
             .unwrap();
-        let node = tree
-            .children
-            .iter()
-            .find(|entry| entry.id == file.id)
-            .expect("trashed image in tree");
-        assert_eq!(
-            node.metadata
-                .as_ref()
-                .and_then(|meta| meta.preview_64.as_deref()),
-            Some(preview_hash.as_str())
-        );
-        assert!(node.file_type.is_some());
+        assert!(tree.children.is_empty());
+    }
 
-        let preview = state
+    /// `restore_all` moves every trash root under the chosen parent and clears trash.
+    #[test]
+    async fn restore_all_puts_trash_roots_at_chosen_parent(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let inbox = state
             .services
             .files
-            .preview(
-                &super::super::ctx(state, &session.user, root).await,
-                file.id,
-                crate::file::model::PreviewSize::Icon,
+            .create_directory(
+                &ctx(state, &session.user, *root).await,
+                CreateDirectory {
+                    parent: None,
+                    name: "inbox".into(),
+                    ..Default::default()
+                },
             )
             .await
             .unwrap();
-        assert_eq!(preview.mime, "image/webp");
-        assert!(preview.len > 0);
+        let notes = state
+            .services
+            .files
+            .create_directory(
+                &ctx(state, &session.user, *root).await,
+                CreateDirectory {
+                    parent: None,
+                    name: "notes".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let leaf = upload_in(
+            state,
+            &session.user,
+            *root,
+            Some(notes.id),
+            "leaf.txt",
+            b"leaf",
+        )
+        .await;
+        let loose = test::upload(state, &session.user, *root, "loose.txt", b"loose").await;
+
+        state
+            .services
+            .files
+            .delete_many(
+                &ctx(state, &session.user, *root).await,
+                TrashFiles {
+                    ids: vec![notes.id, loose.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        state
+            .services
+            .trash
+            .restore_all(
+                &ctx(state, &session.user, *root).await,
+                RestoreFile {
+                    parent: Some(inbox.id),
+                },
+            )
+            .await
+            .unwrap();
+
+        let trash = state
+            .services
+            .trash
+            .get_trash_tree(&ctx(state, &session.user, *root).await)
+            .await
+            .unwrap();
+        assert!(trash.children.is_empty());
+
+        let restored_notes = state
+            .services
+            .files
+            .get(&ctx(state, &session.user, *root).await, notes.id)
+            .await
+            .unwrap();
+        assert_eq!(restored_notes.parent, Some(inbox.id));
+
+        let restored_loose = state
+            .services
+            .files
+            .get(&ctx(state, &session.user, *root).await, loose.id)
+            .await
+            .unwrap();
+        assert_eq!(restored_loose.parent, Some(inbox.id));
+
+        let restored_leaf = state
+            .services
+            .files
+            .get(&ctx(state, &session.user, *root).await, leaf.id)
+            .await
+            .unwrap();
+        assert_eq!(restored_leaf.parent, Some(notes.id));
+    }
+
+    /// Trash tree lists trashed roots at the top level and nests descendants.
+    #[test]
+    async fn get_trash_tree_lists_trashed_roots_and_children(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let notes = state
+            .services
+            .files
+            .create_directory(
+                &ctx(state, &session.user, *root).await,
+                CreateDirectory {
+                    parent: None,
+                    name: "notes".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let child = upload_in(
+            state,
+            &session.user,
+            *root,
+            Some(notes.id),
+            "child.txt",
+            b"child",
+        )
+        .await;
+        let loose = test::upload(state, &session.user, *root, "loose.txt", b"loose").await;
+        let kept = test::upload(state, &session.user, *root, "kept.txt", b"kept").await;
+
+        state
+            .services
+            .files
+            .delete_many(
+                &ctx(state, &session.user, *root).await,
+                TrashFiles {
+                    ids: vec![notes.id, loose.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        let tree = state
+            .services
+            .trash
+            .get_trash_tree(&ctx(state, &session.user, *root).await)
+            .await
+            .unwrap();
+
+        assert_eq!(tree.id, *root);
+        assert!(tree.name.is_empty());
+        assert_eq!(tree.children.len(), 2);
+        assert!(
+            tree.children
+                .iter()
+                .any(|entry| entry.id == notes.id && entry.name == "notes")
+        );
+        assert!(
+            tree.children
+                .iter()
+                .any(|entry| entry.id == loose.id && entry.name == "loose.txt")
+        );
+
+        let notes_node = tree
+            .children
+            .iter()
+            .find(|entry| entry.id == notes.id)
+            .unwrap();
+        assert_eq!(notes_node.children.len(), 1);
+        assert_eq!(notes_node.children[0].id, child.id);
+
+        for id in [notes.id, child.id, loose.id] {
+            assert_eq!(
+                count!(state, "SELECT COUNT(*) FROM files WHERE id = $1", id),
+                0
+            );
+        }
+        assert_eq!(
+            count!(state, "SELECT COUNT(*) FROM files WHERE id = $1", kept.id),
+            1
+        );
+    }
+
+    /// Hard-deleting missing trash independently yields ResourceMissing.
+    #[test]
+    async fn delete_trash_missing(state: TestState, session: Session, root: Uuid) {
+        let err = state
+            .services
+            .trash
+            .delete_trash(
+                &ctx(state, &session.user, *root).await,
+                Uuid::new_v4(),
+                state.queue.clone(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::ResourceMissing(_)));
+    }
+
+    /// Permanent delete streams results for the whole trashed subtree and leaves other trash.
+    #[test]
+    async fn delete_trash_hard_deletes_tree_and_keeps_other_trash(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let directory = state
+            .services
+            .files
+            .create_directory(
+                &ctx(state, &session.user, *root).await,
+                CreateDirectory {
+                    parent: None,
+                    name: "old".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let child = upload_in(
+            state,
+            &session.user,
+            *root,
+            Some(directory.id),
+            "child.txt",
+            b"child",
+        )
+        .await;
+        let kept = test::upload(state, &session.user, *root, "kept.txt", b"kept").await;
+
+        state
+            .services
+            .files
+            .delete_many(
+                &ctx(state, &session.user, *root).await,
+                TrashFiles {
+                    ids: vec![directory.id, kept.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        let rx = state
+            .services
+            .trash
+            .delete_trash(
+                &ctx(state, &session.user, *root).await,
+                directory.id,
+                state.queue.clone(),
+            )
+            .await
+            .unwrap();
+        let results = state.await_deletion(rx).await;
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|result| result.success));
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id IN ($1, $2)",
+                directory.id,
+                child.id
+            ),
+            0
+        );
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
+                kept.id
+            ),
+            1
+        );
+    }
+
+    /// The deletion worker sweeps trash past the retention window.
+    #[test]
+    async fn sweep_hard_deletes_expired_trash(state: TestState, session: Session, root: Uuid) {
+        let file = test::upload(state, &session.user, *root, "expire-me.txt", b"expire").await;
+        let blobs_before = test::blob_count(state.storage_dir());
+
+        state
+            .services
+            .files
+            .delete(
+                &ctx(state, &session.user, *root).await,
+                file.id,
+            )
+            .await
+            .unwrap();
+
+        let past = Utc::now() - Duration::days(31);
+        sqlx::query("UPDATE trashed_files SET trashed_at = $1 WHERE id = $2")
+            .bind(past)
+            .bind(file.id)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+
+        wait_until(std::time::Duration::from_secs(5), || async {
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE id = $1",
+                file.id
+            ) == 0
+                && test::blob_count(state.storage_dir()) == blobs_before - 1
+        })
+        .await;
+        assert_eq!(
+            count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", *root),
+            1
+        );
+    }
+
+    /// Deleting a shared root hard-deletes live files, trash, and the root row.
+    #[test]
+    async fn deleting_shared_root_hard_deletes_live_and_trash(state: TestState) {
+        let ada = user(state, &format!("trash-shared-{}", Uuid::new_v4())).await;
+        let session = test::login(state, &ada.username, "temporary").await;
+        let admin = test::login(state, "admin", "admin").await;
+
+        let shared = shared_root(state, "doomed", &[ada.id]).await;
+
+        let notes = state
+            .services
+            .files
+            .create_directory(
+                &ctx(state, &session.user, shared).await,
+                CreateDirectory {
+                    parent: None,
+                    name: "notes".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let _nested = upload_in(
+            state,
+            &session.user,
+            shared,
+            Some(notes.id),
+            "nested.txt",
+            b"nested",
+        )
+        .await;
+        let loose = test::upload(state, &session.user, shared, "loose.txt", b"loose").await;
+
+        state
+            .services
+            .files
+            .delete_many(
+                &ctx(state, &session.user, shared).await,
+                TrashFiles {
+                    ids: vec![loose.id, notes.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        let blobs_before = test::blob_count(state.storage_dir());
+
+        let rx = state
+            .services
+            .users
+            .delete_root(&admin.user, shared, state.queue.clone())
+            .await
+            .unwrap();
+        let results = state.await_deletion(rx).await;
+        assert!(!results.is_empty());
+        assert!(results.iter().all(|result| result.success));
+
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM files WHERE root_id = $1",
+                shared
+            ),
+            0
+        );
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE root_id = $1",
+                shared
+            ),
+            0
+        );
+        assert_eq!(
+            count!(state, "SELECT COUNT(*) FROM roots WHERE id = $1", shared),
+            0
+        );
+        assert!(test::blob_count(state.storage_dir()) < blobs_before);
     }
 }
