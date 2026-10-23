@@ -59,6 +59,7 @@
   import MenuItem from "../ui/menu/menu-item.svelte";
   import Menu from "../ui/menu/menu.svelte";
   import SortHeader from "../ui/sort-header/sort-header.svelte";
+  import VirtualScroller from "../ui/virtual-scroller/VirtualScroller.svelte";
 
   let {
     folder: root,
@@ -190,12 +191,6 @@
     viewMode === "compact" ? "compact" : "default",
   );
 
-  const tileGridClass = $derived(
-    viewMode === "tiles-large"
-      ? "grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1 p-2 sm:gap-2"
-      : "grid grid-cols-[repeat(auto-fill,minmax(6.25rem,1fr))] gap-0.5 p-1.5 sm:gap-1 sm:p-2",
-  );
-
   const storedSort = kv.filesSort.get();
 
   let sort = $state<{ column: SortColumn; direction: SortDirection }>({
@@ -250,9 +245,44 @@
   let fileInput = $state<HTMLInputElement | undefined>();
   let folderInput = $state<HTMLInputElement | undefined>();
 
-  let scroller = $state<HTMLDivElement | undefined>();
+  let scroller = $state<HTMLElement | undefined>();
+  let viewportWidth = $state(0);
 
   let nameInput: HTMLInputElement | undefined;
+
+  const virtualLayout = $derived.by(() => {
+    if (!tiles) {
+      return {
+        columns: 1,
+        gap: 0,
+        itemHeight: listDensity === "compact" ? 44 : 64,
+      };
+    }
+
+    const large = tileSize === "large";
+
+    const rem =
+      typeof document !== "undefined"
+        ? parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+        : 16;
+
+    const minTrack = (large ? 9.5 : 6.25) * rem;
+
+    const gap = large ? 8 : 4;
+
+    const pad = large ? 16 : 12;
+
+    const inner = Math.max(0, viewportWidth - pad);
+
+    const columns = Math.max(1, Math.floor((inner + gap) / (minTrack + gap)));
+
+    const colWidth =
+      columns > 0 ? (inner - gap * (columns - 1)) / columns : minTrack;
+
+    const itemHeight = colWidth + (large ? 52 : 40);
+
+    return { columns, gap, itemHeight };
+  });
 
   /**
    * Derived from ancestors. Always puts the root in front.
@@ -332,6 +362,24 @@
     }
 
     seenTiles = next;
+  });
+
+  $effect(() => {
+    const node = scroller;
+
+    if (!node) {
+      viewportWidth = 0;
+      return;
+    }
+
+    const ro = new ResizeObserver(() => {
+      viewportWidth = node.clientWidth;
+    });
+
+    ro.observe(node);
+    viewportWidth = node.clientWidth;
+
+    return () => ro.disconnect();
   });
 
   /**
@@ -429,6 +477,7 @@
     shareBusy = false;
     shareTarget = null;
     shareIds = [];
+    scroller?.scrollTo({ top: 0 });
 
     if (parent === null) {
       locationEntry = null;
@@ -1185,8 +1234,7 @@
     }
 
     const entry = shareSubject;
-    const ids =
-      shareIds.length > 0 ? shareIds.slice() : [entry.id];
+    const ids = shareIds.length > 0 ? shareIds.slice() : [entry.id];
     const rootId = root.id;
     const expiresAt = input.shareExpiresAt ?? null;
     const cascading = shareTarget == null;
@@ -1240,8 +1288,7 @@
     }
 
     const entry = shareSubject;
-    const ids =
-      shareIds.length > 0 ? shareIds.slice() : [entry.id];
+    const ids = shareIds.length > 0 ? shareIds.slice() : [entry.id];
     const rootId = root.id;
     const cascading = shareTarget == null;
 
@@ -1297,9 +1344,7 @@
         ? entries.find((item) => item.file.id === ids[0])
         : undefined;
 
-    const title = single
-      ? `Copy ${label(single)}`
-      : `Copy ${ids.length} items`;
+    const title = single ? `Copy ${label(single)}` : `Copy ${ids.length} items`;
 
     const description = single
       ? `Pick a destination for ${label(single)} copy.`
@@ -1428,8 +1473,9 @@
       </p>
     </div>
   {/if}
-  <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
-    <div class="flex min-w-0 flex-1 items-center gap-1.5">
+  <div class="flex shrink-0 flex-col gap-2.5">
+    <!-- PATH: always full-width above the list -->
+    <div class="flex min-w-0 items-center gap-2 px-0.5">
       {#if root.owner == null}
         <RootAccessBadges accessMode={root.accessMode} />
       {/if}
@@ -1442,221 +1488,236 @@
       />
     </div>
 
+    <!-- TOOLS: search + actions; stacked on small screens so menus are not clipped -->
     <div
-      class="relative flex min-w-[10rem] max-w-56 flex-1 items-center sm:max-w-xs"
+      class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-stretch"
     >
-      <Search
-        size={14}
-        class="pointer-events-none absolute left-2.5 text-muted-foreground"
-      />
-      <Input
-        type="search"
-        class="h-8 pl-8"
-        placeholder="Search"
-        bind:value={searchQuery}
-        aria-label="Search files in this root"
-      />
-    </div>
+      <div
+        class="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+      >
+        <Search
+          size={15}
+          class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          type="search"
+          class="h-9 border-0 bg-transparent pl-9 shadow-none focus-visible:ring-0"
+          placeholder="Search files…"
+          bind:value={searchQuery}
+          aria-label="Search files in this root"
+        />
+      </div>
 
-    <div class="flex shrink-0 items-center gap-1.5">
-      <input
-        bind:this={fileInput}
-        type="file"
-        class="sr-only"
-        multiple
-        tabindex={-1}
-        aria-hidden="true"
-        onchange={(event) => uploads.fromFileInput(event)}
-      />
-      <input
-        bind:this={folderInput}
-        type="file"
-        class="sr-only"
-        multiple
-        webkitdirectory
-        tabindex={-1}
-        aria-hidden="true"
-        onchange={(event) => uploads.fromFolderInput(event)}
-      />
-      {#if selectMode}
+      <div
+        class="relative z-10 flex shrink-0 items-center gap-0.5 self-start rounded-xl border border-border bg-card p-0.5 shadow-sm"
+      >
+        <input
+          bind:this={fileInput}
+          type="file"
+          class="sr-only"
+          multiple
+          tabindex={-1}
+          aria-hidden="true"
+          onchange={(event) => uploads.fromFileInput(event)}
+        />
+        <input
+          bind:this={folderInput}
+          type="file"
+          class="sr-only"
+          multiple
+          webkitdirectory
+          tabindex={-1}
+          aria-hidden="true"
+          onchange={(event) => uploads.fromFolderInput(event)}
+        />
+        {#if selectMode}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Clear selection"
+            onclick={clearSelection}
+          >
+            <X size={15} />
+            <span class="hidden sm:inline">Clear</span>
+          </Button>
+          {#if selected.length > 0}
+            <span
+              class="inline-flex"
+              title={hasCopyDestination ? undefined : copyUnavailableTitle()}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={!hasCopyDestination}
+                aria-label={copyUnavailableTitle()}
+                onclick={() => startCopy(selected)}
+              >
+                <Copy size={15} />
+                <span class="hidden sm:inline">Copy ({selected.length})</span>
+              </Button>
+            </span>
+            <span
+              class="inline-flex"
+              title={canWrite ? undefined : writeDeniedTitle}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={!canWrite}
+                aria-label={canWrite ? "Move selected" : writeDeniedTitle}
+                onclick={() => startMove(selected)}
+              >
+                <FolderInput size={15} />
+                <span class="hidden sm:inline">Move ({selected.length})</span>
+              </Button>
+            </span>
+            <span
+              class="inline-flex"
+              title={canWrite ? undefined : writeDeniedTitle}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                class="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={!canWrite}
+                aria-label={canWrite ? "Delete selected" : writeDeniedTitle}
+                onclick={() => startDelete(selected)}
+              >
+                <Trash size={15} />
+                <span class="hidden sm:inline">Delete ({selected.length})</span>
+              </Button>
+            </span>
+          {/if}
+        {:else}
+          <Menu bind:open={uploadMenuOpen}>
+            {#snippet trigger(props, open)}
+              <span
+                class="inline-flex"
+                title={canWrite ? undefined : writeDeniedTitle}
+              >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={!canWrite}
+                  aria-label={canWrite ? "Upload" : writeDeniedTitle}
+                  {...props}
+                  onclick={() => {
+                    if (canWrite) {
+                      props.onclick();
+                    }
+                  }}
+                >
+                  <Upload size={15} />
+                  <span class="hidden sm:inline">Upload</span>
+                  <ChevronDown
+                    size={14}
+                    class={[
+                      "text-muted-foreground transition-transform",
+                      open && "rotate-180",
+                    ]}
+                  />
+                </Button>
+              </span>
+            {/snippet}
+            <MenuItem onclick={() => fileInput?.click()}>
+              <FileIcon size={15} />
+              File
+            </MenuItem>
+            <MenuItem onclick={() => folderInput?.click()}>
+              <Folder size={15} />
+              Folder
+            </MenuItem>
+          </Menu>
+          <Menu bind:open={newMenuOpen}>
+            {#snippet trigger(props, open)}
+              <span
+                class="inline-flex"
+                title={canWrite ? undefined : writeDeniedTitle}
+              >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={!canWrite}
+                  aria-label={canWrite ? "New" : writeDeniedTitle}
+                  {...props}
+                  onclick={() => {
+                    if (canWrite) {
+                      props.onclick();
+                    }
+                  }}
+                >
+                  <Plus size={15} />
+                  <span class="hidden sm:inline">New</span>
+                  <ChevronDown
+                    size={14}
+                    class={[
+                      "text-muted-foreground transition-transform",
+                      open && "rotate-180",
+                    ]}
+                  />
+                </Button>
+              </span>
+            {/snippet}
+            <MenuItem onclick={() => beginDraft("text")}>
+              <FileIcon size={15} />
+              Text file
+            </MenuItem>
+            <MenuItem onclick={() => beginDraft("directory")}>
+              <Folder size={15} />
+              Directory
+            </MenuItem>
+          </Menu>
+        {/if}
+        <div
+          class="mx-0.5 w-px self-stretch bg-border"
+          aria-hidden="true"
+        ></div>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
-          aria-label="Clear selection"
-          onclick={clearSelection}
+          class="text-muted-foreground"
+          aria-label={locationEntry
+            ? `Download ${locationEntry.name}`
+            : `Download ${root.name}`}
+          title={locationEntry ? "Download folder" : "Download root"}
+          onclick={downloadCurrent}
         >
-          <X size={15} />
-          <span class="hidden sm:inline">Clear</span>
+          <Download size={15} />
+          <span class="hidden sm:inline">Download</span>
         </Button>
-        {#if selected.length > 0}
-          <span
-            class="inline-flex"
-            title={hasCopyDestination ? undefined : copyUnavailableTitle()}
-          >
+        {#if locationEntry}
+          <div
+            class="mx-0.5 w-px self-stretch bg-border"
+            aria-hidden="true"
+          ></div>
+          <span class="inline-flex" title={directoryShareTitle()}>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
-              disabled={!hasCopyDestination}
-              aria-label={copyUnavailableTitle()}
-              onclick={() => startCopy(selected)}
+              class={locationEntry.sharingMode
+                ? "text-primary hover:text-primary"
+                : "text-muted-foreground"}
+              disabled={!canShare}
+              aria-label={directoryShareAriaLabel()}
+              onclick={() => openDirectoryShareDialog()}
             >
-              <Copy size={15} />
-              <span class="hidden sm:inline">Copy ({selected.length})</span>
-            </Button>
-          </span>
-          <span
-            class="inline-flex"
-            title={canWrite ? undefined : writeDeniedTitle}
-          >
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!canWrite}
-              aria-label={canWrite ? "Move selected" : writeDeniedTitle}
-              onclick={() => startMove(selected)}
-            >
-              <FolderInput size={15} />
-              <span class="hidden sm:inline">Move ({selected.length})</span>
-            </Button>
-          </span>
-          <span
-            class="inline-flex"
-            title={canWrite ? undefined : writeDeniedTitle}
-          >
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              class="text-destructive hover:bg-destructive/10 hover:text-destructive"
-              disabled={!canWrite}
-              aria-label={canWrite ? "Delete selected" : writeDeniedTitle}
-              onclick={() => startDelete(selected)}
-            >
-              <Trash size={15} />
-              <span class="hidden sm:inline">Delete ({selected.length})</span>
+              {#if locationEntry.sharingMode}
+                <Link2 size={15} />
+              {:else}
+                <Share2 size={15} />
+              {/if}
             </Button>
           </span>
         {/if}
-      {:else}
-        <Menu bind:open={uploadMenuOpen}>
-          {#snippet trigger(props, open)}
-            <span
-              class="inline-flex"
-              title={canWrite ? undefined : writeDeniedTitle}
-            >
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!canWrite}
-                aria-label={canWrite ? "Upload" : writeDeniedTitle}
-                {...props}
-                onclick={() => {
-                  if (canWrite) {
-                    props.onclick();
-                  }
-                }}
-              >
-                <Upload size={15} />
-                <span class="hidden sm:inline">Upload</span>
-                <ChevronDown
-                  size={14}
-                  class={[
-                    "text-muted-foreground transition-transform",
-                    open && "rotate-180",
-                  ]}
-                />
-              </Button>
-            </span>
-          {/snippet}
-          <MenuItem onclick={() => fileInput?.click()}>
-            <FileIcon size={15} />
-            File
-          </MenuItem>
-          <MenuItem onclick={() => folderInput?.click()}>
-            <Folder size={15} />
-            Folder
-          </MenuItem>
-        </Menu>
-        <Menu bind:open={newMenuOpen}>
-          {#snippet trigger(props, open)}
-            <span
-              class="inline-flex"
-              title={canWrite ? undefined : writeDeniedTitle}
-            >
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!canWrite}
-                aria-label={canWrite ? "New" : writeDeniedTitle}
-                {...props}
-                onclick={() => {
-                  if (canWrite) {
-                    props.onclick();
-                  }
-                }}
-              >
-                <Plus size={15} />
-                <span class="hidden sm:inline">New</span>
-                <ChevronDown
-                  size={14}
-                  class={[
-                    "text-muted-foreground transition-transform",
-                    open && "rotate-180",
-                  ]}
-                />
-              </Button>
-            </span>
-          {/snippet}
-          <MenuItem onclick={() => beginDraft("text")}>
-            <FileIcon size={15} />
-            Text file
-          </MenuItem>
-          <MenuItem onclick={() => beginDraft("directory")}>
-            <Folder size={15} />
-            Directory
-          </MenuItem>
-        </Menu>
-      {/if}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        class="text-muted-foreground"
-        aria-label={locationEntry
-          ? `Download ${locationEntry.name}`
-          : `Download ${root.name}`}
-        title={locationEntry ? "Download folder" : "Download root"}
-        onclick={downloadCurrent}
-      >
-        <Download size={15} />
-        <span class="hidden sm:inline">Download</span>
-      </Button>
-      {#if locationEntry}
-        <span class="inline-flex" title={directoryShareTitle()}>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            class={locationEntry.sharingMode
-              ? "text-primary hover:text-primary"
-              : "text-muted-foreground"}
-            disabled={!canShare}
-            aria-label={directoryShareAriaLabel()}
-            onclick={() => openDirectoryShareDialog()}
-          >
-            {#if locationEntry.sharingMode}
-              <Link2 size={15} />
-            {:else}
-              <Share2 size={15} />
-            {/if}
-          </Button>
-        </span>
-      {/if}
+      </div>
     </div>
   </div>
 
@@ -1737,17 +1798,22 @@
 
       <!-- FILE LIST -->
 
-      <div
-        bind:this={scroller}
-        class="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
-        {#if loading}
+      {#if loading}
+        <div
+          bind:this={scroller}
+          class="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        >
           <p
             class="flex h-full items-center justify-center px-3 text-sm text-muted-foreground"
           >
             Loading…
           </p>
-        {:else if entries.length === 0 && !drafting && !showParentDrop}
+        </div>
+      {:else if entries.length === 0 && !drafting && !showParentDrop}
+        <div
+          bind:this={scroller}
+          class="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        >
           <div
             class="flex h-full flex-col items-center justify-center gap-2 px-6 py-16 text-center"
           >
@@ -1757,200 +1823,206 @@
               Upload or drop files here, or create a folder to get started.
             </p>
           </div>
-        {:else}
-          <DragDropProvider {sensors} {onDragEnd}>
-            <ul class={tiles ? tileGridClass : "divide-y"}>
-              {#if showParentDrop}
-                <ParentDropItem
+        </div>
+      {:else}
+        {#snippet parentLeading()}
+          <ParentDropItem {columns} {viewMode} onOpen={openParentDirectory} />
+        {/snippet}
+        <DragDropProvider {sensors} {onDragEnd}>
+          <VirtualScroller
+            bind:element={scroller}
+            items={entries}
+            itemHeight={virtualLayout.itemHeight}
+            columns={virtualLayout.columns}
+            gap={virtualLayout.gap}
+            getKey={(entry) => entry.file.id}
+            as="ul"
+            class={tiles
+              ? tileSize === "large"
+                ? "p-2"
+                : "p-1.5 sm:p-2"
+              : undefined}
+            windowClass={tiles ? undefined : "divide-y"}
+            leading={showParentDrop ? parentLeading : undefined}
+          >
+            {#snippet header()}
+              {#if drafting}
+                <ul class={tiles ? undefined : "divide-y"}>
+                  <li class={["px-3 py-2", tiles && "col-span-full"]}>
+                    <div class="flex min-w-0 items-center gap-2">
+                      {#if draftKind === "text"}
+                        <FileIcon
+                          size={18}
+                          class="shrink-0 text-muted-foreground"
+                        />
+                      {:else}
+                        <Folder size={18} class="shrink-0 text-primary" />
+                      {/if}
+                      <Input
+                        {@attach focusDraft}
+                        bind:value={directoryName}
+                        class="h-8 min-w-0 flex-1 px-2.5"
+                        aria-label={draftKind === "text"
+                          ? "File name"
+                          : "Folder name"}
+                        aria-invalid={directoryError ? true : undefined}
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder={draftKind === "text"
+                          ? "File name"
+                          : "Folder name"}
+                        disabled={directorySaving}
+                        oninput={() => (directoryError = "")}
+                        onkeydown={onDraftKey}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={draftKind === "text"
+                          ? "Create file"
+                          : "Create folder"}
+                        disabled={directorySaving}
+                        onclick={() => commitDirectory()}
+                      >
+                        <Check size={16} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Cancel"
+                        disabled={directorySaving}
+                        onclick={cancelDirectory}
+                      >
+                        <X size={16} />
+                      </Button>
+                    </div>
+                    <p
+                      class="mt-1 pl-7 text-xs {directoryError
+                        ? 'text-destructive'
+                        : 'text-muted-foreground'}"
+                    >
+                      {directoryError ||
+                        (directorySaving
+                          ? "Saving…"
+                          : "Enter to save, Esc to cancel")}
+                    </p>
+                  </li>
+                </ul>
+              {/if}
+            {/snippet}
+            {#snippet children(entry)}
+              {#if tiles}
+                <FileTileItem
+                  {entry}
+                  rootId={root.id}
+                  thumbnailUrl={previews.thumbs[entry.file.id]}
+                  name={label(entry)}
+                  size={tileSize}
+                  selected={selected.includes(entry.file.id)}
+                  multiSelected={selected.length >= 2}
+                  {selectMode}
+                  {canWrite}
+                  {canShare}
+                  canCopy={hasCopyDestination}
+                  onSelect={(event) => selectEntry(entry.file.id, event)}
+                  onLongSelect={() => longSelectEntry(entry.file.id)}
+                  onOpen={() => openDirectory(entry)}
+                  onPreview={() => (previewFileId = entry.file.id)}
+                  onPrepareAction={() => prepareActionTarget(entry.file.id)}
+                  onDownload={() => downloadIds(actionIds(entry.file.id))}
+                  onCopy={() => startCopy(actionIds(entry.file.id))}
+                  onShare={() =>
+                    openShareDialog(entry.file, actionIds(entry.file.id))}
+                  onUnshare={() =>
+                    openShareDialog(entry.file, actionIds(entry.file.id))}
+                  onCopyLink={() => copyLink(entry)}
+                  onMove={() => startMove(actionIds(entry.file.id))}
+                  onDelete={() => startDelete(actionIds(entry.file.id))}
+                />
+              {:else}
+                <FileListItem
+                  {entry}
+                  rootId={root.id}
+                  thumbnailUrl={previews.thumbs[entry.file.id]}
+                  name={label(entry)}
                   {columns}
-                  {viewMode}
-                  onOpen={openParentDirectory}
+                  density={listDensity}
+                  selected={selected.includes(entry.file.id)}
+                  multiSelected={selected.length >= 2}
+                  {selectMode}
+                  {canWrite}
+                  {canShare}
+                  canCopy={hasCopyDestination}
+                  onSelect={(event) => selectEntry(entry.file.id, event)}
+                  onLongSelect={() => longSelectEntry(entry.file.id)}
+                  onOpen={() => openDirectory(entry)}
+                  onPreview={() => (previewFileId = entry.file.id)}
+                  onPrepareAction={() => prepareActionTarget(entry.file.id)}
+                  onDownload={() => downloadIds(actionIds(entry.file.id))}
+                  onCopy={() => startCopy(actionIds(entry.file.id))}
+                  onShare={() =>
+                    openShareDialog(entry.file, actionIds(entry.file.id))}
+                  onUnshare={() =>
+                    openShareDialog(entry.file, actionIds(entry.file.id))}
+                  onCopyLink={() => copyLink(entry)}
+                  onMove={() => startMove(actionIds(entry.file.id))}
+                  onRename={(name) => renameEntry(entry, name)}
+                  onDelete={() => startDelete(actionIds(entry.file.id))}
                 />
               {/if}
-
-              <!-- NEW DIRECTORY DRAFT -->
-
-              {#if drafting}
-                <li class={["px-3 py-2", tiles && "col-span-full"]}>
-                  <div class="flex min-w-0 items-center gap-2">
-                    {#if draftKind === "text"}
-                      <FileIcon
-                        size={18}
-                        class="shrink-0 text-muted-foreground"
-                      />
-                    {:else}
-                      <Folder size={18} class="shrink-0 text-primary" />
-                    {/if}
-                    <Input
-                      {@attach focusDraft}
-                      bind:value={directoryName}
-                      class="h-8 min-w-0 flex-1 px-2.5"
-                      aria-label={draftKind === "text"
-                        ? "File name"
-                        : "Folder name"}
-                      aria-invalid={directoryError ? true : undefined}
-                      autocomplete="off"
-                      spellcheck="false"
-                      placeholder={draftKind === "text"
-                        ? "File name"
-                        : "Folder name"}
-                      disabled={directorySaving}
-                      oninput={() => (directoryError = "")}
-                      onkeydown={onDraftKey}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={draftKind === "text"
-                        ? "Create file"
-                        : "Create folder"}
-                      disabled={directorySaving}
-                      onclick={() => commitDirectory()}
-                    >
-                      <Check size={16} />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Cancel"
-                      disabled={directorySaving}
-                      onclick={cancelDirectory}
-                    >
-                      <X size={16} />
-                    </Button>
-                  </div>
-                  <p
-                    class="mt-1 pl-7 text-xs {directoryError
-                      ? 'text-destructive'
-                      : 'text-muted-foreground'}"
-                  >
-                    {directoryError ||
-                      (directorySaving
-                        ? "Saving…"
-                        : "Enter to save, Esc to cancel")}
-                  </p>
-                </li>
-              {/if}
-
-              <!-- FILES -->
-
-              {#each entries as entry (entry.file.id)}
-                {#if tiles}
-                  <FileTileItem
-                    {entry}
-                    rootId={root.id}
-                    thumbnailUrl={previews.thumbs[entry.file.id]}
-                    name={label(entry)}
-                    size={tileSize}
-                    selected={selected.includes(entry.file.id)}
-                    multiSelected={selected.length >= 2}
-                    {selectMode}
-                    {canWrite}
-                    {canShare}
-                    canCopy={hasCopyDestination}
-                    onSelect={(event) => selectEntry(entry.file.id, event)}
-                    onLongSelect={() => longSelectEntry(entry.file.id)}
-                    onOpen={() => openDirectory(entry)}
-                    onPreview={() => (previewFileId = entry.file.id)}
-                    onPrepareAction={() => prepareActionTarget(entry.file.id)}
-                    onDownload={() => downloadIds(actionIds(entry.file.id))}
-                    onCopy={() => startCopy(actionIds(entry.file.id))}
-                    onShare={() =>
-                      openShareDialog(entry.file, actionIds(entry.file.id))
-                    }
-                    onUnshare={() =>
-                      openShareDialog(entry.file, actionIds(entry.file.id))
-                    }
-                    onCopyLink={() => copyLink(entry)}
-                    onDelete={() => startDelete(actionIds(entry.file.id))}
-                  />
-                {:else}
-                  <FileListItem
-                    {entry}
-                    rootId={root.id}
-                    thumbnailUrl={previews.thumbs[entry.file.id]}
-                    name={label(entry)}
-                    {columns}
-                    density={listDensity}
-                    selected={selected.includes(entry.file.id)}
-                    multiSelected={selected.length >= 2}
-                    {selectMode}
-                    {canWrite}
-                    {canShare}
-                    canCopy={hasCopyDestination}
-                    onSelect={(event) => selectEntry(entry.file.id, event)}
-                    onLongSelect={() => longSelectEntry(entry.file.id)}
-                    onOpen={() => openDirectory(entry)}
-                    onPreview={() => (previewFileId = entry.file.id)}
-                    onPrepareAction={() => prepareActionTarget(entry.file.id)}
-                    onDownload={() => downloadIds(actionIds(entry.file.id))}
-                    onCopy={() => startCopy(actionIds(entry.file.id))}
-                    onShare={() =>
-                      openShareDialog(entry.file, actionIds(entry.file.id))
-                    }
-                    onUnshare={() =>
-                      openShareDialog(entry.file, actionIds(entry.file.id))
-                    }
-                    onCopyLink={() => copyLink(entry)}
-                    onMove={() => startMove(actionIds(entry.file.id))}
-                    onRename={(name) => renameEntry(entry, name)}
-                    onDelete={() => startDelete(actionIds(entry.file.id))}
-                  />
-                {/if}
-              {/each}
-            </ul>
-            <DragOverlay>
-              {#snippet children(source)}
-                {@const preview = dragPreview(String(source.id))}
-                <div class="relative max-w-72 -rotate-1">
-                  {#if preview.count > 1}
-                    <div
-                      class="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border bg-muted/80 ring-1 ring-border"
-                      aria-hidden="true"
-                    ></div>
-                  {/if}
+            {/snippet}
+          </VirtualScroller>
+          <DragOverlay>
+            {#snippet children(source)}
+              {@const preview = dragPreview(String(source.id))}
+              <div class="relative max-w-72 -rotate-1">
+                {#if preview.count > 1}
                   <div
-                    class="relative flex items-center gap-2.5 rounded-lg border bg-card py-1.5 pr-2.5 pl-1.5 shadow-xl ring-1 ring-border"
-                  >
-                    {#if preview.entry?.file.kind === "directory"}
-                      <span
-                        class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
-                      >
-                        <Folder size={18} strokeWidth={1.75} />
-                      </span>
-                    {:else}
-                      <span
-                        class="flex size-8 shrink-0 items-center justify-center rounded-md ring-1 {FILE_ICON_CHIP_CLASS}"
-                        style={fileIconChipStyle(preview.entry?.file.fileType)}
-                      >
-                        <FileTypeIcon
-                          fileType={preview.entry?.file.fileType}
-                          size={16}
-                        />
-                      </span>
-                    {/if}
+                    class="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border bg-muted/80 ring-1 ring-border"
+                    aria-hidden="true"
+                  ></div>
+                {/if}
+                <div
+                  class="relative flex items-center gap-2.5 rounded-lg border bg-card py-1.5 pr-2.5 pl-1.5 shadow-xl ring-1 ring-border"
+                >
+                  {#if preview.entry?.file.kind === "directory"}
                     <span
-                      class="min-w-0 flex-1 truncate text-sm font-medium"
-                      title={preview.name}
+                      class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
                     >
-                      {preview.name}
+                      <Folder size={18} strokeWidth={1.75} />
                     </span>
-                    {#if preview.count > 1}
-                      <span
-                        class="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground tabular-nums"
-                      >
-                        +{preview.count - 1}
-                      </span>
-                    {/if}
-                  </div>
+                  {:else}
+                    <span
+                      class="flex size-8 shrink-0 items-center justify-center rounded-md ring-1 {FILE_ICON_CHIP_CLASS}"
+                      style={fileIconChipStyle(preview.entry?.file.fileType)}
+                    >
+                      <FileTypeIcon
+                        fileType={preview.entry?.file.fileType}
+                        size={16}
+                      />
+                    </span>
+                  {/if}
+                  <span
+                    class="min-w-0 flex-1 truncate text-sm font-medium"
+                    title={preview.name}
+                  >
+                    {preview.name}
+                  </span>
+                  {#if preview.count > 1}
+                    <span
+                      class="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground tabular-nums"
+                    >
+                      +{preview.count - 1}
+                    </span>
+                  {/if}
                 </div>
-              {/snippet}
-            </DragOverlay>
-          </DragDropProvider>
-        {/if}
-      </div>
+              </div>
+            {/snippet}
+          </DragOverlay>
+        </DragDropProvider>
+      {/if}
     {/if}
   </div>
 
@@ -1968,7 +2040,9 @@
         onClose={() => (previewFileId = null)}
         onSelect={(id) => (previewFileId = id)}
         onUpdated={(sizeBytes) => {
-          const index = entries.findIndex((item) => item.file.id === previewFileId);
+          const index = entries.findIndex(
+            (item) => item.file.id === previewFileId,
+          );
           if (index !== -1) {
             entries[index].file.sizeBytes = sizeBytes;
           }

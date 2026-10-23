@@ -4,6 +4,7 @@
     EllipsisVertical,
     Eye,
     Folder,
+    FolderInput,
     Link as LinkIcon,
     Link2Off,
     Share2,
@@ -24,6 +25,7 @@
   import Button from "../ui/button/button.svelte";
   import MenuItem from "../ui/menu/menu-item.svelte";
   import Menu from "../ui/menu/menu.svelte";
+  import FileEntryContextMenu from "./FileEntryContextMenu.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
   import SharedBadge from "./SharedBadge.svelte";
 
@@ -51,6 +53,7 @@
     onShare,
     onUnshare,
     onCopyLink,
+    onMove,
     onDelete,
     onPrepareAction,
     thumbnailUrl,
@@ -84,6 +87,7 @@
     onUnshare: () => void | Promise<void>;
     /** Copy the public link for an already-shared entry. */
     onCopyLink: () => void | Promise<void>;
+    onMove: () => void;
     onDelete: () => void;
     /** Prepare action target (e.g. lock multi-select) before opening menus. */
     onPrepareAction?: () => void;
@@ -130,6 +134,10 @@
   let suppressClick = false;
   let longPressFired = false;
 
+  let menuOpen = $state(false);
+  let menuX = $state(0);
+  let menuY = $state(0);
+
   function clearLongPressTimer() {
     if (longPressTimer !== undefined) {
       clearTimeout(longPressTimer);
@@ -138,7 +146,9 @@
     longPressOrigin = null;
   }
 
-  onDestroy(clearLongPressTimer);
+  onDestroy(() => {
+    clearLongPressTimer();
+  });
 
   function isActionTarget(target: EventTarget | null) {
     return (
@@ -280,7 +290,15 @@
     if (longPressFired) {
       event.preventDefault();
       longPressFired = false;
+      return;
     }
+
+    event.preventDefault();
+    event.stopPropagation();
+    onPrepareAction?.();
+    menuX = event.clientX;
+    menuY = event.clientY;
+    menuOpen = true;
   }
 
   let previewUrl = $state<string | null>(null);
@@ -292,11 +310,7 @@
 
     previewUrl = null;
 
-    if (
-      entry.file.kind !== "file" ||
-      !hasPreview ||
-      !hasListThumbnail(entry)
-    ) {
+    if (entry.file.kind !== "file" || !hasPreview || !hasListThumbnail(entry)) {
       return;
     }
 
@@ -351,7 +365,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class={cn(
-      "absolute top-1 right-1 z-10 opacity-0 transition-opacity group-hover/tile:opacity-100 focus-within:opacity-100",
+      "absolute top-1 right-1 z-1 opacity-0 transition-opacity group-hover/tile:opacity-100 focus-within:opacity-100",
       selected && "opacity-100",
     )}
     data-no-select
@@ -390,6 +404,19 @@
           Copy
         </MenuItem>
       </span>
+      <span
+        class="block w-full"
+        title={canWrite ? undefined : writeDeniedTitle}
+      >
+        <MenuItem
+          disabled={!canWrite}
+          aria-label={canWrite ? "Move" : writeDeniedTitle}
+          onclick={onMove}
+        >
+          <FolderInput size={16} />
+          Move
+        </MenuItem>
+      </span>
       {#if file.sharingMode}
         {#if !bulk}
           <MenuItem onclick={onCopyLink}>
@@ -397,7 +424,10 @@
             Copy public link
           </MenuItem>
         {/if}
-        <span class="block w-full" title={canShare ? undefined : shareDeniedTitle}>
+        <span
+          class="block w-full"
+          title={canShare ? undefined : shareDeniedTitle}
+        >
           <MenuItem
             disabled={!canShare}
             aria-label={canShare ? "Stop sharing" : shareDeniedTitle}
@@ -408,7 +438,10 @@
           </MenuItem>
         </span>
       {:else}
-        <span class="block w-full" title={canShare ? undefined : shareDeniedTitle}>
+        <span
+          class="block w-full"
+          title={canShare ? undefined : shareDeniedTitle}
+        >
           <MenuItem
             disabled={!canShare}
             aria-label={canShare ? "Create public link" : shareDeniedTitle}
@@ -419,7 +452,10 @@
           </MenuItem>
         </span>
       {/if}
-      <span class="block w-full" title={canWrite ? undefined : writeDeniedTitle}>
+      <span
+        class="block w-full"
+        title={canWrite ? undefined : writeDeniedTitle}
+      >
         <MenuItem
           class="text-destructive hover:text-destructive [&_svg]:text-destructive"
           disabled={!canWrite}
@@ -446,7 +482,10 @@
         <Folder size={iconSize} strokeWidth={1.75} />
       </button>
       {#if file.sharingMode}
-        <SharedBadge size={large ? "lg" : "md"} expiresAt={file.shareExpiresAt} />
+        <SharedBadge
+          size={large ? "lg" : "md"}
+          expiresAt={file.shareExpiresAt}
+        />
       {/if}
     </span>
   {:else if previewable}
@@ -484,7 +523,10 @@
         </span>
       </button>
       {#if file.sharingMode}
-        <SharedBadge size={large ? "lg" : "md"} expiresAt={file.shareExpiresAt} />
+        <SharedBadge
+          size={large ? "lg" : "md"}
+          expiresAt={file.shareExpiresAt}
+        />
       {/if}
     </span>
   {:else}
@@ -497,7 +539,10 @@
     >
       <FileTypeIcon fileType={file.fileType} size={iconSize} />
       {#if file.sharingMode}
-        <SharedBadge size={large ? "lg" : "md"} expiresAt={file.shareExpiresAt} />
+        <SharedBadge
+          size={large ? "lg" : "md"}
+          expiresAt={file.shareExpiresAt}
+        />
       {/if}
     </span>
   {/if}
@@ -525,3 +570,21 @@
     {/if}
   </div>
 </li>
+
+<FileEntryContextMenu
+  bind:open={menuOpen}
+  x={menuX}
+  y={menuY}
+  {bulk}
+  shared={Boolean(file.sharingMode)}
+  {canWrite}
+  {canShare}
+  {canCopy}
+  {onDownload}
+  {onCopy}
+  {onShare}
+  {onUnshare}
+  {onCopyLink}
+  {onMove}
+  {onDelete}
+/>

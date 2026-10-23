@@ -1,13 +1,10 @@
 <script lang="ts">
   import {
-    ChevronRight,
     Download,
     Eye,
     Folder,
-    FolderInput,
     Link as LinkIcon,
     Link2Off,
-    Pencil,
     Share2,
     Trash,
   } from "@lucide/svelte";
@@ -25,10 +22,9 @@
   import { cn, hasFinePointerHover } from "../../utils";
   import Button from "../ui/button/button.svelte";
   import Input from "../ui/input/input.svelte";
-  import ContextMenu from "../ui/menu/context-menu.svelte";
   import MenuItem from "../ui/menu/menu-item.svelte";
-  import MenuSeparator from "../ui/menu/menu-separator.svelte";
   import Menu from "../ui/menu/menu.svelte";
+  import FileEntryContextMenu from "./FileEntryContextMenu.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
   import SharedBadge from "./SharedBadge.svelte";
 
@@ -154,8 +150,6 @@
   let menuOpen = $state(false);
   let menuX = $state(0);
   let menuY = $state(0);
-  let shareOpen = $state(false);
-  let shareCloseTimer: ReturnType<typeof setTimeout> | undefined;
 
   let renaming = $state(false);
   let renameValue = $state("");
@@ -171,32 +165,8 @@
     longPressOrigin = null;
   }
 
-  function clearShareCloseTimer() {
-    if (shareCloseTimer !== undefined) {
-      clearTimeout(shareCloseTimer);
-      shareCloseTimer = undefined;
-    }
-  }
-
-  function scheduleShareClose() {
-    clearShareCloseTimer();
-    shareCloseTimer = setTimeout(() => {
-      shareCloseTimer = undefined;
-      shareOpen = false;
-    }, 120);
-  }
-
-  // Reset flyout when the context menu closes (not derivable from menuOpen alone).
-  $effect(() => {
-    if (!menuOpen) {
-      clearShareCloseTimer();
-      shareOpen = false;
-    }
-  });
-
   onDestroy(() => {
     clearLongPressTimer();
-    clearShareCloseTimer();
   });
 
   function isActionTarget(target: EventTarget | null) {
@@ -354,7 +324,6 @@
     event.preventDefault();
     event.stopPropagation();
     onPrepareAction?.();
-    shareOpen = false;
     menuX = event.clientX;
     menuY = event.clientY;
     menuOpen = true;
@@ -366,7 +335,6 @@
     }
 
     menuOpen = false;
-    shareOpen = false;
     renameValue = file.name;
     renameError = "";
     renaming = true;
@@ -703,112 +671,21 @@
   </div>
 </li>
 
-<ContextMenu bind:open={menuOpen} x={menuX} y={menuY} class="w-44">
-  <MenuItem onclick={onDownload}>
-    <Download size={16} />
-    {bulk ? "Download as zip" : "Download"}
-  </MenuItem>
-  {#if !bulk}
-    <span class="block w-full" title={canWrite ? undefined : writeDeniedTitle}>
-      <MenuItem
-        disabled={!canWrite}
-        aria-label={canWrite ? "Rename" : writeDeniedTitle}
-        onclick={() => beginRename()}
-      >
-        <Pencil size={16} />
-        Rename
-      </MenuItem>
-    </span>
-  {/if}
-  <span class="block w-full" title={canWrite ? undefined : writeDeniedTitle}>
-    <MenuItem
-      disabled={!canWrite}
-      aria-label={canWrite ? "Move" : writeDeniedTitle}
-      onclick={onMove}
-    >
-      <FolderInput size={16} />
-      Move
-    </MenuItem>
-  </span>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="relative"
-    onpointerenter={() => {
-      clearShareCloseTimer();
-      shareOpen = true;
-    }}
-    onpointerleave={() => {
-      scheduleShareClose();
-    }}
-  >
-    <MenuItem closeOnSelect={false}>
-      <Share2 size={16} />
-      Share
-      <ChevronRight size={14} class="ml-auto" />
-    </MenuItem>
-    {#if shareOpen}
-      <div
-        role="menu"
-        class="absolute top-0 left-full z-50 ml-0.5 w-44 rounded-xl border bg-card p-1 shadow-lg"
-      >
-        <span class="block w-full" title={canCopy ? undefined : copyMenuTitle()}>
-          <MenuItem
-            disabled={!canCopy}
-            aria-label={copyMenuTitle()}
-            onclick={onCopy}
-          >
-            <Share2 size={16} />
-            Copy
-          </MenuItem>
-        </span>
-        {#if file.sharingMode}
-          {#if !bulk}
-            <MenuItem onclick={onCopyLink}>
-              <LinkIcon size={16} />
-              Copy public link
-            </MenuItem>
-          {/if}
-          <span
-            class="block w-full"
-            title={canShare ? undefined : shareDeniedTitle}
-          >
-            <MenuItem
-              disabled={!canShare}
-              aria-label={canShare ? "Stop sharing" : shareDeniedTitle}
-              onclick={onUnshare}
-            >
-              <Link2Off size={16} />
-              Stop sharing
-            </MenuItem>
-          </span>
-        {:else}
-          <span
-            class="block w-full"
-            title={canShare ? undefined : shareDeniedTitle}
-          >
-            <MenuItem
-              disabled={!canShare}
-              aria-label={canShare ? "Create public link" : shareDeniedTitle}
-              onclick={onShare}
-            >
-              <LinkIcon size={16} />
-              Create public link
-            </MenuItem>
-          </span>
-        {/if}
-      </div>
-    {/if}
-  </div>
-  <MenuSeparator />
-  <span class="block w-full" title={canWrite ? undefined : writeDeniedTitle}>
-    <MenuItem
-      class="text-destructive hover:text-destructive [&_svg]:text-destructive"
-      disabled={!canWrite}
-      aria-label={canWrite ? "Delete" : writeDeniedTitle}
-      onclick={onDelete}
-    >
-      <Trash size={16} />
-      Delete
-    </MenuItem>
-  </span>
-</ContextMenu>
+<FileEntryContextMenu
+  bind:open={menuOpen}
+  x={menuX}
+  y={menuY}
+  {bulk}
+  shared={Boolean(file.sharingMode)}
+  {canWrite}
+  {canShare}
+  {canCopy}
+  {onDownload}
+  {onCopy}
+  {onShare}
+  {onUnshare}
+  {onCopyLink}
+  {onMove}
+  onRename={() => beginRename()}
+  {onDelete}
+/>
