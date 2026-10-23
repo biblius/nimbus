@@ -22,6 +22,7 @@
     FILE_FAMILY_LABELS,
     fileFamily,
     isAudioFile,
+    isDocxFile,
     isImageFile,
     isPdfFile,
     isTextFile,
@@ -127,13 +128,14 @@
   const isAudio = $derived(current != null && isAudioFile(current));
   const isText = $derived(current != null && isTextFile(current));
   const isPdf = $derived(current != null && isPdfFile(current));
+  const isDocx = $derived(current != null && isDocxFile(current));
   const isXlsx = $derived(current != null && isXlsxFile(current));
   const isZip = $derived(current != null && isZipFile(current));
   const fileName = $derived(current?.file.name ?? "");
-  /** Full-file blob URL for image / PDF / text / xlsx / zip fetches. */
-  const downloadUrl = $derived(
+  /** Inline preview blob URL (original or derived previewBlob). */
+  const contentPreviewUrl = $derived(
     current
-      ? session.client.downloadUrl(rootId, current.file.id)
+      ? session.client.contentPreviewUrl(rootId, current.file.id)
       : "",
   );
   /** Range-capable stream URL for video / audio. */
@@ -570,14 +572,14 @@
   <div
     class={cn(
       "absolute inset-0 flex px-14 py-20 sm:px-20 sm:py-24",
-      isText || isPdf || isXlsx || isZip
+      isText || isPdf || isDocx || isXlsx || isZip
         ? "items-stretch justify-stretch"
         : "items-center justify-center",
     )}
   >
     {#if current && isImage}
       <ImagePreviewContent
-        url={downloadUrl}
+        url={contentPreviewUrl}
         name={current.file.name}
         credentials="include"
       />
@@ -598,7 +600,7 @@
     {:else if current && isXlsx}
       {#await import("./preview/XlsxPreviewContent.svelte") then { default: XlsxPreviewContent }}
         <XlsxPreviewContent
-          url={downloadUrl}
+          url={contentPreviewUrl}
           name={current.file.name}
           credentials="include"
         />
@@ -606,7 +608,7 @@
     {:else if current && isZip}
       {#await import("./preview/ZipPreviewContent.svelte") then { default: ZipPreviewContent }}
         <ZipPreviewContent
-          url={downloadUrl}
+          url={contentPreviewUrl}
           name={current.file.name}
           credentials="include"
         />
@@ -615,7 +617,7 @@
       {#await import("./preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}
         <TextPreviewContent
           bind:this={textPreview}
-          url={downloadUrl}
+          url={contentPreviewUrl}
           {rootId}
           fileId={current.file.id}
           name={current.file.name}
@@ -628,11 +630,27 @@
     {:else if current && isPdf}
       {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
         <PdfPreviewContent
-          url={downloadUrl}
+          url={contentPreviewUrl}
           name={current.file.name}
           credentials="include"
         />
       {/await}
+    {:else if current && isDocx}
+      {#if current.metadata?.previewBlob}
+        {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
+          <PdfPreviewContent
+            url={contentPreviewUrl}
+            name={current.file.name}
+            credentials="include"
+          />
+        {/await}
+      {:else}
+        <div
+          class="flex w-full items-center justify-center text-sm text-white/55"
+        >
+          Generating preview…
+        </div>
+      {/if}
     {/if}
   </div>
 

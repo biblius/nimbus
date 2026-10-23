@@ -379,6 +379,8 @@ export type ShareFile = {
 export type FileMetadata = {
   preview64: string | null;
   preview256: string | null;
+  /** Derived preview payload (e.g. DOCX → PDF), when present. */
+  previewBlob: string | null;
 };
 
 /** Supported square preview edge lengths. */

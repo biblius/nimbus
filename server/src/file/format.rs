@@ -268,7 +268,7 @@ impl FileType {
             ) => ext_type,
             // Types infered from bytes always have priority.
             (Some(byte_type), _) => {
-                tracing::debug!(%name, "inferred type from bytes: {byte_type:?}");
+                tracing::trace!(%name, "inferred type from bytes: {byte_type:?}");
                 byte_type
             }
             // Types inferred from extensions must either be for text
@@ -276,7 +276,7 @@ impl FileType {
             // from bytes.
             (None, Some(ext_type)) => match ext_type {
                 FileType::Text(_) => {
-                    tracing::debug!(%name, "inferred text file from ext: {ext_type:?}");
+                    tracing::trace!(%name, "inferred text file from ext: {ext_type:?}");
                     ext_type
                 }
                 // If this is not a text file or unhandled file we must flag it as
@@ -287,7 +287,10 @@ impl FileType {
                 }
             },
             // If there is no extension nor byte info, we cannot infer.
-            (None, None) => Self::Other("".into()),
+            (None, None) => {
+                tracing::debug!(%name, "cannot infer type: no magic bytes or extension");
+                Self::Other("".into())
+            }
         }
     }
 

@@ -160,7 +160,7 @@ mod access {
             state
                 .services
                 .files
-                .preview(&ctx, file.id, PreviewSize::Icon)
+                .thumbnail(&ctx, file.id, PreviewSize::Icon)
                 .await,
             Err(AppError::ResourceMissing(_))
         ));

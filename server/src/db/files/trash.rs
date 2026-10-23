@@ -61,6 +61,7 @@ impl TrashRepository {
                 NULL AS share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM trashed_files f
@@ -102,6 +103,7 @@ impl TrashRepository {
                 NULL AS share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM trashed_files f
@@ -196,6 +198,7 @@ impl TrashRepository {
                 f.share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM tree t
@@ -318,6 +321,7 @@ impl TrashRepository {
                 NULL AS share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM tree t
@@ -377,6 +381,7 @@ impl TrashRepository {
                 NULL AS share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM trashed_files f

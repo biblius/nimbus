@@ -136,7 +136,7 @@ export class PreviewQueue {
             const size = (previewSize === 256 ? 256 : 64) as 64 | 256;
             const blob = this.opts.fetchPreview
               ? await this.opts.fetchPreview(job.id, size)
-              : await session.client.preview(rootId, job.id, size);
+              : await session.client.icon(rootId, job.id, size);
 
             const prev = this.thumbs[job.id];
 

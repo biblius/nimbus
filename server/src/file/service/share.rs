@@ -146,14 +146,36 @@ impl ShareService {
         }
     }
 
-    /// Generated preview icon for a shared file, when one exists.
+    /// Inline preview payload for a shared file: original blob, or `preview_blob`.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn content_for_preview(
+        &self,
+        id: Uuid,
+    ) -> Result<(String, PathBuf, &'static str), AppError> {
+        let file = self
+            .share
+            .get_shared(id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
+
+        let name = file.name.clone();
+        let (path, mime) = super::preview_content_for(&self.storage, &file)?;
+
+        if !tokio::fs::try_exists(&path).await? {
+            tracing::error!(%id, path=%path.display(), "shared preview content missing on disk");
+            return Err(AppError::Internal);
+        }
+
+        Ok((name, path, mime))
+    }
+
+    /// Generated WebP thumbnail for a shared file, when one exists.
     #[instrument(skip(self), fields(?size), err(Debug))]
-    pub async fn preview(
+    pub async fn thumbnail(
         &self,
         id: Uuid,
         size: PreviewSize,
     ) -> Result<FileContentPreview, AppError> {
-        // Preview icons can be shared when file sharing is in view mode.
         let file = self
             .share
             .get_shared(id)
@@ -162,19 +184,15 @@ impl ShareService {
 
         if file.kind != FileKind::File {
             return Err(AppError::Unprocessable(
-                "Directories do not have previews".into(),
+                "Directories do not have thumbnails".into(),
             ));
-        }
-
-        if file.metadata.is_empty() {
-            return Err(AppError::ResourceMissing("Preview does not exist".into()));
         }
 
         let hash = match size {
             PreviewSize::Icon => file.metadata.preview_64.as_deref(),
             PreviewSize::Tile => file.metadata.preview_256.as_deref(),
         }
-        .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
+        .ok_or_else(|| AppError::ResourceMissing("Thumbnail does not exist".into()))?;
 
         let path = self.storage.preview_path(hash);
 

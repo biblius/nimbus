@@ -71,7 +71,7 @@
     getRootId: () => shareRootId,
     getParentId: () => locationId,
     getSize: () => (tiles ? 256 : 64),
-    fetchPreview: (id, size) => session.client.sharedPreview(id, size),
+    fetchPreview: (id, size) => session.client.sharedIcon(id, size),
   });
 
   // Swap cached thumbs when switching between list (64) and tiles (256).

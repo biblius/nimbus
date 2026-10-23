@@ -715,6 +715,11 @@ export class NimbusClient {
     return `${this.root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/blob/chunk`;
   }
 
+  /** Inline preview content (original blob or derived `previewBlob`). */
+  contentPreviewUrl(rootId: string, id: string): string {
+    return `${this.root}/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview`;
+  }
+
   /** Public shared attachment download URL. */
   sharedDownloadUrl(fileId: string): string {
     return `${this.root}/files/shared/${encodeURIComponent(fileId)}/blob/download`;
@@ -723,6 +728,11 @@ export class NimbusClient {
   /** Public shared Range-capable blob URL for media. */
   sharedContentUrl(fileId: string): string {
     return `${this.root}/files/shared/${encodeURIComponent(fileId)}/blob/chunk`;
+  }
+
+  /** Public shared inline preview content. */
+  sharedContentPreviewUrl(fileId: string): string {
+    return `${this.root}/files/shared/${encodeURIComponent(fileId)}/preview`;
   }
 
   /** Fetch a file's bytes (same auth as download). */
@@ -820,13 +830,13 @@ export class NimbusClient {
     this.triggerDownload(this.sharedDownloadUrl(fileId), name);
   }
 
-  /** Fetch a file's preview image as a blob (`64` list icon or `256` large tile). */
-  async preview(
+  /** Fetch a file's WebP icon as a blob (`64` list or `256` large tile). */
+  async icon(
     rootId: string,
     id: string,
     size: 64 | 256 = 64,
   ): Promise<Blob> {
-    const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview?size=${size}`;
+    const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/icon?size=${size}`;
     const response = await fetch(`${this.root}${path}`, {
       credentials: "include",
     });
@@ -844,9 +854,9 @@ export class NimbusClient {
     return response.blob();
   }
 
-  /** Fetch a publicly shared file's preview image. */
-  async sharedPreview(fileId: string, size: 64 | 256 = 64): Promise<Blob> {
-    const path = `/files/shared/${encodeURIComponent(fileId)}/preview?size=${size}`;
+  /** Fetch a publicly shared file's WebP icon. */
+  async sharedIcon(fileId: string, size: 64 | 256 = 64): Promise<Blob> {
+    const path = `/files/shared/${encodeURIComponent(fileId)}/icon?size=${size}`;
     const response = await fetch(`${this.root}${path}`, {
       credentials: "omit",
     });

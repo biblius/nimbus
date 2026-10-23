@@ -433,7 +433,7 @@
     let objectUrl: string | null = null;
 
     session.client
-      .preview(rootId, fileId, 64)
+      .icon(rootId, fileId, 64)
       .then((blob) => {
         if (cancelled) {
           return;

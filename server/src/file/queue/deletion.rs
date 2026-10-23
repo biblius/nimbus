@@ -292,6 +292,10 @@ impl DeletionQueue {
             if let Some(ref preview) = file.metadata.preview_256 {
                 preview_hashes.insert(preview.as_str());
             }
+
+            if let Some(ref preview) = file.metadata.preview_blob {
+                preview_hashes.insert(preview.as_str());
+            }
         }
 
         // Counts are after the row deletes, so this batch is already excluded.

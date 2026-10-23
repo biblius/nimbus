@@ -118,6 +118,16 @@ export function isPdfFile(entry: FileLike): boolean {
   );
 }
 
+/** DOCX — previewed via on-demand server-side PDF conversion. */
+export function isDocxFile(entry: FileLike): boolean {
+  return (
+    entry.file.kind === "file" &&
+    entry.file.fileType != null &&
+    "doc" in entry.file.fileType &&
+    entry.file.fileType.doc === "Docx"
+  );
+}
+
 /**
  * Spreadsheet formats SheetJS can preview that we already classify.
  * @see https://docs.sheetjs.com/docs/miscellany/formats
@@ -186,6 +196,7 @@ export function isPreviewable(entry: FileLike): boolean {
     isAudioFile(entry) ||
     isTextFile(entry) ||
     isPdfFile(entry) ||
+    isDocxFile(entry) ||
     isXlsxFile(entry) ||
     isZipFile(entry)
   );

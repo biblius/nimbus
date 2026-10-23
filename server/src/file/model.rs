@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::format::FileType;
+use super::format::{ArchiveFormat, DocFormat, FileType};
 use crate::{db::Db, error::AppError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -96,17 +96,20 @@ impl<'r> Decode<'r, Db> for SharingMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct FileMetadata {
-    /// Content hash of the 64×64 WebP preview blob.
+    /// Content hash of the 64×64 WebP thumbnail blob.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_64: Option<String>,
-    /// Content hash of the 256×256 WebP preview blob.
+    /// Content hash of the 256×256 WebP thumbnail blob.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_256: Option<String>,
+    /// Content hash of a derived preview payload (e.g. DOCX → PDF).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_blob: Option<String>,
 }
 
 impl FileMetadata {
     pub fn is_empty(&self) -> bool {
-        self.preview_64.is_none() && self.preview_256.is_none()
+        self.preview_64.is_none() && self.preview_256.is_none() && self.preview_blob.is_none()
     }
 
     pub fn into_option(self) -> Option<Self> {
@@ -222,6 +225,23 @@ impl FileEntry {
         }
 
         Ok(name)
+    }
+
+    /// Whether this entry's original blob is suitable for the in-browser previewer.
+    pub fn previewable_as_original(&self) -> bool {
+        matches!(
+            self.file_type,
+            Some(
+                FileType::Image(_)
+                    | FileType::Video(_)
+                    | FileType::Audio(_)
+                    | FileType::Text(_)
+                    | FileType::Doc(
+                        DocFormat::Pdf | DocFormat::Xls | DocFormat::Xlsx | DocFormat::Ods
+                    )
+                    | FileType::Archive(ArchiveFormat::Zip | ArchiveFormat::Rtf)
+            )
+        )
     }
 }
 

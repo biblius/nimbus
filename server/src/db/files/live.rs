@@ -341,6 +341,7 @@ impl FileRepository {
                 f.share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM files f
@@ -444,6 +445,7 @@ impl FileRepository {
                 t.share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 t.created_at,
                 t.updated_at
             FROM tree t
@@ -485,6 +487,7 @@ impl FileRepository {
                 f.share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM files f
@@ -550,6 +553,7 @@ impl FileRepository {
                 share_expires_at,
                 CAST(NULL AS TEXT) AS preview_64,
                 CAST(NULL AS TEXT) AS preview_256,
+                CAST(NULL AS TEXT) AS preview_blob,
                 created_at,
                 updated_at
             "#,
@@ -631,6 +635,7 @@ impl FileRepository {
                     file.id,
                     file.metadata.preview_64.as_deref(),
                     file.metadata.preview_256.as_deref(),
+                    file.metadata.preview_blob.as_deref(),
                 )
             })
             .collect();
@@ -640,20 +645,25 @@ impl FileRepository {
         }
 
         let mut upsert = QueryBuilder::<Db>::new(
-            "INSERT INTO file_metadata (file_id, preview_64, preview_256) ",
+            "INSERT INTO file_metadata (file_id, preview_64, preview_256, preview_blob) ",
         );
 
-        upsert.push_values(file_metadata, |mut row, (id, preview_64, preview_256)| {
-            row.push_bind(id)
-                .push_bind(preview_64)
-                .push_bind(preview_256);
-        });
+        upsert.push_values(
+            file_metadata,
+            |mut row, (id, preview_64, preview_256, preview_blob)| {
+                row.push_bind(id)
+                    .push_bind(preview_64)
+                    .push_bind(preview_256)
+                    .push_bind(preview_blob);
+            },
+        );
 
         upsert.push(
             r#"
                 ON CONFLICT (file_id) DO UPDATE SET
                     preview_64 = EXCLUDED.preview_64,
-                    preview_256 = EXCLUDED.preview_256
+                    preview_256 = EXCLUDED.preview_256,
+                    preview_blob = EXCLUDED.preview_blob
                 "#,
         );
 
@@ -702,6 +712,7 @@ impl FileRepository {
                 f.share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM files f
@@ -788,15 +799,17 @@ impl FileRepository {
 
         sqlx::query!(
             r#"
-            INSERT INTO file_metadata (file_id, preview_64, preview_256)
-            VALUES ($1, $2, $3)
+            INSERT INTO file_metadata (file_id, preview_64, preview_256, preview_blob)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (file_id) DO UPDATE SET
                 preview_64 = EXCLUDED.preview_64,
-                preview_256 = EXCLUDED.preview_256
+                preview_256 = EXCLUDED.preview_256,
+                preview_blob = EXCLUDED.preview_blob
             "#,
             file_id,
             metadata.preview_64,
-            metadata.preview_256
+            metadata.preview_256,
+            metadata.preview_blob
         )
         .execute(&self.pool)
         .await?;
@@ -1000,6 +1013,23 @@ impl FileRepository {
         query.push(
             r#"
                 )
+                UNION ALL
+                SELECT preview_blob
+                FROM file_metadata
+                WHERE preview_blob IN (
+            "#,
+        );
+
+        {
+            let mut selected = query.separated(", ");
+            for preview in hashes {
+                selected.push_bind(preview);
+            }
+        }
+
+        query.push(
+            r#"
+                )
             ) AS refs
             WHERE preview IS NOT NULL
             GROUP BY preview
@@ -1100,6 +1130,7 @@ impl FileRepository {
                 t.share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 t.created_at,
                 t.updated_at
             FROM tree t

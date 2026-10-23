@@ -9,8 +9,8 @@ pub use trash::TrashFileService;
 use crate::{
     error::AppError,
     file::{
-        format::FileType,
-        model::FileKind,
+        format::{DocFormat, FileType},
+        model::{FileEntry, FileKind},
         storage::Storage,
         tree::{FileEntryTree, FileTree},
     },
@@ -21,6 +21,49 @@ use std::{collections::HashMap, path::PathBuf};
 use tokio::io::DuplexStream;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 use uuid::Uuid;
+
+/// Resolve the on-disk path and MIME for inline preview content.
+///
+/// Prefer `preview_blob` when present (derived payloads such as DOCX → PDF).
+/// Otherwise return the original blob when the type can be previewed as-is.
+pub(crate) fn preview_content_for(
+    storage: &Storage,
+    file: &FileEntry,
+) -> Result<(PathBuf, &'static str), AppError> {
+    if file.kind != FileKind::File {
+        return Err(AppError::Unprocessable(
+            "Directories cannot be previewed".into(),
+        ));
+    }
+
+    if let Some(hash) = file.metadata.preview_blob.as_deref() {
+        let mime = match file.file_type.as_ref() {
+            Some(FileType::Doc(DocFormat::Docx)) => "application/pdf",
+            Some(file_type) => file_type.mime(),
+            None => "application/octet-stream",
+        };
+        return Ok((storage.preview_path(hash), mime));
+    }
+
+    let file_type = file.file_type.as_ref().ok_or_else(|| {
+        AppError::Unprocessable("File type is required for preview".into())
+    })?;
+
+    if matches!(file_type, FileType::Doc(DocFormat::Docx)) {
+        return Err(AppError::ResourceMissing(
+            "Preview does not exist".into(),
+        ));
+    }
+
+    if !file.previewable_as_original() {
+        return Err(AppError::Unprocessable(
+            "File type cannot be previewed".into(),
+        ));
+    }
+
+    let hash = file.hash.as_deref().ok_or(AppError::Internal)?;
+    Ok((storage.path(hash), file_type.mime()))
+}
 
 /// HTTP download payload: a file on disk, or a zip streamed as it is built.
 #[derive(Debug)]

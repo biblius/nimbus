@@ -47,6 +47,7 @@ impl ShareRepository {
                 f.share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM files f
@@ -139,6 +140,7 @@ impl ShareRepository {
                 t.size_bytes,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 t.created_at,
                 t.updated_at,
                 t.query_root
@@ -179,6 +181,7 @@ impl ShareRepository {
                 f.share_expires_at,
                 m.preview_64,
                 m.preview_256,
+                m.preview_blob,
                 f.created_at,
                 f.updated_at
             FROM files f

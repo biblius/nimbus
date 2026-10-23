@@ -23,6 +23,7 @@
     FILE_FAMILY_LABELS,
     fileFamily,
     isAudioFile,
+    isDocxFile,
     isImageFile,
     isPdfFile,
     isTextFile,
@@ -124,16 +125,19 @@
   const isAudio = $derived(current != null && isAudioFile(current));
   const isText = $derived(current != null && isTextFile(current));
   const isPdf = $derived(current != null && isPdfFile(current));
+  const isDocx = $derived(current != null && isDocxFile(current));
   const isXlsx = $derived(current != null && isXlsxFile(current));
   const isZip = $derived(current != null && isZipFile(current));
   const fileName = $derived(current?.file.name ?? "");
   const canDownload = $derived(current?.file.sharingMode === "download");
-  /** Full-file content URL for preview (view and download shares). */
-  const contentUrl = $derived(
-    current ? session.client.sharedContentUrl(current.file.id) : "",
+  /** Inline preview blob URL (original or derived previewBlob). */
+  const contentPreviewUrl = $derived(
+    current ? session.client.sharedContentPreviewUrl(current.file.id) : "",
   );
   /** Range-capable stream URL for video / audio. */
-  const streamUrl = $derived(contentUrl);
+  const streamUrl = $derived(
+    current ? session.client.sharedContentUrl(current.file.id) : "",
+  );
   let displayName = $state("");
 
   // Fit the file name in the header by dynamically computing the width.
@@ -577,13 +581,13 @@
   <div
     class={cn(
       "absolute inset-0 flex px-14 py-20 sm:px-20 sm:py-24",
-      isText || isPdf || isXlsx || isZip
+      isText || isPdf || isDocx || isXlsx || isZip
         ? "items-stretch justify-stretch"
         : "items-center justify-center",
     )}
   >
     {#if current && isImage}
-      <ImagePreviewContent url={contentUrl} name={current.file.name} />
+      <ImagePreviewContent url={contentPreviewUrl} name={current.file.name} />
     {:else if current && isVideo}
       <VideoPreviewContent
         src={streamUrl}
@@ -600,24 +604,39 @@
       />
     {:else if current && isXlsx}
       {#await import("./preview/XlsxPreviewContent.svelte") then { default: XlsxPreviewContent }}
-        <XlsxPreviewContent url={contentUrl} name={current.file.name} />
+        <XlsxPreviewContent url={contentPreviewUrl} name={current.file.name} />
       {/await}
     {:else if current && isZip}
       {#await import("./preview/ZipPreviewContent.svelte") then { default: ZipPreviewContent }}
-        <ZipPreviewContent url={contentUrl} name={current.file.name} />
+        <ZipPreviewContent url={contentPreviewUrl} name={current.file.name} />
       {/await}
     {:else if current && isText}
       {#await import("./preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}
         <TextPreviewContent
-          url={contentUrl}
+          url={contentPreviewUrl}
           name={current.file.name}
           readonly
         />
       {/await}
     {:else if current && isPdf}
       {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
-        <PdfPreviewContent url={contentUrl} name={current.file.name} />
+        <PdfPreviewContent url={contentPreviewUrl} name={current.file.name} />
       {/await}
+    {:else if current && isDocx}
+      {#if current.metadata?.previewBlob}
+        {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
+          <PdfPreviewContent
+            url={contentPreviewUrl}
+            name={current.file.name}
+          />
+        {/await}
+      {:else}
+        <div
+          class="flex w-full items-center justify-center text-sm text-white/55"
+        >
+          Generating preview…
+        </div>
+      {/if}
     {/if}
   </div>
 

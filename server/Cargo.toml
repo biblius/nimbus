@@ -64,6 +64,7 @@ serde_with = "3.24.0"
 infer = "0.22.0"
 tokio-stream = "0.1.19"
 image = "0.25.10"
+docxide-pdf = { version = "0.19", default-features = false }
 webauthn-rs = { version = "0.5.5", features = [
   # Used ONLY to serialize the state on the server during registration /
   # discoverable authentication. Serialized state is never sent to clients.

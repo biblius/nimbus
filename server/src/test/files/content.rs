@@ -301,7 +301,7 @@ mod content {
         let result = state
             .services
             .files
-            .preview(
+            .thumbnail(
                 &ctx(state, &session.user, *root).await,
                 folder.id,
                 PreviewSize::Icon,
@@ -321,7 +321,7 @@ mod content {
         let result = state
             .services
             .files
-            .preview(
+            .thumbnail(
                 &ctx(state, &session.user, *root).await,
                 file.id,
                 PreviewSize::Icon,
@@ -378,7 +378,7 @@ mod content {
         let icon = state
             .services
             .files
-            .preview(
+            .thumbnail(
                 &ctx(state, &session.user, *root).await,
                 entry.id,
                 PreviewSize::Icon,
@@ -391,7 +391,7 @@ mod content {
         let tile = state
             .services
             .files
-            .preview(
+            .thumbnail(
                 &ctx(state, &session.user, *root).await,
                 entry.id,
                 PreviewSize::Tile,

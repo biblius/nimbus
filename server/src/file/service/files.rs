@@ -594,11 +594,34 @@ impl FileService {
         ))
     }
 
-    /// Serve a generated preview image for a file, when one exists.
+    /// Inline preview payload: original blob, or `preview_blob` when derived.
+    #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
+    pub async fn content_for_preview(
+        &self,
+        ctx: &UserRootContext,
+        id: Uuid,
+    ) -> Result<(String, PathBuf, &'static str), AppError> {
+        let file = self
+            .files
+            .get_live(ctx.root.id, id)
+            .await?
+            .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
+
+        let (path, mime) = super::preview_content_for(&self.storage, &file)?;
+
+        if !tokio::fs::try_exists(&path).await? {
+            tracing::error!(%id, path=%path.display(), "preview content missing on disk");
+            return Err(AppError::Internal);
+        }
+
+        Ok((file.name, path, mime))
+    }
+
+    /// Serve a generated WebP thumbnail for a file, when one exists.
     ///
     /// Works for both live and trashed files so trash trees can show thumbnails.
     #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id, ?size), err(Debug))]
-    pub async fn preview(
+    pub async fn thumbnail(
         &self,
         ctx: &UserRootContext,
         id: Uuid,
@@ -615,25 +638,19 @@ impl FileService {
 
         if file.kind != FileKind::File {
             return Err(AppError::Unprocessable(
-                "Directories do not have previews".into(),
+                "Directories do not have thumbnails".into(),
             ));
-        }
-
-        if file.metadata.is_empty() {
-            return Err(AppError::ResourceMissing("Preview does not exist".into()));
         }
 
         let hash = match size {
             PreviewSize::Icon => file.metadata.preview_64.as_deref(),
             PreviewSize::Tile => file.metadata.preview_256.as_deref(),
         }
-        .ok_or_else(|| AppError::ResourceMissing("Preview does not exist".into()))?;
+        .ok_or_else(|| AppError::ResourceMissing("Thumbnail does not exist".into()))?;
 
         let path = self.storage.preview_path(hash);
 
-        let preview = FileContentPreview::new(path, "image/webp").await?;
-
-        Ok(preview)
+        FileContentPreview::new(path, "image/webp").await
     }
 
     #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]

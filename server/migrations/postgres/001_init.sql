@@ -100,7 +100,8 @@ WHERE
 CREATE TABLE file_metadata (
   file_id UUID PRIMARY KEY NOT NULL,
   preview_64 TEXT,
-  preview_256 TEXT
+  preview_256 TEXT,
+  preview_blob TEXT
 );
 
 CREATE INDEX file_metadata_preview_64_idx ON file_metadata (preview_64)
@@ -110,6 +111,10 @@ WHERE
 CREATE INDEX file_metadata_preview_256_idx ON file_metadata (preview_256)
 WHERE
   preview_256 IS NOT NULL;
+
+CREATE INDEX file_metadata_preview_blob_idx ON file_metadata (preview_blob)
+WHERE
+  preview_blob IS NOT NULL;
 
 -- Used for soft deletion. Files end up here from `files`.
 -- A file that is directly deleted from `files` has its parent set to null

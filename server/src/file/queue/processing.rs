@@ -2,7 +2,7 @@ use crate::{
     db::files::FileRepository,
     error::AppError,
     file::{
-        format::FileType,
+        format::{DocFormat, FileType},
         model::{FileEntry, FileMetadata},
         storage::Storage,
     },
@@ -24,6 +24,7 @@ const PREVIEW_TILE: u32 = 256;
 enum ProcessingKind {
     Image,
     Video,
+    Docx,
 }
 
 /// Minimal payload for background preview generation.
@@ -74,6 +75,7 @@ impl ProcessingQueue {
         let kind = match file.file_type {
             Some(FileType::Image(_)) => ProcessingKind::Image,
             Some(FileType::Video(_)) => ProcessingKind::Video,
+            Some(FileType::Doc(DocFormat::Docx)) => ProcessingKind::Docx,
             _ => return Ok(()),
         };
 
@@ -115,6 +117,10 @@ impl ProcessingQueue {
             }
             ProcessingKind::Video => {
                 self.process_video(request.root_id, request.file_id, request.hash)
+                    .await
+            }
+            ProcessingKind::Docx => {
+                self.process_docx(request.root_id, request.file_id, request.hash)
                     .await
             }
         }
@@ -160,6 +166,42 @@ impl ProcessingQueue {
         self.store_previews(root_id, file_id, &pair).await
     }
 
+    /// Convert DOCX to PDF and store it as `preview_blob`.
+    #[instrument(skip(self, hash), fields(root_id = %root_id, file_id = %file_id), err(Debug))]
+    async fn process_docx(
+        &self,
+        root_id: Uuid,
+        file_id: Uuid,
+        hash: String,
+    ) -> Result<(), AppError> {
+        let source_path = self.storage.path(&hash);
+
+        let pdf = tokio::task::spawn_blocking(move || convert_docx_to_pdf(&source_path))
+            .await
+            .map_err(|e| {
+                tracing::error!(error=%e, "DOCX PDF conversion task failed");
+                AppError::Internal
+            })??;
+
+        let pdf_hash = hex::encode(Sha256::digest(&pdf));
+        self.storage.persist_preview(&pdf_hash, &pdf).await?;
+
+        let metadata = FileMetadata {
+            preview_blob: Some(pdf_hash),
+            ..Default::default()
+        };
+
+        self.files.set_metadata(root_id, file_id, &metadata).await?;
+
+        tracing::info!(
+            file=%file_id,
+            preview_blob=%metadata.preview_blob.as_deref().unwrap_or_default(),
+            "stored DOCX PDF preview blob"
+        );
+
+        Ok(())
+    }
+
     async fn store_previews(
         &self,
         root_id: Uuid,
@@ -175,21 +217,33 @@ impl ProcessingQueue {
         let metadata = FileMetadata {
             preview_64: Some(icon_hash),
             preview_256: Some(tile_hash),
+            ..Default::default()
         };
 
-        self.files
-            .set_metadata(root_id, file_id, &metadata)
-            .await?;
+        self.files.set_metadata(root_id, file_id, &metadata).await?;
 
         tracing::info!(
             file=%file_id,
             preview_64=%metadata.preview_64.as_deref().unwrap_or_default(),
             preview_256=%metadata.preview_256.as_deref().unwrap_or_default(),
-            "stored file previews"
+            "stored file thumbnails"
         );
 
         Ok(())
     }
+}
+
+/// Read a DOCX blob and convert it to PDF bytes.
+fn convert_docx_to_pdf(path: &Path) -> Result<Vec<u8>, AppError> {
+    let docx = std::fs::read(path).map_err(|e| {
+        tracing::error!(error=%e, path=%path.display(), "failed to read DOCX for PDF preview");
+        AppError::Internal
+    })?;
+
+    docxide_pdf::convert_docx_bytes_to_pdf_bytes(&docx).map_err(|e| {
+        tracing::error!(error=%e, path=%path.display(), "docxide-pdf conversion failed");
+        AppError::Internal
+    })
 }
 
 /// Decode `path` and encode both preview sizes as WebP.

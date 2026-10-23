@@ -5,8 +5,8 @@ use crate::{
         UserRootContext,
         model::{
             CopyFiles, CreateDirectory, CreateTextFile, DownloadFiles, FileEntry, FileView,
-            MoveFiles, PreviewSize, RenameFile, RestoreFile, RootView, ShareFiles, SharedFileView,
-            TrashFiles, UnshareFiles,
+            MoveFiles, PreviewSize, RenameFile, RestoreFile, RootView, ShareFiles, TrashFiles,
+            UnshareFiles,
         },
         tree::FileTree,
     },
@@ -486,24 +486,40 @@ pub(crate) async fn download_chunk(
     chunked_download(&path, &name, mime, range).await
 }
 
-pub(crate) async fn preview(
+/// WebP thumbnail (`?size=64|256`).
+pub(crate) async fn thumbnail(
     State(state): State<AppState>,
     ctx: UserRootContext,
     Path((_, file_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<PreviewQuery>,
 ) -> Result<Response, AppError> {
     let size = PreviewSize::from_px(query.size.unwrap_or(64))?;
-    let preview = state.services.files.preview(&ctx, file_id, size).await?;
+    let thumb = state.services.files.thumbnail(&ctx, file_id, size).await?;
 
     Response::builder()
-        .header(header::CONTENT_TYPE, preview.mime)
-        .header(header::CONTENT_LENGTH, preview.len.to_string())
+        .header(header::CONTENT_TYPE, thumb.mime)
+        .header(header::CONTENT_LENGTH, thumb.len.to_string())
         .header(header::CACHE_CONTROL, "private, max-age=86400")
-        .body(Body::from_stream(ReaderStream::new(preview.file)))
+        .body(Body::from_stream(ReaderStream::new(thumb.file)))
         .map_err(|error| {
-            tracing::error!(%error, "building preview response");
+            tracing::error!(%error, "building thumbnail response");
             AppError::Internal
         })
+}
+
+/// Inline preview content: original blob or derived `preview_blob`.
+pub(crate) async fn content_for_preview(
+    State(state): State<AppState>,
+    ctx: UserRootContext,
+    Path((_, file_id)): Path<(Uuid, Uuid)>,
+) -> Result<Response, AppError> {
+    let (name, path, mime) = state
+        .services
+        .files
+        .content_for_preview(&ctx, file_id)
+        .await?;
+
+    chunked_download(&path, &name, mime, None).await
 }
 
 pub(crate) async fn rename_file(
@@ -550,58 +566,6 @@ pub(crate) async fn delete_files(
 ) -> Result<StatusCode, AppError> {
     state.services.files.delete_many(&ctx, input).await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-pub(crate) async fn shared_file(
-    State(state): State<AppState>,
-    Path(file_id): Path<Uuid>,
-) -> Result<Json<SharedFileView>, AppError> {
-    Ok(Json(state.services.share.get(file_id).await?))
-}
-
-pub(crate) async fn shared_children(
-    State(state): State<AppState>,
-    Path(file_id): Path<Uuid>,
-) -> Result<Json<Vec<SharedFileView>>, AppError> {
-    Ok(Json(state.services.share.list(file_id).await?))
-}
-
-pub(crate) async fn shared_download(
-    State(state): State<AppState>,
-    Path(file_id): Path<Uuid>,
-) -> Result<Response, AppError> {
-    let (name, body) = state.services.share.download(file_id).await?;
-
-    body.into_response(name).await
-}
-
-pub(crate) async fn shared_download_chunk(
-    State(state): State<AppState>,
-    Path(file_id): Path<Uuid>,
-    range: Option<TypedHeader<Range>>,
-) -> Result<Response, AppError> {
-    let (entry, path, mime) = state.services.share.content(file_id).await?;
-
-    chunked_download(&path, &entry.name, mime, range).await
-}
-
-pub(crate) async fn shared_preview(
-    State(state): State<AppState>,
-    Path(file_id): Path<Uuid>,
-    Query(query): Query<PreviewQuery>,
-) -> Result<Response, AppError> {
-    let size = PreviewSize::from_px(query.size.unwrap_or(64))?;
-    let preview = state.services.share.preview(file_id, size).await?;
-
-    Response::builder()
-        .header(header::CONTENT_TYPE, preview.mime)
-        .header(header::CONTENT_LENGTH, preview.len.to_string())
-        .header(header::CACHE_CONTROL, "public, max-age=86400")
-        .body(Body::from_stream(ReaderStream::new(preview.file)))
-        .map_err(|error| {
-            tracing::error!(%error, "building shared preview response");
-            AppError::Internal
-        })
 }
 
 pub(crate) async fn share_files(

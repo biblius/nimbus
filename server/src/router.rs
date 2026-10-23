@@ -2,6 +2,7 @@ pub mod auth;
 pub mod files;
 pub mod folders;
 pub mod middleware;
+pub mod shared;
 pub mod users;
 mod web;
 
@@ -90,22 +91,26 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/auth/reset", post(auth::start_password_reset))
         .route("/auth/reset/{token}", post(auth::finish_password_reset))
-        .route("/files/shared/{file_id}", get(files::shared_file))
+        .route("/files/shared/{file_id}", get(shared::file))
         .route(
             "/files/shared/{file_id}/children",
-            get(files::shared_children),
+            get(shared::children),
         )
         .route(
             "/files/shared/{file_id}/blob/download",
-            get(files::shared_download),
+            get(shared::download),
         )
         .route(
             "/files/shared/{file_id}/blob/chunk",
-            get(files::shared_download_chunk),
+            get(shared::download_chunk),
+        )
+        .route(
+            "/files/shared/{file_id}/icon",
+            get(shared::thumbnail),
         )
         .route(
             "/files/shared/{file_id}/preview",
-            get(files::shared_preview),
+            get(shared::content_for_preview),
         );
 
     let session = Router::new()
@@ -169,7 +174,14 @@ pub fn router(state: AppState) -> Router {
             "/roots/{root_id}/files/{id}/overwrite",
             put(files::overwrite).layer(DefaultBodyLimit::max(upload_max)),
         )
-        .route("/roots/{root_id}/files/{id}/preview", get(files::preview))
+        .route(
+            "/roots/{root_id}/files/{id}/icon",
+            get(files::thumbnail),
+        )
+        .route(
+            "/roots/{root_id}/files/{id}/preview",
+            get(files::content_for_preview),
+        )
         .route(
             "/roots/{root_id}/files/share",
             post(files::share_files).delete(files::unshare_files),

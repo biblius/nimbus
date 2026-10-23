@@ -304,7 +304,7 @@
     let objectUrl: string | null = null;
 
     session.client
-      .preview(rootId, fileId, 256)
+      .icon(rootId, fileId, 256)
       .then((blob) => {
         if (cancelled) {
           return;
