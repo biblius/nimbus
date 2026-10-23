@@ -9,13 +9,14 @@ use crate::{
 };
 use image::{DynamicImage, imageops::FilterType};
 use sha2::{Digest, Sha256};
-use std::{io::Cursor, path::Path, process::Command};
-use tokio::sync::mpsc;
+use std::{io::Cursor, path::Path, process::Command, sync::Arc};
+use tokio::sync::{Semaphore, mpsc};
 use tracing::instrument;
 use uuid::Uuid;
 
 /// List / small-tile icon size.
 const PREVIEW_ICON: u32 = 64;
+
 /// Large-tile thumbnail size.
 const PREVIEW_TILE: u32 = 256;
 
@@ -38,36 +39,21 @@ pub struct ProcessingRequest {
 
 pub type ProcessingQueueHandle = mpsc::Sender<ProcessingRequest>;
 
-/// Encoded WebP previews at both supported sizes.
-struct PreviewPair {
-    icon: Vec<u8>,
-    tile: Vec<u8>,
-}
-
 /// Background worker that derives artifacts (previews, etc.) from uploaded files.
 pub struct ProcessingQueue {
     requests: mpsc::Receiver<ProcessingRequest>,
-    storage: Storage,
-    files: FileRepository,
+    worker: ProcessingWorker,
 }
 
 impl ProcessingQueue {
     pub fn start(storage: Storage, files: FileRepository) -> ProcessingQueueHandle {
         let (tx, rx) = mpsc::channel(128);
-        ProcessingQueue::new(storage, files, rx)._start();
-        tx
-    }
-
-    fn new(
-        storage: Storage,
-        files: FileRepository,
-        requests: mpsc::Receiver<ProcessingRequest>,
-    ) -> Self {
-        Self {
-            requests,
-            storage,
-            files,
+        ProcessingQueue {
+            requests: rx,
+            worker: ProcessingWorker { storage, files },
         }
+        ._start();
+        tx
     }
 
     /// Enqueue a committed file for preview processing when its type needs it.
@@ -95,19 +81,46 @@ impl ProcessingQueue {
             .map_err(|_| AppError::Internal)
     }
 
+    /// Drain the channel and run jobs concurrently (bounded).
     #[instrument(skip(self))]
     fn _start(mut self) {
         tokio::spawn(async move {
+            // Cap if the queue gets flooded with a massive amount of jobs
+            let max_jobs = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+                .clamp(2, 16);
+
+            let semaphore = Arc::new(Semaphore::new(max_jobs));
+
             while let Some(request) = self.requests.recv().await {
-                if let Err(e) = self.process(request).await {
-                    tracing::error!(error=%e, "error processing file");
-                }
+                let Ok(permit) = semaphore.clone().acquire_owned().await else {
+                    break;
+                };
+
+                let worker = self.worker.clone();
+
+                tokio::spawn(async move {
+                    if let Err(e) = worker.process(request).await {
+                        tracing::error!(error=%e, "error processing file");
+                    }
+                    drop(permit);
+                });
             }
 
             tracing::info!("Processing request channel closed, shutting down worker");
         });
     }
+}
 
+/// Cloneable side of the queue that runs a single preview job.
+#[derive(Clone)]
+struct ProcessingWorker {
+    storage: Storage,
+    files: FileRepository,
+}
+
+impl ProcessingWorker {
     #[instrument(skip(self, request), fields(root_id = %request.root_id, file_id = %request.file_id), err(Debug))]
     async fn process(&self, request: ProcessingRequest) -> Result<(), AppError> {
         match request.kind {
@@ -231,6 +244,12 @@ impl ProcessingQueue {
 
         Ok(())
     }
+}
+
+/// Encoded WebP previews at both supported sizes.
+struct PreviewPair {
+    icon: Vec<u8>,
+    tile: Vec<u8>,
 }
 
 /// Read a DOCX blob and convert it to PDF bytes.

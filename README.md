@@ -152,7 +152,8 @@ Nimbus uses tokio `select!` loops to process background tasks.
 Image/video thumbnail processing and expired trash deletion sweeps are implemented as background processes.
 
 The file processing queue processes files based on their inferred format and
-generates additional metadata (such as preview icons, i.e. thumbnails).
+generates additional metadata (such as preview icons, preview blobs, etc.).
+
 It uses Rust libraries where possible, but delegates to `ffmpeg` to generate
 video thumbnails.
 
