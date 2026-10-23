@@ -391,6 +391,23 @@ export class NimbusClient {
     );
   }
 
+  /** Name full-text search within a root, ordered by rank. */
+  search(rootId: string, q: string): Promise<FileView[]> {
+    const query = `?q=${encodeURIComponent(q)}`;
+    return this.request<FileView[]>(
+      `/roots/${encodeURIComponent(rootId)}/search${query}`,
+    );
+  }
+
+  /**
+   * All directories in a root as `id → FileEntry` for client-side path crumbs.
+   */
+  descendants(rootId: string): Promise<Record<string, FileEntry>> {
+    return this.request<Record<string, FileEntry>>(
+      `/roots/${encodeURIComponent(rootId)}/descendants`,
+    );
+  }
+
   /**
    * Directories from the root down to `fileId`, including `fileId`.
    * The first entry sits in the root. The last entry is `fileId`.

@@ -6,6 +6,7 @@ mod overwrite;
 mod read;
 mod rename;
 mod roots;
+mod search;
 mod share;
 mod trash;
 mod upload;

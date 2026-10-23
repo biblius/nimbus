@@ -3,9 +3,9 @@
 -- code can run on Postgres and SQLite.
 --
 -- Type mapping (sqlx):
---   UUID / TIMESTAMPTZ → BLOB / TEXT
---   BIGINT / BIGSERIAL  → INTEGER (64-bit) / INTEGER AUTOINCREMENT
---   JSONB              → TEXT
+--   UUID / TIMESTAMPTZ -> BLOB / TEXT
+--   BIGINT / BIGSERIAL -> INTEGER (64-bit) / INTEGER AUTOINCREMENT
+--   JSONB              -> TEXT
 CREATE TABLE users (
   id BLOB PRIMARY KEY NOT NULL,
   username TEXT UNIQUE NOT NULL,

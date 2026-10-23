@@ -139,6 +139,8 @@ pub fn router(state: AppState) -> Router {
         .route("/roots/{root_id}/download", get(files::download_root))
         .route("/roots/{root_id}/files/download", get(files::download_dir))
         .route("/roots/{root_id}", get(files::list))
+        .route("/roots/{root_id}/search", get(files::search))
+        .route("/roots/{root_id}/descendants", get(files::descendants))
         .route(
             "/roots/{root_id}",
             post(files::upload).layer(DefaultBodyLimit::max(upload_max)),

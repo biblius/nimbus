@@ -1,5 +1,7 @@
 -- Identifiers and timestamps are generated in Rust so the same repository
 -- code can run on Postgres and SQLite.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE users (
   id UUID PRIMARY KEY NOT NULL,
   username TEXT UNIQUE NOT NULL,
@@ -94,6 +96,9 @@ CREATE INDEX files_hash_idx ON files (hash);
 CREATE INDEX files_sharing_mode_idx ON files (sharing_mode, share_expires_at)
 WHERE
   sharing_mode IS NOT NULL;
+
+-- Fuzzy / substring name search within a root (`pg_trgm`).
+CREATE INDEX files_name_trgm_idx ON files USING GIN (name gin_trgm_ops);
 
 -- Preview hashes and other generated artifacts. `file_id` matches `files.id`
 -- or `trashed_files.id` No FK because the same id moves between those tables.

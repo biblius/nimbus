@@ -9,6 +9,7 @@
     FolderInput,
     Link2,
     Plus,
+    Search,
     Share2,
     Trash,
     Upload,
@@ -44,6 +45,7 @@
   } from "./DestinationPicker.svelte";
   import FileListItem from "./FileListItem.svelte";
   import FilePathCrumbs, { type Crumb } from "./FilePathCrumbs.svelte";
+  import FileSearchResults from "./FileSearchResults.svelte";
   import FileShareOptions from "./FileShareOptions.svelte";
   import FileTileItem from "./FileTileItem.svelte";
   import FileTypeIcon from "./FileTypeIcon.svelte";
@@ -92,6 +94,8 @@
     "grid grid-cols-[minmax(0,1fr)_7.5rem] items-center gap-x-3 px-3 @lg:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_7.5rem] @2xl:grid-cols-[minmax(8rem,1fr)_minmax(0,5.5rem)_minmax(0,11.5rem)_7.5rem]";
 
   let entries = $state<FileView[]>([]);
+  let searchQuery = $state("");
+  const searching = $derived(searchQuery.trim().length > 0);
 
   /**
    * Empty on component load, but after a user clicks a list item
@@ -313,6 +317,11 @@
     untrack(() => {
       open(rootId, parent);
     });
+  });
+
+  $effect(() => {
+    root.id;
+    searchQuery = "";
   });
 
   $effect(() => {
@@ -1433,6 +1442,22 @@
       />
     </div>
 
+    <div
+      class="relative flex min-w-[10rem] max-w-56 flex-1 items-center sm:max-w-xs"
+    >
+      <Search
+        size={14}
+        class="pointer-events-none absolute left-2.5 text-muted-foreground"
+      />
+      <Input
+        type="search"
+        class="h-8 pl-8"
+        placeholder="Search"
+        bind:value={searchQuery}
+        aria-label="Search files in this root"
+      />
+    </div>
+
     <div class="flex shrink-0 items-center gap-1.5">
       <input
         bind:this={fileInput}
@@ -1653,262 +1678,280 @@
   <div
     class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card"
   >
-    <!-- COLUMN HEADERS -->
-
-    {#if tiles}
-      <div class="flex h-10 shrink-0 items-center justify-end border-b px-3">
-        <FileViewModeMenu bind:mode={viewMode} />
+    {#if searching}
+      <div
+        class="flex h-10 shrink-0 items-center border-b px-3 text-xs font-medium text-muted-foreground"
+      >
+        Search results
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <FileSearchResults
+          {root}
+          query={searchQuery}
+          onNavigate={(id) => {
+            searchQuery = "";
+            showDirectory(id);
+          }}
+        />
       </div>
     {:else}
-      <div
-        class="{columns} h-10 shrink-0 border-b text-xs font-medium text-muted-foreground"
-      >
-        <SortHeader
-          label="Name"
-          column="name"
-          bind:sort
-          defaultSort={DEFAULT_SORT}
-          onCycle={onSortCycle}
-        />
-        <SortHeader
-          label="Size"
-          column="size"
-          bind:sort
-          defaultSort={DEFAULT_SORT}
-          onCycle={onSortCycle}
-          class="hidden @lg:flex"
-          buttonClass="justify-end"
-        />
-        <SortHeader
-          label="Created"
-          column="created"
-          bind:sort
-          defaultSort={DEFAULT_SORT}
-          onCycle={onSortCycle}
-          class="hidden @2xl:flex"
-        />
-        <div class="flex items-center justify-end">
+      <!-- COLUMN HEADERS -->
+
+      {#if tiles}
+        <div class="flex h-10 shrink-0 items-center justify-end border-b px-3">
           <FileViewModeMenu bind:mode={viewMode} />
         </div>
-      </div>
-    {/if}
-
-    <!-- FILE LIST -->
-
-    <div
-      bind:this={scroller}
-      class="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-    >
-      {#if loading}
-        <p
-          class="flex h-full items-center justify-center px-3 text-sm text-muted-foreground"
-        >
-          Loading…
-        </p>
-      {:else if entries.length === 0 && !drafting && !showParentDrop}
-        <div
-          class="flex h-full flex-col items-center justify-center gap-2 px-6 py-16 text-center"
-        >
-          <Folder class="size-10 text-muted-foreground opacity-40" />
-          <p class="text-sm font-medium">This folder is empty</p>
-          <p class="max-w-sm text-sm text-muted-foreground">
-            Upload or drop files here, or create a folder to get started.
-          </p>
-        </div>
       {:else}
-        <DragDropProvider {sensors} {onDragEnd}>
-          <ul class={tiles ? tileGridClass : "divide-y"}>
-            {#if showParentDrop}
-              <ParentDropItem
-                {columns}
-                {viewMode}
-                onOpen={openParentDirectory}
-              />
-            {/if}
+        <div
+          class="{columns} h-10 shrink-0 border-b text-xs font-medium text-muted-foreground"
+        >
+          <SortHeader
+            label="Name"
+            column="name"
+            bind:sort
+            defaultSort={DEFAULT_SORT}
+            onCycle={onSortCycle}
+          />
+          <SortHeader
+            label="Size"
+            column="size"
+            bind:sort
+            defaultSort={DEFAULT_SORT}
+            onCycle={onSortCycle}
+            class="hidden @lg:flex"
+            buttonClass="justify-end"
+          />
+          <SortHeader
+            label="Created"
+            column="created"
+            bind:sort
+            defaultSort={DEFAULT_SORT}
+            onCycle={onSortCycle}
+            class="hidden @2xl:flex"
+          />
+          <div class="flex items-center justify-end">
+            <FileViewModeMenu bind:mode={viewMode} />
+          </div>
+        </div>
+      {/if}
 
-            <!-- NEW DIRECTORY DRAFT -->
+      <!-- FILE LIST -->
 
-            {#if drafting}
-              <li class={["px-3 py-2", tiles && "col-span-full"]}>
-                <div class="flex min-w-0 items-center gap-2">
-                  {#if draftKind === "text"}
-                    <FileIcon
-                      size={18}
-                      class="shrink-0 text-muted-foreground"
-                    />
-                  {:else}
-                    <Folder size={18} class="shrink-0 text-primary" />
-                  {/if}
-                  <Input
-                    {@attach focusDraft}
-                    bind:value={directoryName}
-                    class="h-8 min-w-0 flex-1 px-2.5"
-                    aria-label={draftKind === "text"
-                      ? "File name"
-                      : "Folder name"}
-                    aria-invalid={directoryError ? true : undefined}
-                    autocomplete="off"
-                    spellcheck="false"
-                    placeholder={draftKind === "text"
-                      ? "File name"
-                      : "Folder name"}
-                    disabled={directorySaving}
-                    oninput={() => (directoryError = "")}
-                    onkeydown={onDraftKey}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={draftKind === "text"
-                      ? "Create file"
-                      : "Create folder"}
-                    disabled={directorySaving}
-                    onclick={() => commitDirectory()}
-                  >
-                    <Check size={16} />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Cancel"
-                    disabled={directorySaving}
-                    onclick={cancelDirectory}
-                  >
-                    <X size={16} />
-                  </Button>
-                </div>
-                <p
-                  class="mt-1 pl-7 text-xs {directoryError
-                    ? 'text-destructive'
-                    : 'text-muted-foreground'}"
-                >
-                  {directoryError ||
-                    (directorySaving
-                      ? "Saving…"
-                      : "Enter to save, Esc to cancel")}
-                </p>
-              </li>
-            {/if}
-
-            <!-- FILES -->
-
-            {#each entries as entry (entry.file.id)}
-              {#if tiles}
-                <FileTileItem
-                  {entry}
-                  rootId={root.id}
-                  thumbnailUrl={previews.thumbs[entry.file.id]}
-                  name={label(entry)}
-                  size={tileSize}
-                  selected={selected.includes(entry.file.id)}
-                  multiSelected={selected.length >= 2}
-                  {selectMode}
-                  {canWrite}
-                  {canShare}
-                  canCopy={hasCopyDestination}
-                  onSelect={(event) => selectEntry(entry.file.id, event)}
-                  onLongSelect={() => longSelectEntry(entry.file.id)}
-                  onOpen={() => openDirectory(entry)}
-                  onPreview={() => (previewFileId = entry.file.id)}
-                  onPrepareAction={() => prepareActionTarget(entry.file.id)}
-                  onDownload={() => downloadIds(actionIds(entry.file.id))}
-                  onCopy={() => startCopy(actionIds(entry.file.id))}
-                  onShare={() =>
-                    openShareDialog(entry.file, actionIds(entry.file.id))
-                  }
-                  onUnshare={() =>
-                    openShareDialog(entry.file, actionIds(entry.file.id))
-                  }
-                  onCopyLink={() => copyLink(entry)}
-                  onDelete={() => startDelete(actionIds(entry.file.id))}
-                />
-              {:else}
-                <FileListItem
-                  {entry}
-                  rootId={root.id}
-                  thumbnailUrl={previews.thumbs[entry.file.id]}
-                  name={label(entry)}
+      <div
+        bind:this={scroller}
+        class="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      >
+        {#if loading}
+          <p
+            class="flex h-full items-center justify-center px-3 text-sm text-muted-foreground"
+          >
+            Loading…
+          </p>
+        {:else if entries.length === 0 && !drafting && !showParentDrop}
+          <div
+            class="flex h-full flex-col items-center justify-center gap-2 px-6 py-16 text-center"
+          >
+            <Folder class="size-10 text-muted-foreground opacity-40" />
+            <p class="text-sm font-medium">This folder is empty</p>
+            <p class="max-w-sm text-sm text-muted-foreground">
+              Upload or drop files here, or create a folder to get started.
+            </p>
+          </div>
+        {:else}
+          <DragDropProvider {sensors} {onDragEnd}>
+            <ul class={tiles ? tileGridClass : "divide-y"}>
+              {#if showParentDrop}
+                <ParentDropItem
                   {columns}
-                  density={listDensity}
-                  selected={selected.includes(entry.file.id)}
-                  multiSelected={selected.length >= 2}
-                  {selectMode}
-                  {canWrite}
-                  {canShare}
-                  canCopy={hasCopyDestination}
-                  onSelect={(event) => selectEntry(entry.file.id, event)}
-                  onLongSelect={() => longSelectEntry(entry.file.id)}
-                  onOpen={() => openDirectory(entry)}
-                  onPreview={() => (previewFileId = entry.file.id)}
-                  onPrepareAction={() => prepareActionTarget(entry.file.id)}
-                  onDownload={() => downloadIds(actionIds(entry.file.id))}
-                  onCopy={() => startCopy(actionIds(entry.file.id))}
-                  onShare={() =>
-                    openShareDialog(entry.file, actionIds(entry.file.id))
-                  }
-                  onUnshare={() =>
-                    openShareDialog(entry.file, actionIds(entry.file.id))
-                  }
-                  onCopyLink={() => copyLink(entry)}
-                  onMove={() => startMove(actionIds(entry.file.id))}
-                  onRename={(name) => renameEntry(entry, name)}
-                  onDelete={() => startDelete(actionIds(entry.file.id))}
+                  {viewMode}
+                  onOpen={openParentDirectory}
                 />
               {/if}
-            {/each}
-          </ul>
-          <DragOverlay>
-            {#snippet children(source)}
-              {@const preview = dragPreview(String(source.id))}
-              <div class="relative max-w-72 -rotate-1">
-                {#if preview.count > 1}
-                  <div
-                    class="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border bg-muted/80 ring-1 ring-border"
-                    aria-hidden="true"
-                  ></div>
-                {/if}
-                <div
-                  class="relative flex items-center gap-2.5 rounded-lg border bg-card py-1.5 pr-2.5 pl-1.5 shadow-xl ring-1 ring-border"
-                >
-                  {#if preview.entry?.file.kind === "directory"}
-                    <span
-                      class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
-                    >
-                      <Folder size={18} strokeWidth={1.75} />
-                    </span>
-                  {:else}
-                    <span
-                      class="flex size-8 shrink-0 items-center justify-center rounded-md ring-1 {FILE_ICON_CHIP_CLASS}"
-                      style={fileIconChipStyle(preview.entry?.file.fileType)}
-                    >
-                      <FileTypeIcon
-                        fileType={preview.entry?.file.fileType}
-                        size={16}
+
+              <!-- NEW DIRECTORY DRAFT -->
+
+              {#if drafting}
+                <li class={["px-3 py-2", tiles && "col-span-full"]}>
+                  <div class="flex min-w-0 items-center gap-2">
+                    {#if draftKind === "text"}
+                      <FileIcon
+                        size={18}
+                        class="shrink-0 text-muted-foreground"
                       />
-                    </span>
-                  {/if}
-                  <span
-                    class="min-w-0 flex-1 truncate text-sm font-medium"
-                    title={preview.name}
-                  >
-                    {preview.name}
-                  </span>
-                  {#if preview.count > 1}
-                    <span
-                      class="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground tabular-nums"
+                    {:else}
+                      <Folder size={18} class="shrink-0 text-primary" />
+                    {/if}
+                    <Input
+                      {@attach focusDraft}
+                      bind:value={directoryName}
+                      class="h-8 min-w-0 flex-1 px-2.5"
+                      aria-label={draftKind === "text"
+                        ? "File name"
+                        : "Folder name"}
+                      aria-invalid={directoryError ? true : undefined}
+                      autocomplete="off"
+                      spellcheck="false"
+                      placeholder={draftKind === "text"
+                        ? "File name"
+                        : "Folder name"}
+                      disabled={directorySaving}
+                      oninput={() => (directoryError = "")}
+                      onkeydown={onDraftKey}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={draftKind === "text"
+                        ? "Create file"
+                        : "Create folder"}
+                      disabled={directorySaving}
+                      onclick={() => commitDirectory()}
                     >
-                      +{preview.count - 1}
-                    </span>
+                      <Check size={16} />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Cancel"
+                      disabled={directorySaving}
+                      onclick={cancelDirectory}
+                    >
+                      <X size={16} />
+                    </Button>
+                  </div>
+                  <p
+                    class="mt-1 pl-7 text-xs {directoryError
+                      ? 'text-destructive'
+                      : 'text-muted-foreground'}"
+                  >
+                    {directoryError ||
+                      (directorySaving
+                        ? "Saving…"
+                        : "Enter to save, Esc to cancel")}
+                  </p>
+                </li>
+              {/if}
+
+              <!-- FILES -->
+
+              {#each entries as entry (entry.file.id)}
+                {#if tiles}
+                  <FileTileItem
+                    {entry}
+                    rootId={root.id}
+                    thumbnailUrl={previews.thumbs[entry.file.id]}
+                    name={label(entry)}
+                    size={tileSize}
+                    selected={selected.includes(entry.file.id)}
+                    multiSelected={selected.length >= 2}
+                    {selectMode}
+                    {canWrite}
+                    {canShare}
+                    canCopy={hasCopyDestination}
+                    onSelect={(event) => selectEntry(entry.file.id, event)}
+                    onLongSelect={() => longSelectEntry(entry.file.id)}
+                    onOpen={() => openDirectory(entry)}
+                    onPreview={() => (previewFileId = entry.file.id)}
+                    onPrepareAction={() => prepareActionTarget(entry.file.id)}
+                    onDownload={() => downloadIds(actionIds(entry.file.id))}
+                    onCopy={() => startCopy(actionIds(entry.file.id))}
+                    onShare={() =>
+                      openShareDialog(entry.file, actionIds(entry.file.id))
+                    }
+                    onUnshare={() =>
+                      openShareDialog(entry.file, actionIds(entry.file.id))
+                    }
+                    onCopyLink={() => copyLink(entry)}
+                    onDelete={() => startDelete(actionIds(entry.file.id))}
+                  />
+                {:else}
+                  <FileListItem
+                    {entry}
+                    rootId={root.id}
+                    thumbnailUrl={previews.thumbs[entry.file.id]}
+                    name={label(entry)}
+                    {columns}
+                    density={listDensity}
+                    selected={selected.includes(entry.file.id)}
+                    multiSelected={selected.length >= 2}
+                    {selectMode}
+                    {canWrite}
+                    {canShare}
+                    canCopy={hasCopyDestination}
+                    onSelect={(event) => selectEntry(entry.file.id, event)}
+                    onLongSelect={() => longSelectEntry(entry.file.id)}
+                    onOpen={() => openDirectory(entry)}
+                    onPreview={() => (previewFileId = entry.file.id)}
+                    onPrepareAction={() => prepareActionTarget(entry.file.id)}
+                    onDownload={() => downloadIds(actionIds(entry.file.id))}
+                    onCopy={() => startCopy(actionIds(entry.file.id))}
+                    onShare={() =>
+                      openShareDialog(entry.file, actionIds(entry.file.id))
+                    }
+                    onUnshare={() =>
+                      openShareDialog(entry.file, actionIds(entry.file.id))
+                    }
+                    onCopyLink={() => copyLink(entry)}
+                    onMove={() => startMove(actionIds(entry.file.id))}
+                    onRename={(name) => renameEntry(entry, name)}
+                    onDelete={() => startDelete(actionIds(entry.file.id))}
+                  />
+                {/if}
+              {/each}
+            </ul>
+            <DragOverlay>
+              {#snippet children(source)}
+                {@const preview = dragPreview(String(source.id))}
+                <div class="relative max-w-72 -rotate-1">
+                  {#if preview.count > 1}
+                    <div
+                      class="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border bg-muted/80 ring-1 ring-border"
+                      aria-hidden="true"
+                    ></div>
                   {/if}
+                  <div
+                    class="relative flex items-center gap-2.5 rounded-lg border bg-card py-1.5 pr-2.5 pl-1.5 shadow-xl ring-1 ring-border"
+                  >
+                    {#if preview.entry?.file.kind === "directory"}
+                      <span
+                        class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
+                      >
+                        <Folder size={18} strokeWidth={1.75} />
+                      </span>
+                    {:else}
+                      <span
+                        class="flex size-8 shrink-0 items-center justify-center rounded-md ring-1 {FILE_ICON_CHIP_CLASS}"
+                        style={fileIconChipStyle(preview.entry?.file.fileType)}
+                      >
+                        <FileTypeIcon
+                          fileType={preview.entry?.file.fileType}
+                          size={16}
+                        />
+                      </span>
+                    {/if}
+                    <span
+                      class="min-w-0 flex-1 truncate text-sm font-medium"
+                      title={preview.name}
+                    >
+                      {preview.name}
+                    </span>
+                    {#if preview.count > 1}
+                      <span
+                        class="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground tabular-nums"
+                      >
+                        +{preview.count - 1}
+                      </span>
+                    {/if}
+                  </div>
                 </div>
-              </div>
-            {/snippet}
-          </DragOverlay>
-        </DragDropProvider>
-      {/if}
-    </div>
+              {/snippet}
+            </DragOverlay>
+          </DragDropProvider>
+        {/if}
+      </div>
+    {/if}
   </div>
 
   {#if previewFileId !== null && previewEntries.some((entry) => entry.file.id === previewFileId)}

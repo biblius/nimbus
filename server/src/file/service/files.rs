@@ -81,6 +81,25 @@ impl FileService {
         self.files.list_files(ctx.root.id, dir_id).await
     }
 
+    /// Fuzzy / substring name search within the current root, ordered by rank.
+    #[instrument(skip(self, ctx, q), fields(user_id = %ctx.user.id, root_id = %ctx.root.id, q = %q), err(Debug))]
+    pub async fn search(
+        &self,
+        ctx: &UserRootContext,
+        q: &str,
+    ) -> Result<Vec<FileView>, AppError> {
+        self.files.search_by_name(ctx.root.id, q).await
+    }
+
+    /// All directories in the root, keyed by id (for client path crumbs).
+    #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
+    pub async fn directories(
+        &self,
+        ctx: &UserRootContext,
+    ) -> Result<HashMap<Uuid, FileEntry>, AppError> {
+        self.files.list_directories(ctx.root.id).await
+    }
+
     #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
     pub async fn get(&self, ctx: &UserRootContext, id: Uuid) -> Result<FileEntry, AppError> {
         self.files

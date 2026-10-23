@@ -195,6 +195,8 @@ async fn build_services(
 ) -> (ServiceState, Repository, Storage) {
     let email = EmailSender::new(
         String::new(),
+        0,
+        String::new(),
         String::new(),
         "Nimbus".into(),
         "http://localhost",

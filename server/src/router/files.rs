@@ -34,6 +34,11 @@ pub struct ParentQuery {
 }
 
 #[derive(Deserialize)]
+pub struct SearchQuery {
+    q: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct PreviewQuery {
     /// Square edge length in pixels: `64` (default) or `256`.
     size: Option<u32>,
@@ -58,6 +63,23 @@ pub(crate) async fn list(
     Query(query): Query<ParentQuery>,
 ) -> Result<Json<Vec<FileView>>, AppError> {
     Ok(Json(state.services.files.list(&ctx, query.parent).await?))
+}
+
+pub(crate) async fn search(
+    State(state): State<AppState>,
+    ctx: UserRootContext,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<Vec<FileView>>, AppError> {
+    let q = query.q.as_deref().unwrap_or("");
+    Ok(Json(state.services.files.search(&ctx, q).await?))
+}
+
+/// All directories in the root as `id → FileEntry` for client-side breadcrumbs.
+pub(crate) async fn descendants(
+    State(state): State<AppState>,
+    ctx: UserRootContext,
+) -> Result<Json<HashMap<Uuid, FileEntry>>, AppError> {
+    Ok(Json(state.services.files.directories(&ctx).await?))
 }
 
 pub(crate) async fn tree(

@@ -7,6 +7,7 @@ use sqlx::QueryBuilder;
 use uuid::Uuid;
 
 mod live;
+mod search;
 mod share;
 mod trash;
 

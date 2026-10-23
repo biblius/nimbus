@@ -31,7 +31,7 @@ struct PreviewCount {
 
 #[derive(Clone)]
 pub struct FileRepository {
-    pool: DbPool,
+    pub(super) pool: DbPool,
 }
 
 impl FileRepository {
