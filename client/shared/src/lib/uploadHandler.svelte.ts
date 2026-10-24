@@ -14,8 +14,8 @@ export type PendingUpload = {
 };
 
 export type UploadHandlerOptions = {
-  getRootId: () => string;
-  getParentId: () => string | null;
+  rootId: () => string;
+  locationId: () => string | null;
   onCreated: (entry: FileEntry) => void;
 };
 
@@ -86,8 +86,8 @@ export class UploadHandler {
       return;
     }
 
-    const rootId = this.opts.getRootId();
-    const parent = this.opts.getParentId();
+    const rootId = this.opts.rootId();
+    const parent = this.opts.locationId();
 
     const queue = files.map((file) => {
       const id = this.nextId++;
@@ -134,8 +134,8 @@ export class UploadHandler {
             this.remove(item.id);
 
             if (
-              this.opts.getRootId() === rootId &&
-              this.opts.getParentId() === parent
+              this.opts.rootId() === rootId &&
+              this.opts.locationId() === parent
             ) {
               this.opts.onCreated(created);
             }
@@ -154,8 +154,8 @@ export class UploadHandler {
       return;
     }
 
-    const rootId = this.opts.getRootId();
-    const parent = this.opts.getParentId();
+    const rootId = this.opts.rootId();
+    const parent = this.opts.locationId();
     const id = this.nextId++;
     const controller = new AbortController();
 
@@ -190,8 +190,8 @@ export class UploadHandler {
       this.remove(item.id);
 
       if (
-        this.opts.getRootId() === rootId &&
-        this.opts.getParentId() === parent
+        this.opts.rootId() === rootId &&
+        this.opts.locationId() === parent
       ) {
         for (const entry of created) {
           this.opts.onCreated(entry);

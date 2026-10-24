@@ -1,23 +1,9 @@
-<script lang="ts" module>
-  import type { Root } from "../../types";
-
-  export type DestinationRequest = {
-    roots: Root[];
-    title: string;
-    /** Defaults to "Choose a folder". */
-    description?: string;
-    confirmLabel: string;
-    /** Defaults to "Could not load folders". */
-    loadError?: string;
-    onConfirm: (root: Root, parent: string | null) => void | Promise<void>;
-  };
-</script>
-
 <script lang="ts">
   import { ChevronRight, Folder } from "@lucide/svelte";
+  import type { DestinationRequest } from "../../file-browser/destination";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
-  import type { FileTree } from "../../types";
+  import type { FileTree, Root } from "../../types";
   import { cn } from "../../utils";
   import Button from "../ui/button/button.svelte";
   import Dialog from "../ui/dialog/dialog.svelte";

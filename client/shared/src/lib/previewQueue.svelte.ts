@@ -12,6 +12,8 @@ type PreviewFile = {
 
 const PREVIEW_POLL_MS = 3000;
 const PREVIEW_MAX_ATTEMPTS = 5;
+/** Cap parallel icon fetches so a large folder does not stampede the server. */
+const PARALLEL_FETCHES = 8;
 
 type PreviewJob = {
   id: string;
@@ -21,8 +23,8 @@ type PreviewJob = {
 };
 
 export type PreviewQueueOptions = {
-  getRootId: () => string;
-  getParentId: () => string | null;
+  rootId: () => string;
+  locationId: () => string | null;
   /** Preview pixel size: 64 for list icons, 256 for tiles. */
   getSize: () => number;
   /** Override authenticated preview fetch (e.g. public shared links). */
@@ -51,21 +53,28 @@ export class PreviewQueue {
    *   Existing files should leave this false (one attempt, no poll retries).
    */
   enqueue(file: PreviewFile, retry = false) {
-    if (file.kind !== "file" || file.parent !== this.opts.getParentId()) {
-      return;
+    if (this.tryQueue(file, retry)) {
+      void this.drainQueue();
     }
 
-    if (!hasListThumbnail({ file, metadata: null })) {
-      return;
+    if (retry && this.timer === undefined) {
+      this.setPollInterval();
+    }
+  }
+
+  /** Queue many files then drain once (avoids starting a 1-job drain mid-loop). */
+  enqueueAll(files: PreviewFile[], retry = false) {
+    let queued = false;
+
+    for (const file of files) {
+      if (this.tryQueue(file, retry)) {
+        queued = true;
+      }
     }
 
-    if (this.thumbs[file.id] || this.queue.some((job) => job.id === file.id)) {
-      return;
+    if (queued) {
+      void this.drainQueue();
     }
-
-    this.queue.push({ id: file.id, attempts: 0, retry });
-
-    this.drainQueue();
 
     if (retry && this.timer === undefined) {
       this.setPollInterval();
@@ -81,10 +90,7 @@ export class PreviewQueue {
     }
 
     this.thumbs = {};
-
-    for (const file of files) {
-      this.enqueue(file, false);
-    }
+    this.enqueueAll(files, false);
   }
 
   /**
@@ -102,6 +108,24 @@ export class PreviewQueue {
     this.thumbs = {};
   }
 
+  /** @returns true when a new job was pushed. */
+  private tryQueue(file: PreviewFile, retry: boolean): boolean {
+    if (file.kind !== "file" || file.parent !== this.opts.locationId()) {
+      return false;
+    }
+
+    if (!hasListThumbnail({ file, metadata: null })) {
+      return false;
+    }
+
+    if (this.thumbs[file.id] || this.queue.some((job) => job.id === file.id)) {
+      return false;
+    }
+
+    this.queue.push({ id: file.id, attempts: 0, retry });
+    return true;
+  }
+
   private clearPollInterval() {
     if (this.timer !== undefined) {
       clearInterval(this.timer);
@@ -111,7 +135,7 @@ export class PreviewQueue {
 
   private setPollInterval() {
     this.timer = setInterval(() => {
-      this.drainQueue();
+      void this.drainQueue();
     }, PREVIEW_POLL_MS);
   }
 
@@ -125,9 +149,9 @@ export class PreviewQueue {
 
     this.polling = true;
 
-    const rootId = this.opts.getRootId();
+    const rootId = this.opts.rootId();
     const previewSize = this.opts.getSize();
-    const jobs = this.queue.slice();
+    const jobs = this.queue.slice(0, PARALLEL_FETCHES);
 
     try {
       await Promise.all(
@@ -171,7 +195,10 @@ export class PreviewQueue {
     } finally {
       this.polling = false;
 
-      if (this.queue.length === 0) {
+      if (this.queue.length > 0) {
+        // Jobs added while we were fetching (or remaining batch) must continue.
+        void this.drainQueue();
+      } else {
         this.clearPollInterval();
       }
     }

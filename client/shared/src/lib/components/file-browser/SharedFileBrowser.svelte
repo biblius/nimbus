@@ -68,8 +68,8 @@
   ]);
 
   const previews = new PreviewQueue({
-    getRootId: () => shareRootId,
-    getParentId: () => locationId,
+    rootId: () => shareRootId,
+    locationId: () => locationId,
     getSize: () => (tiles ? 256 : 64),
     fetchPreview: (id, size) => session.client.sharedIcon(id, size),
   });

@@ -7,9 +7,8 @@
   import { hasWriteAccess, type FileTree, type Root } from "../types";
   import { cn } from "../utils";
   import DeletionBanner from "./DeletionBanner.svelte";
-  import DestinationPicker, {
-    type DestinationRequest,
-  } from "./file-browser/DestinationPicker.svelte";
+  import type { DestinationRequest } from "../file-browser/destination";
+  import DestinationPicker from "./file-browser/DestinationPicker.svelte";
   import TrashTreeItem from "./TrashTreeItem.svelte";
   import Button from "./ui/button/button.svelte";
   import ConfirmDialog from "./ui/confirm-dialog/confirm-dialog.svelte";

@@ -17,7 +17,6 @@
     isPreviewable,
   } from "../../fileKind";
   import { formatBytes, formatDatetime } from "../../format";
-  import { session } from "../../session.svelte";
   import type { FileView } from "../../types";
   import { cn, hasFinePointerHover } from "../../utils";
   import Button from "../ui/button/button.svelte";
@@ -56,7 +55,6 @@
     onMove,
     onRename,
     onDelete,
-    onPrepareAction,
     thumbnailUrl,
   }: {
     entry: FileView;
@@ -93,8 +91,6 @@
     onMove: () => void;
     onRename: (name: string) => void | Promise<void>;
     onDelete: () => void;
-    /** Prepare action target (e.g. lock multi-select) before opening menus. */
-    onPrepareAction?: () => void;
   } = $props();
 
   const file = $derived(entry.file);
@@ -323,7 +319,6 @@
 
     event.preventDefault();
     event.stopPropagation();
-    onPrepareAction?.();
     menuX = event.clientX;
     menuY = event.clientY;
     menuOpen = true;
@@ -384,40 +379,6 @@
       cancelRename();
     }
   }
-
-  let previewUrl = $state<string | null>(null);
-
-  $effect(() => {
-    const fileId = entry.file.id;
-    const hasPreview = entry.metadata?.preview64 != null;
-
-    previewUrl = null;
-
-    if (entry.file.kind !== "file" || !hasPreview || !hasListThumbnail(entry)) {
-      return;
-    }
-
-    let cancelled = false;
-    let objectUrl: string | null = null;
-
-    session.client
-      .icon(rootId, fileId, 64)
-      .then((blob) => {
-        if (cancelled) {
-          return;
-        }
-        objectUrl = URL.createObjectURL(blob);
-        previewUrl = objectUrl;
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  });
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -476,9 +437,9 @@
           title="Preview"
           onclick={onIconClick}
         >
-          {#if showThumbnail && (thumbnailUrl ?? previewUrl)}
+          {#if showThumbnail && thumbnailUrl}
             <img
-              src={thumbnailUrl ?? previewUrl}
+              src={thumbnailUrl}
               alt=""
               width={thumbPx}
               height={thumbPx}

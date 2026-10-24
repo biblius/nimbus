@@ -1,10 +1,7 @@
-<script lang="ts" module>
-  export const PARENT_DROPPABLE_ID = "__parent__";
-</script>
-
 <script lang="ts">
   import { FolderUp } from "@lucide/svelte";
   import { createDroppable } from "@dnd-kit/svelte";
+  import { PARENT_DROPPABLE_ID } from "../../file-browser/drop";
   import type { FilesViewMode } from "../../storage";
   import { cn } from "../../utils";
 

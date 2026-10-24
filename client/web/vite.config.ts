@@ -56,6 +56,43 @@ export default defineConfig({
               },
             },
           },
+          {
+            // GET /roots/{root_id}/files/{id}/icon and GET /files/shared/{file_id}/icon
+            // (optional `/api` prefix when the SPA and API share an origin).
+            urlPattern: ({ url, request, sameOrigin }) => {
+              if (!sameOrigin || request.method !== "GET") {
+                return false;
+              }
+
+              const parts = url.pathname.split("/").filter(Boolean);
+              const path = parts[0] === "api" ? parts.slice(1) : parts;
+
+              const privateIcon =
+                path.length === 5 &&
+                path[0] === "roots" &&
+                path[2] === "files" &&
+                path[4] === "icon";
+
+              const sharedIcon =
+                path.length === 4 &&
+                path[0] === "files" &&
+                path[1] === "shared" &&
+                path[3] === "icon";
+
+              return privateIcon || sharedIcon;
+            },
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "nimbus-file-icons",
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 60 * 60 * 24 * 7,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
         ],
       },
       devOptions: {

@@ -19,7 +19,6 @@
     isPreviewable,
   } from "../../fileKind";
   import { formatBytes } from "../../format";
-  import { session } from "../../session.svelte";
   import type { FileView } from "../../types";
   import { cn, hasFinePointerHover } from "../../utils";
   import Button from "../ui/button/button.svelte";
@@ -35,7 +34,6 @@
 
   let {
     entry,
-    rootId,
     name,
     size,
     selected,
@@ -55,11 +53,9 @@
     onCopyLink,
     onMove,
     onDelete,
-    onPrepareAction,
     thumbnailUrl,
   }: {
     entry: FileView;
-    rootId: string;
     thumbnailUrl?: string;
     name: string;
     size: "small" | "large";
@@ -89,8 +85,6 @@
     onCopyLink: () => void | Promise<void>;
     onMove: () => void;
     onDelete: () => void;
-    /** Prepare action target (e.g. lock multi-select) before opening menus. */
-    onPrepareAction?: () => void;
   } = $props();
 
   const file = $derived(entry.file);
@@ -295,46 +289,10 @@
 
     event.preventDefault();
     event.stopPropagation();
-    onPrepareAction?.();
     menuX = event.clientX;
     menuY = event.clientY;
     menuOpen = true;
   }
-
-  let previewUrl = $state<string | null>(null);
-
-  $effect(() => {
-    const fileId = entry.file.id;
-    // Both small and large tiles display well above 64 CSS px; use the 256 icon.
-    const hasPreview = entry.metadata?.preview256 != null;
-
-    previewUrl = null;
-
-    if (entry.file.kind !== "file" || !hasPreview || !hasListThumbnail(entry)) {
-      return;
-    }
-
-    let cancelled = false;
-    let objectUrl: string | null = null;
-
-    session.client
-      .icon(rootId, fileId, 256)
-      .then((blob) => {
-        if (cancelled) {
-          return;
-        }
-        objectUrl = URL.createObjectURL(blob);
-        previewUrl = objectUrl;
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  });
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -382,10 +340,6 @@
           class="bg-background/90 text-muted-foreground shadow-sm backdrop-blur-sm"
           aria-label="Actions for {name}"
           {...props}
-          onclick={(event) => {
-            onPrepareAction?.();
-            props.onclick?.(event);
-          }}
         >
           <EllipsisVertical size={16} />
         </Button>
@@ -498,12 +452,8 @@
         title="Preview"
         onclick={onIconClick}
       >
-        {#if showThumbnail && (thumbnailUrl ?? previewUrl)}
-          <img
-            src={thumbnailUrl ?? previewUrl}
-            alt=""
-            class="size-full object-cover"
-          />
+        {#if showThumbnail && thumbnailUrl}
+          <img src={thumbnailUrl} alt="" class="size-full object-cover" />
         {:else}
           <span
             class={cn(
