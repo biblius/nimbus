@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Copy, Download, Eye } from "@lucide/svelte";
   import { formatDatetime } from "../../format";
+  import { publicShareLink } from "../../server-url";
   import { toastError, toastSuccess } from "../../toast";
   import {
     type FileEntry,
@@ -46,9 +47,7 @@
   const shareMode = $derived(modeOverride ?? entry.sharingMode ?? "download");
   const shareIsActive = $derived(entry.sharingMode != null);
 
-  const publicLink = $derived(
-    `${window.location.origin}/files/shared/${entry.id}`,
-  );
+  const publicLink = $derived(publicShareLink(entry.id));
 
   function shareExpiresAtPayload(): string | null {
     if (!shareExpiryTouched && shareIsActive) {

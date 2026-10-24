@@ -1,4 +1,4 @@
-import { NimbusClient } from "./api";
+import type { NimbusApi } from "./nimbus-api";
 import { navigate } from "./router";
 import type { UserView } from "./types";
 
@@ -6,14 +6,14 @@ import type { UserView } from "./types";
  * Current session state.
  */
 export const session = $state<{
-  client: NimbusClient;
+  client: NimbusApi;
   user: UserView | null;
   menuOpen: boolean;
   /** Native (Tauri) client - login creates a permanent session. */
   native: boolean;
-  /** Native only: persisted server origin (no `/api`), or `null` if unset. */
+  /** Native only: persisted server origin (no path), or `null` if unset. */
   endpoint: string | null;
-  /** Native only: persist a server origin and rebuild the API client. */
+  /** Native only: persist a bare server origin and rebuild the API client. */
   configureEndpoint: ((url: string) => Promise<void>) | null;
   /** Native only: open a URL in the system browser. */
   openExternalUrl: ((url: string) => Promise<void>) | null;

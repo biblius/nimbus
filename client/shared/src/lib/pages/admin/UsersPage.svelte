@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Pencil, Trash, UserRound } from "@lucide/svelte";
-  import { ApiError } from "../../api";
+  import { ApiError } from "../../api-errors";
   import type { UserData, UserView } from "../../types";
   import Button from "../../components/ui/button/button.svelte";
   import PaginatedList from "../../components/ui/paginated-list/paginated-list.svelte";

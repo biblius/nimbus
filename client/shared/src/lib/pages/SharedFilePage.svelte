@@ -1,6 +1,6 @@
 <script lang="ts">
   import { CircleAlert, Download, Link2Off } from "@lucide/svelte";
-  import { ApiError } from "../api";
+  import { ApiError } from "../api-errors";
   import SharedFileBrowser from "../components/file-browser/SharedFileBrowser.svelte";
   import SharedFilePreview from "../components/file-browser/SharedFilePreview.svelte";
   import Button from "../components/ui/button/button.svelte";

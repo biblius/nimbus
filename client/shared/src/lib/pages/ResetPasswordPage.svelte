@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ShieldAlert } from "@lucide/svelte";
-  import { ValidationError } from "../api";
+  import { ValidationError } from "../api-errors";
   import { toastError } from "../toast";
   import AuthShell from "../components/AuthShell.svelte";
   import Button from "../components/ui/button/button.svelte";

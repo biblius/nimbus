@@ -1,3 +1,4 @@
+import { publicShareLink } from "../server-url";
 import { session } from "../session.svelte";
 import { toastError, toastSuccess } from "../toast";
 import type { FileEntry, FileView, SharingMode, ShareFile } from "../types";
@@ -52,7 +53,7 @@ export class FileSharing {
   }
 
   publicLink(entry: FileView) {
-    return `${window.location.origin}/files/shared/${entry.file.id}`;
+    return publicShareLink(entry.file.id);
   }
 
   /**

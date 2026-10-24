@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { HTMLInputAttributes } from "svelte/elements";
   import type { Snippet } from "svelte";
-  import type { ValidationField } from "../../../api";
+  import type { ValidationField } from "../../../api-errors";
   import { cn } from "../../../utils";
   import Input from "../input/input.svelte";
   import Label from "../label/label.svelte";

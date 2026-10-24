@@ -1,4 +1,7 @@
 import Database from "@tauri-apps/plugin-sql";
+import { parseServerOrigin } from "@nimbus/shared/server-url";
+
+export { parseServerOrigin };
 
 let database: Database | undefined = undefined;
 const URL = "sqlite:nimbus.db";
@@ -8,15 +11,6 @@ async function _db(): Promise<Database> {
     database = await Database.load(URL);
   }
   return database;
-}
-
-/** Trim, strip a trailing slash, and strip a trailing `/api` if present. */
-export function normalizeOrigin(url: string): string {
-  let origin = url.trim().replace(/\/$/, "");
-  if (origin.endsWith("/api")) {
-    origin = origin.slice(0, -"/api".length).replace(/\/$/, "");
-  }
-  return origin;
 }
 
 /** Build the Nimbus API base URL from a server origin. */
@@ -33,11 +27,19 @@ export async function loadEndpoint(): Promise<string | null> {
   );
 
   const value = rows[0]?.value?.trim();
+  if (!value) {
+    return null;
+  }
 
-  return value ? value : null;
+  return parseServerOrigin(value);
 }
 
 export async function saveEndpoint(endpoint: string): Promise<void> {
+  const origin = parseServerOrigin(endpoint);
+  if (!origin) {
+    throw new Error("invalid endpoint");
+  }
+
   const db = await _db();
 
   await db.execute(
@@ -47,6 +49,39 @@ export async function saveEndpoint(endpoint: string): Promise<void> {
     ON CONFLICT(key) DO UPDATE 
     SET value = excluded.value
     `,
-    ["endpoint", endpoint],
+    ["endpoint", origin],
   );
+}
+
+/** Load the single persisted Bearer session token, if any. */
+export async function loadAccessToken(): Promise<string | null> {
+  const db = await _db();
+
+  const rows = await db.select<{ token: string }[]>(
+    "SELECT token FROM access_token WHERE id = 1",
+  );
+
+  const token = rows[0]?.token?.trim();
+  return token ? token : null;
+}
+
+/** Replace the single access token (insert or update the sole row). */
+export async function saveAccessToken(token: string): Promise<void> {
+  const db = await _db();
+
+  await db.execute(
+    `
+    INSERT INTO access_token (id, token)
+    VALUES (1, $1)
+    ON CONFLICT(id) DO UPDATE
+    SET token = excluded.token
+    `,
+    [token],
+  );
+}
+
+/** Clear the persisted access token. */
+export async function clearAccessToken(): Promise<void> {
+  const db = await _db();
+  await db.execute("DELETE FROM access_token WHERE id = 1");
 }

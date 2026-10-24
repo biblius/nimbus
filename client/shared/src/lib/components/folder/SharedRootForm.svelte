@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { ApiError, ValidationError } from "../../api";
+  import { ApiError, ValidationError } from "../../api-errors";
   import { session } from "../../session.svelte";
   import { toastError } from "../../toast";
   import { AccessMode, type Root, type RootData, type UserView } from "../../types";

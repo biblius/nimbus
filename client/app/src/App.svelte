@@ -1,49 +1,62 @@
 <script lang="ts">
   import "@nimbus/shared/router";
   import { clearSession, session } from "@nimbus/shared/session";
+  import { parseServerOrigin } from "@nimbus/shared/server-url";
   import { SvelteToast } from "@zerodevx/svelte-toast";
   import { toastOptions } from "@nimbus/shared/toast";
   import { Router } from "sv-router";
   import { onMount } from "svelte";
   import {
     apiBaseUrl,
+    clearAccessToken,
+    loadAccessToken,
     loadEndpoint,
-    normalizeOrigin,
+    saveAccessToken,
     saveEndpoint,
   } from "./settings";
-  import { NimbusClient } from "@nimbus/shared/api";
+  import { NimbusClient } from "./api";
 
   let ready = $state(false);
+
+  function buildClient(baseUrl: string, accessToken: string | null) {
+    return new NimbusClient(baseUrl, {
+      accessToken,
+      onUnauthorized: clearSession,
+      onAccessTokenChange: async (token) => {
+        if (token) {
+          await saveAccessToken(token);
+        } else {
+          await clearAccessToken();
+        }
+      },
+    });
+  }
 
   onMount(async () => {
     session.native = true;
 
-    const loaded = await loadEndpoint();
-    const origin = loaded ? normalizeOrigin(loaded) : null;
-
-    if (loaded && origin && loaded !== origin) {
-      await saveEndpoint(origin);
-    }
-
+    const origin = await loadEndpoint();
     session.endpoint = origin;
 
-    session.client = new NimbusClient(origin ? apiBaseUrl(origin) : "", {
-      onUnauthorized: clearSession,
-    });
+    const accessToken = await loadAccessToken();
+
+    session.client = buildClient(
+      origin ? apiBaseUrl(origin) : "",
+      accessToken,
+    );
 
     session.configureEndpoint = async (url: string) => {
-      const normalized = normalizeOrigin(url);
+      const normalized = parseServerOrigin(url);
 
       if (!normalized) {
-        throw new Error("empty endpoint");
+        throw new Error("invalid endpoint");
       }
       await saveEndpoint(normalized);
 
       session.endpoint = normalized;
 
-      session.client = new NimbusClient(apiBaseUrl(normalized), {
-        onUnauthorized: clearSession,
-      });
+      const token = await loadAccessToken();
+      session.client = buildClient(apiBaseUrl(normalized), token);
     };
 
     const { openUrl } = await import("@tauri-apps/plugin-opener");

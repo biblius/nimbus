@@ -6,7 +6,8 @@
     ValidationError,
     isLoginBackoff,
     loginBackoffUnlockAt,
-  } from "../api";
+  } from "../api-errors";
+  import { parseServerOrigin } from "../server-url";
   import { toastError } from "../toast";
   import Banner from "../components/ui/banner/banner.svelte";
   import Button from "../components/ui/button/button.svelte";
@@ -107,8 +108,8 @@
     return hours === 1 ? "in 1 hour" : `in ${hours} hours`;
   }
 
-  function normalizeEndpoint(url: string): string {
-    return url.trim().replace(/\/$/, "");
+  function normalizeEndpoint(url: string): string | null {
+    return parseServerOrigin(url);
   }
 
   function isWebAuthnCancelled(cause: unknown): boolean {
@@ -138,10 +139,25 @@
   async function ensureNativeEndpoint(): Promise<boolean> {
     const normalized = normalizeEndpoint(draft);
 
+    if (!normalized) {
+      toastError(
+        draft.trim()
+          ? "Use an origin with no path (e.g. https://nimbus.example.com)"
+          : "Configure a server URL first",
+      );
+      serverExpanded = true;
+      return false;
+    }
+
     if (normalized !== (session.endpoint ?? "")) {
-      // Native sessions always have this
-      await session.configureEndpoint!(draft);
-      draft = session.endpoint ?? draft;
+      try {
+        await session.configureEndpoint!(normalized);
+      } catch {
+        toastError("Could not save server URL");
+        serverExpanded = true;
+        return false;
+      }
+      draft = session.endpoint ?? normalized;
     }
 
     if (!session.endpoint) {
@@ -285,7 +301,11 @@
     const normalized = normalizeEndpoint(draft);
 
     if (!normalized) {
-      toastError("Enter a server URL");
+      toastError(
+        draft.trim()
+          ? "Use an origin with no path (e.g. https://nimbus.example.com)"
+          : "Enter a server URL",
+      );
       return;
     }
 

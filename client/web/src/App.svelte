@@ -4,7 +4,7 @@
   import { SvelteToast } from "@zerodevx/svelte-toast";
   import { toastOptions } from "@nimbus/shared/toast";
   import { Router } from "sv-router";
-  import { NimbusClient } from "@nimbus/shared/api";
+  import { NimbusClient } from "./api";
 
   const apiUrl = import.meta.env.VITE_NIMBUS_URL;
   if (typeof apiUrl !== "string" || !apiUrl) {

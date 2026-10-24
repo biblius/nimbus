@@ -1,4 +1,4 @@
-import { ApiError } from "./api";
+import { ApiError } from "./api-errors";
 import { session } from "./session.svelte";
 import type { FileEntry } from "./types";
 

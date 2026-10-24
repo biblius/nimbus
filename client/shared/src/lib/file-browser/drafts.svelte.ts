@@ -1,5 +1,5 @@
 import { tick } from "svelte";
-import { ApiError, ValidationError } from "../api";
+import { ApiError, ValidationError } from "../api-errors";
 import { session } from "../session.svelte";
 import type { FileEntry } from "../types";
 

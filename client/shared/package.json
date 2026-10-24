@@ -3,12 +3,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./api": "./src/lib/api.ts",
+    "./api-errors": "./src/lib/api-errors.ts",
+    "./nimbus-api": "./src/lib/nimbus-api.ts",
     "./router": "./src/lib/router.ts",
     "./session": "./src/lib/session.svelte.ts",
+    "./server-url": "./src/lib/server-url.ts",
     "./theme": "./src/lib/theme.svelte.ts",
     "./toast": "./src/lib/toast.ts",
     "./types": "./src/lib/types.ts",
+    "./webauthn": "./src/lib/webauthn.ts",
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {

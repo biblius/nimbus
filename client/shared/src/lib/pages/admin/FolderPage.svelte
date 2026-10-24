@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Pencil, Trash } from "@lucide/svelte";
   import { untrack } from "svelte";
-  import { ApiError } from "../../api";
+  import { ApiError } from "../../api-errors";
   import MemberInfo from "../../components/folder/MemberInfo.svelte";
   import PrivateRootForm from "../../components/folder/PrivateRootForm.svelte";
   import SharedRootForm from "../../components/folder/SharedRootForm.svelte";

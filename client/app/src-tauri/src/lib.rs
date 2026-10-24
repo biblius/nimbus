@@ -5,16 +5,28 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let migrations = vec![Migration {
-        version: 1,
-        description: "client settings",
-        sql: "CREATE TABLE settings (
+    let migrations = vec![
+        Migration {
+            version: 1,
+            description: "client settings",
+            sql: "CREATE TABLE settings (
                 key TEXT PRIMARY KEY NOT NULL,
                 value TEXT NOT NULL
             );
             INSERT INTO settings (key, value) VALUES ('endpoint', 'http://localhost:42069');",
-        kind: MigrationKind::Up,
-    }];
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "access token",
+            // Single-row table: CHECK (id = 1) guarantees at most one token.
+            sql: "CREATE TABLE access_token (
+                id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+                token TEXT NOT NULL
+            );",
+            kind: MigrationKind::Up,
+        },
+    ];
 
     let mut builder = tauri::Builder::default();
 
@@ -39,6 +51,7 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_http::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:nimbus.db", migrations)

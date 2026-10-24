@@ -1,4 +1,4 @@
-import { ValidationError } from "../api";
+import { ValidationError } from "../api-errors";
 import { session } from "../session.svelte";
 import { kv } from "../storage";
 import { toastError } from "../toast";

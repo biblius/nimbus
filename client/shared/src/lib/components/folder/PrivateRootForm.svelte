@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { ApiError, ValidationError } from "../../api";
+  import { ApiError, ValidationError } from "../../api-errors";
   import { toastError } from "../../toast";
   import type { Root, RootData } from "../../types";
   import Button from "../ui/button/button.svelte";

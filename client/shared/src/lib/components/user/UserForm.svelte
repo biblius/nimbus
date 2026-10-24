@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ApiError, ValidationError, type ValidationField } from "../../api";
+  import { ApiError, ValidationError, type ValidationField } from "../../api-errors";
   import { toastError } from "../../toast";
   import type { Role, UserData, UserView } from "../../types";
   import { Info } from "@lucide/svelte";

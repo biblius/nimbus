@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import type { ValidationField } from "../../api";
+  import type { ValidationField } from "../../api-errors";
   import Input from "../ui/input/input.svelte";
   import Label from "../ui/label/label.svelte";
   import Select from "../ui/select/select.svelte";

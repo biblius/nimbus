@@ -8,7 +8,7 @@
     ShieldCheck,
     Trash,
   } from "@lucide/svelte";
-  import { ApiError, ValidationError } from "../api";
+  import { ApiError, ValidationError } from "../api-errors";
   import ActiveSessions from "../components/ActiveSessions.svelte";
   import PanelShell from "../components/PanelShell.svelte";
   import Banner from "../components/ui/banner/banner.svelte";
@@ -545,16 +545,24 @@
                 </h4>
               </div>
 
-              <Button
-                type="button"
-                size="sm"
-                class="shrink-0"
-                disabled={passkeyBusy || deletingPasskey}
-                onclick={addPasskey}
-              >
-                Add passkey
-              </Button>
+              {#if !session.native}
+                <Button
+                  type="button"
+                  size="sm"
+                  class="shrink-0"
+                  disabled={passkeyBusy || deletingPasskey}
+                  onclick={addPasskey}
+                >
+                  Add passkey
+                </Button>
+              {/if}
             </div>
+
+            {#if session.native}
+              <p class="text-xs text-muted-foreground">
+                Passkey registration available only on web.
+              </p>
+            {/if}
 
             {#if passkeys.length > 0}
               <ul class="space-y-1.5">
