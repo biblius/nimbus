@@ -8,6 +8,7 @@
   import SortHeader, {
     type SortState,
   } from "../../components/ui/sort-header/sort-header.svelte";
+  import MemberAvatar from "../../components/folder/MemberAvatar.svelte";
   import UserForm from "../../components/user/UserForm.svelte";
   import { trackDeletion } from "../../deletion.svelte";
   import { formatDatetime } from "../../format";
@@ -226,25 +227,28 @@
         <ul class="divide-y">
           {#each users as user (user.id)}
             <li class="{columns} min-h-11 py-1.5 hover:bg-accent/60">
-              <div class="min-w-0">
-                <div class="flex min-w-0 items-center gap-2">
-                  <span class="truncate text-sm font-medium"
-                    >{user.username}</span
+              <div class="flex min-w-0 items-center gap-3">
+                <MemberAvatar name={user.username} />
+                <div class="min-w-0">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <span class="truncate text-sm font-medium"
+                      >{user.username}</span
+                    >
+                    <span
+                      class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize @xl:hidden {user.role ===
+                      'admin'
+                        ? 'bg-primary/15 text-primary'
+                        : 'bg-muted text-muted-foreground'}"
+                    >
+                      {user.role}
+                    </span>
+                  </div>
+                  <p
+                    class="mt-0.5 truncate text-xs text-muted-foreground @md:hidden"
                   >
-                  <span
-                    class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize @xl:hidden {user.role ===
-                    'admin'
-                      ? 'bg-primary/15 text-primary'
-                      : 'bg-muted text-muted-foreground'}"
-                  >
-                    {user.role}
-                  </span>
+                    {user.email ?? "No email"}
+                  </p>
                 </div>
-                <p
-                  class="mt-0.5 truncate text-xs text-muted-foreground @md:hidden"
-                >
-                  {user.email ?? "No email"}
-                </p>
               </div>
 
               <span

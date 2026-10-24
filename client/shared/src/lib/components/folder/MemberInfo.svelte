@@ -24,7 +24,7 @@
     </p>
     {#if total > 0}
       <span
-        class="inline-flex min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-primary"
+        class="inline-flex min-w-5 items-center justify-center rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground"
       >
         {total}
       </span>
@@ -53,7 +53,7 @@
                 class="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
               >
                 <div class="flex min-w-0 items-center gap-3">
-                  <MemberAvatar name={member.username} seed={member.id} />
+                  <MemberAvatar name={member.username} />
                   <span class="min-w-0">
                     <span class="block truncate text-sm font-medium">
                       {member.username}
@@ -68,7 +68,7 @@
                   </span>
                 </div>
                 <div
-                  class="flex flex-wrap items-center gap-2 pl-12 sm:justify-end sm:pl-0"
+                  class="flex flex-wrap items-center gap-2 pl-11 sm:justify-end sm:pl-0"
                 >
                   <AccessPills accessMode={member.accessMode} />
                   <span

@@ -200,7 +200,7 @@
         People with access
       </p>
       <span
-        class="inline-flex min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-primary"
+        class="inline-flex min-w-5 items-center justify-center rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground"
       >
         {selectedCount}
       </span>
@@ -265,7 +265,7 @@
                           onchange={() => toggleMembership(user.id)}
                           aria-label={`Share with ${user.username}`}
                         />
-                        <MemberAvatar name={user.username} seed={user.id} />
+                        <MemberAvatar name={user.username} />
                         <span class="min-w-0">
                           <span class="block truncate text-sm font-medium">
                             {user.username}
