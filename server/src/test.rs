@@ -17,6 +17,7 @@ mod members;
 mod users;
 
 use crate::{
+    activity::ActivityQueue,
     auth::{login_attempt::LoginAttemptStore, service::AuthenticationService, token::TokenStore},
     cache::Cache,
     db::{self, DbPool, Repository, Transactor},
@@ -238,19 +239,19 @@ async fn build_services(
     );
 
     let processing = ProcessingQueue::start(storage.clone(), repository.files.clone());
+    let activity = ActivityQueue::start(repository.clone());
 
     let files = FileService::new(
-        repository.files.clone(),
-        repository.share.clone(),
-        repository.trash.clone(),
-        repository.folders.clone(),
+        repository.clone(),
         storage.clone(),
         processing,
+        activity.clone(),
         Transactor::new(pool.clone()),
     );
     let trash = TrashFileService::new(
         repository.trash.clone(),
         repository.files.clone(),
+        activity,
         Transactor::new(pool),
     );
     let share = crate::file::service::ShareService::new(repository.share.clone(), storage.clone());

@@ -90,6 +90,7 @@ It should be available at `http://localhost:42069`.
 5. Start the Vite development server.
 
 ```bash
+nmp i
 npm run dev -w @nimbus/web
 ```
 

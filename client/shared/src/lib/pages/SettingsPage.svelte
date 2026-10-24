@@ -287,7 +287,7 @@
   }
 </script>
 
-<PanelShell bind:open={session.menuOpen} label="Roots">
+<PanelShell bind:open={session.menuOpen} label="Folders">
   {#snippet sidebar()}
     <UserSidebar {roots} />
   {/snippet}

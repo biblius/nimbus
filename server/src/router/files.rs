@@ -1,4 +1,5 @@
 use crate::{
+    activity::Activity,
     auth::session::Session,
     error::AppError,
     file::{
@@ -10,6 +11,7 @@ use crate::{
         },
         tree::FileTree,
     },
+    model::{DefaultSort, List, PaginationSort},
     router::{chunked_download, sse},
     state::AppState,
 };
@@ -94,6 +96,21 @@ pub(crate) async fn trash(
     ctx: UserRootContext,
 ) -> Result<Json<FileTree>, AppError> {
     Ok(Json(state.services.trash.get_trash_tree(&ctx).await?))
+}
+
+pub(crate) async fn list_activities(
+    State(state): State<AppState>,
+    ctx: UserRootContext,
+    Query(query): Query<PaginationSort<DefaultSort>>,
+) -> Result<Json<List<Activity>>, AppError> {
+    let pagination = query.pagination.unwrap_or_default();
+    Ok(Json(
+        state
+            .services
+            .files
+            .list_activities(&ctx, pagination)
+            .await?,
+    ))
 }
 
 pub(crate) async fn delete_trash(

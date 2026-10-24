@@ -422,17 +422,6 @@
 
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-
-  /** Scroll the sidebar so the active thumb stays in view. */
-  function keepThumbVisible(pageNum: number) {
-    return (node: HTMLElement) => {
-      $effect(() => {
-        if (currentPage === pageNum) {
-          node.scrollIntoView({ block: "nearest" });
-        }
-      });
-    };
-  }
 </script>
 
 <div class="flex h-full w-full flex-col gap-3">
@@ -481,7 +470,6 @@
             )}
             aria-label={`Go to page ${pageNum}`}
             aria-current={currentPage === pageNum ? "page" : undefined}
-            {@attach keepThumbVisible(pageNum)}
             onclick={() => goToPage(pageNum)}
           >
             <div

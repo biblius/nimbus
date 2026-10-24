@@ -4,6 +4,7 @@ use tracing_error::ErrorLayer;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt};
 
 use crate::{
+    activity::ActivityQueue,
     auth::{login_attempt::LoginAttemptStore, service::AuthenticationService, token::TokenStore},
     cache::Cache,
     config::StartArgs,
@@ -134,20 +135,20 @@ impl AppState {
         );
 
         let processing = ProcessingQueue::start(storage.clone(), repository.files.clone());
+        let activity = ActivityQueue::start(repository.clone());
 
         let file_service = FileService::new(
-            repository.files.clone(),
-            repository.share.clone(),
-            repository.trash.clone(),
-            repository.folders.clone(),
+            repository.clone(),
             storage.clone(),
             processing,
+            activity.clone(),
             transactor.clone(),
         );
 
         let trash_service = TrashFileService::new(
             repository.trash.clone(),
             repository.files.clone(),
+            activity,
             transactor,
         );
 

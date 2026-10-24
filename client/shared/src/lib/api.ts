@@ -1,5 +1,6 @@
 import type {
   ActiveSessionView,
+  Activity,
   CreateUserInput,
   DeletionEvent,
   DeletionResult,
@@ -606,6 +607,19 @@ export class NimbusClient {
 
   trashTree(rootId: string): Promise<FileTree> {
     return this.request<FileTree>(`/roots/${encodeURIComponent(rootId)}/trash`);
+  }
+
+  listActivities(
+    rootId: string,
+    query: Pick<ListQuery, "page" | "perPage">,
+  ): Promise<Page<Activity>> {
+    const params = new URLSearchParams({
+      page: String(query.page),
+      perPage: String(query.perPage),
+    });
+    return this.request<Page<Activity>>(
+      `/roots/${encodeURIComponent(rootId)}/activity?${params}`,
+    );
   }
 
   restore(rootId: string, id: string, parent: string | null): Promise<void> {

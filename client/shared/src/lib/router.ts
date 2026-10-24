@@ -1,6 +1,6 @@
 import { createRouter } from "sv-router";
 
-export const { navigate, route, isActive } = createRouter({
+export const { navigate, route, isActive, p } = createRouter({
   "/login": () => import("./pages/LoginPage.svelte"),
   "/login/passkey": () => import("./pages/PasskeyBridgePage.svelte"),
   "/reset-password": () => import("./pages/ResetPasswordPage.svelte"),
@@ -19,6 +19,7 @@ export const { navigate, route, isActive } = createRouter({
       "/": () => import("./pages/FilesOutlet.svelte"),
       "/trash": () => import("./pages/FilesOutlet.svelte"),
       "/:root_id": () => import("./pages/FilesOutlet.svelte"),
+      "/:root_id/activity": () => import("./pages/FilesOutlet.svelte"),
       "/:root_id/dir/:parent_id": () => import("./pages/FilesOutlet.svelte"),
       layout: () => import("./pages/FilesPage.svelte"),
     },

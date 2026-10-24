@@ -1,3 +1,4 @@
+mod activity;
 mod auth;
 mod cache;
 mod config;

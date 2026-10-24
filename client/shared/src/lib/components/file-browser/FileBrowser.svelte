@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    RotateCcwClock,
     Check,
     ChevronDown,
     Copy,
@@ -18,7 +19,7 @@
   import { PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
   import { DragDropProvider, DragOverlay } from "@dnd-kit/svelte";
   import { onDestroy, tick, untrack } from "svelte";
-  import { navigate } from "../../router";
+  import { navigate, route } from "../../router";
   import { ApiError, ValidationError } from "../../api";
   import { PreviewQueue } from "../../previewQueue.svelte";
   import { session } from "../../session.svelte";
@@ -237,16 +238,22 @@
 
   /** Entry being shared, or null when sharing the open directory. */
   let shareTarget = $state<FileEntry | null>(null);
-  /** Extra IDs when sharing a multi-selection (includes `shareTarget.id`). */
-  let shareIds = $state<string[]>([]);
   let shareOpen = $state(false);
   let shareBusy = $state(false);
+  const shareSubject = $derived(
+    shareTarget ?? (shareOpen ? locationEntry : null),
+  );
+
+  /** Extra IDs when sharing a multi-selection (includes `shareTarget.id`). */
+  let shareIds = $state<string[]>([]);
 
   let fileInput = $state<HTMLInputElement | undefined>();
   let folderInput = $state<HTMLInputElement | undefined>();
 
   let scroller = $state<HTMLElement | undefined>();
   let viewportWidth = $state(0);
+  /** Last `root/parent/file` focus we already applied (avoids re-scroll on list churn). */
+  let focusedFileKey: string | null = null;
 
   let nameInput: HTMLInputElement | undefined;
 
@@ -325,10 +332,6 @@
 
   const showParentDrop = $derived(location.id !== null);
 
-  const shareSubject = $derived(
-    shareTarget ?? (shareOpen ? locationEntry : null),
-  );
-
   const deleteDescription = $derived.by(() => {
     if (pendingDelete.length === 1) {
       const entry = entries.find((item) => item.file.id === pendingDelete[0]);
@@ -381,6 +384,125 @@
 
     return () => ro.disconnect();
   });
+
+  /**
+   * `?file=ID` on a directory route: select + scroll to the row, or redirect
+   * to the file's parent directory when the current folder is wrong.
+   */
+  $effect(() => {
+    const raw = route.search.file;
+    const fileId =
+      raw === undefined || raw === null || raw === "" ? null : String(raw);
+    const rootId = root.id;
+    const parent = parentId;
+    const isLoading = loading;
+    const list = entries;
+
+    if (!fileId) {
+      focusedFileKey = null;
+      return;
+    }
+
+    if (isLoading) {
+      return;
+    }
+
+    const focusKey = `${rootId}\0${parent ?? ""}\0${fileId}`;
+
+    if (focusedFileKey === focusKey) {
+      return;
+    }
+
+    const index = list.findIndex((entry) => entry.file.id === fileId);
+
+    if (index >= 0) {
+      focusedFileKey = focusKey;
+      selected = [fileId];
+      selectionAnchor = fileId;
+
+      untrack(() => {
+        void tick().then(() => scrollToEntry(index));
+      });
+      return;
+    }
+
+    let cancelled = false;
+
+    untrack(() => {
+      void session.client
+        .ancestors(rootId, fileId)
+        .then((chain) => {
+          if (cancelled) {
+            return;
+          }
+
+          const entry = chain.at(-1);
+
+          if (!entry) {
+            focusedFileKey = focusKey;
+            return;
+          }
+
+          const entryParent = entry.parent ?? null;
+
+          if (entryParent === (parent ?? null)) {
+            // Expected in this listing but missing (deleted / filtered out).
+            focusedFileKey = focusKey;
+            return;
+          }
+
+          const search = { file: fileId };
+
+          if (entryParent) {
+            navigate("/files/:root_id/dir/:parent_id", {
+              params: { root_id: rootId, parent_id: entryParent },
+              search,
+              replace: true,
+            });
+            return;
+          }
+
+          navigate("/files/:root_id", {
+            params: { root_id: rootId },
+            search,
+            replace: true,
+          });
+        })
+        .catch((cause) => {
+          if (cancelled) {
+            return;
+          }
+
+          focusedFileKey = focusKey;
+          toastError(
+            cause instanceof TypeError
+              ? "The server could not be reached"
+              : "Could not open that file",
+          );
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  function scrollToEntry(index: number) {
+    const el = scroller;
+
+    if (!el || index < 0) {
+      return;
+    }
+
+    const { columns, gap, itemHeight } = virtualLayout;
+    const cols = Math.max(1, columns);
+    const leading = showParentDrop ? 1 : 0;
+    const row = Math.floor((index + leading) / cols);
+    const top = row * (itemHeight + gap);
+    const target = Math.max(0, top - el.clientHeight / 3);
+
+    el.scrollTo({ top: target, behavior: "smooth" });
+  }
 
   /**
    * Load ancestors of the current folder being viewed
@@ -437,14 +559,18 @@
     }
   }
 
-  function showDirectory(parent: string | null) {
+  function showDirectory(
+    parent: string | null,
+    search?: Record<string, string>,
+  ) {
     if (parent) {
       navigate("/files/:root_id/dir/:parent_id", {
         params: { root_id: root.id, parent_id: parent },
+        search,
       });
       return;
     }
-    navigate("/files/:root_id", { params: { root_id: root.id } });
+    navigate("/files/:root_id", { params: { root_id: root.id }, search });
   }
 
   function resetDraft() {
@@ -592,16 +718,20 @@
 
   function openDirectory(entry: FileView) {
     const id = entry.file.id;
+
     if (parentId === id) {
       return;
     }
+
     if (ancestors.at(-1)?.id !== id) {
       ancestors = ancestors.concat({
         id,
         name: entry.file.name,
       });
     }
+
     locationEntry = entry.file;
+
     showDirectory(id);
   }
 
@@ -1189,6 +1319,10 @@
     }
   }
 
+  /**
+   * Open the file sharing dialog for the entry.
+   * Actions taken in the dialog apply to all items in `ids`.
+   */
   function openShareDialog(entry: FileEntry, ids: string[] = [entry.id]) {
     if (!canShare) {
       return;
@@ -1489,9 +1623,7 @@
     </div>
 
     <!-- TOOLS: search + actions; stacked on small screens so menus are not clipped -->
-    <div
-      class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-stretch"
-    >
+    <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-stretch">
       <div
         class="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card shadow-sm"
       >
@@ -1509,7 +1641,7 @@
       </div>
 
       <div
-        class="relative z-10 flex shrink-0 items-center gap-0.5 self-start rounded-xl border border-border bg-card p-0.5 shadow-sm"
+        class="relative z-10 flex w-full shrink-0 items-center justify-evenly gap-0.5 rounded-xl border border-border bg-card p-0.5 shadow-sm sm:w-auto sm:justify-start sm:self-start"
       >
         <input
           bind:this={fileInput}
@@ -1534,61 +1666,79 @@
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon-sm"
             aria-label="Clear selection"
+            title="Clear selection"
             onclick={clearSelection}
           >
             <X size={15} />
-            <span class="hidden sm:inline">Clear</span>
           </Button>
           {#if selected.length > 0}
             <span
               class="inline-flex"
-              title={hasCopyDestination ? undefined : copyUnavailableTitle()}
+              title={hasCopyDestination
+                ? `Copy ${selected.length} selected`
+                : copyUnavailableTitle()}
             >
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 disabled={!hasCopyDestination}
-                aria-label={copyUnavailableTitle()}
+                aria-label={hasCopyDestination
+                  ? `Copy ${selected.length} selected`
+                  : copyUnavailableTitle()}
+                title={hasCopyDestination
+                  ? `Copy ${selected.length} selected`
+                  : copyUnavailableTitle()}
                 onclick={() => startCopy(selected)}
               >
                 <Copy size={15} />
-                <span class="hidden sm:inline">Copy ({selected.length})</span>
               </Button>
             </span>
             <span
               class="inline-flex"
-              title={canWrite ? undefined : writeDeniedTitle}
+              title={canWrite
+                ? `Move ${selected.length} selected`
+                : writeDeniedTitle}
             >
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 disabled={!canWrite}
-                aria-label={canWrite ? "Move selected" : writeDeniedTitle}
+                aria-label={canWrite
+                  ? `Move ${selected.length} selected`
+                  : writeDeniedTitle}
+                title={canWrite
+                  ? `Move ${selected.length} selected`
+                  : writeDeniedTitle}
                 onclick={() => startMove(selected)}
               >
                 <FolderInput size={15} />
-                <span class="hidden sm:inline">Move ({selected.length})</span>
               </Button>
             </span>
             <span
               class="inline-flex"
-              title={canWrite ? undefined : writeDeniedTitle}
+              title={canWrite
+                ? `Delete ${selected.length} selected`
+                : writeDeniedTitle}
             >
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 class="text-destructive hover:bg-destructive/10 hover:text-destructive"
                 disabled={!canWrite}
-                aria-label={canWrite ? "Delete selected" : writeDeniedTitle}
+                aria-label={canWrite
+                  ? `Delete ${selected.length} selected`
+                  : writeDeniedTitle}
+                title={canWrite
+                  ? `Delete ${selected.length} selected`
+                  : writeDeniedTitle}
                 onclick={() => startDelete(selected)}
               >
                 <Trash size={15} />
-                <span class="hidden sm:inline">Delete ({selected.length})</span>
               </Button>
             </span>
           {/if}
@@ -1597,14 +1747,16 @@
             {#snippet trigger(props, open)}
               <span
                 class="inline-flex"
-                title={canWrite ? undefined : writeDeniedTitle}
+                title={canWrite ? "Upload" : writeDeniedTitle}
               >
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
+                  size="icon-sm"
+                  class="w-auto gap-0.5 px-1.5"
                   disabled={!canWrite}
                   aria-label={canWrite ? "Upload" : writeDeniedTitle}
+                  title={canWrite ? "Upload" : writeDeniedTitle}
                   {...props}
                   onclick={() => {
                     if (canWrite) {
@@ -1613,7 +1765,6 @@
                   }}
                 >
                   <Upload size={15} />
-                  <span class="hidden sm:inline">Upload</span>
                   <ChevronDown
                     size={14}
                     class={[
@@ -1637,14 +1788,16 @@
             {#snippet trigger(props, open)}
               <span
                 class="inline-flex"
-                title={canWrite ? undefined : writeDeniedTitle}
+                title={canWrite ? "New" : writeDeniedTitle}
               >
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
+                  size="icon-sm"
+                  class="w-auto gap-0.5 px-1.5"
                   disabled={!canWrite}
                   aria-label={canWrite ? "New" : writeDeniedTitle}
+                  title={canWrite ? "New" : writeDeniedTitle}
                   {...props}
                   onclick={() => {
                     if (canWrite) {
@@ -1653,7 +1806,6 @@
                   }}
                 >
                   <Plus size={15} />
-                  <span class="hidden sm:inline">New</span>
                   <ChevronDown
                     size={14}
                     class={[
@@ -1681,7 +1833,7 @@
         <Button
           type="button"
           variant="ghost"
-          size="sm"
+          size="icon-sm"
           class="text-muted-foreground"
           aria-label={locationEntry
             ? `Download ${locationEntry.name}`
@@ -1690,7 +1842,24 @@
           onclick={downloadCurrent}
         >
           <Download size={15} />
-          <span class="hidden sm:inline">Download</span>
+        </Button>
+        <div
+          class="mx-0.5 w-px self-stretch bg-border"
+          aria-hidden="true"
+        ></div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          class="text-muted-foreground"
+          aria-label="Activity"
+          title="Activity"
+          onclick={() =>
+            navigate("/files/:root_id/activity", {
+              params: { root_id: root.id },
+            })}
+        >
+          <RotateCcwClock size={15} />
         </Button>
         {#if locationEntry}
           <div
@@ -1701,12 +1870,13 @@
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               class={locationEntry.sharingMode
                 ? "text-primary hover:text-primary"
                 : "text-muted-foreground"}
               disabled={!canShare}
               aria-label={directoryShareAriaLabel()}
+              title={directoryShareTitle()}
               onclick={() => openDirectoryShareDialog()}
             >
               {#if locationEntry.sharingMode}
@@ -1749,9 +1919,10 @@
         <FileSearchResults
           {root}
           query={searchQuery}
-          onNavigate={(id) => {
+          onNavigate={(parentId, fileId) => {
             searchQuery = "";
-            showDirectory(id);
+            // File picks set `?file=`; directory picks clear it so no stale highlight.
+            showDirectory(parentId, fileId ? { file: fileId } : {});
           }}
         />
       </div>

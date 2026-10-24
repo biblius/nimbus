@@ -269,6 +269,30 @@ impl FileRepository {
     }
 
     #[instrument(skip(self), err(Debug))]
+    pub async fn get_parent_name(&self, root_id: Uuid, id: Uuid) -> Result<String, AppError> {
+        sqlx::query_scalar!(
+            r#"
+            SELECT 
+                COALESCE(parent_file.name, roots.name) AS "name!"
+            FROM files AS child
+            LEFT JOIN files AS parent_file
+              ON parent_file.id = child.parent
+              AND parent_file.root_id = child.root_id
+            JOIN roots
+              ON child.root_id = roots.id
+            WHERE 
+                child.root_id = $1
+            AND child.id = $2
+            "#,
+            root_id,
+            id
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    #[instrument(skip(self), err(Debug))]
     pub async fn get_private_root(&self, user_id: Uuid) -> Result<Root, AppError> {
         sqlx::query_as!(
             Root,
@@ -307,6 +331,21 @@ impl FileRepository {
             tracing::error!(%root_id, "quota requested without an assignment");
             AppError::Internal
         })
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn get_file_name(&self, root_id: Uuid, id: Uuid) -> Result<String, AppError> {
+        sqlx::query_scalar!(
+            r#"
+            SELECT name FROM files
+            WHERE root_id = $1 AND id = $2
+            "#,
+            root_id,
+            id
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::from)
     }
 
     #[instrument(skip(self), err(Debug))]

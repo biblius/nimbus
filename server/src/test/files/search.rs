@@ -30,12 +30,7 @@ mod search {
         hits.iter().map(|hit| hit.file.name.as_str()).collect()
     }
 
-    async fn search(
-        state: &TestState,
-        session: &Session,
-        root: Uuid,
-        q: &str,
-    ) -> Vec<FileView> {
+    async fn search(state: &TestState, session: &Session, root: Uuid, q: &str) -> Vec<FileView> {
         state
             .services
             .files
@@ -49,7 +44,7 @@ mod search {
     async fn empty_query_returns_no_hits(state: TestState, session: Session, root: Uuid) {
         test::upload(state, &session.user, *root, "notes.txt", b"notes").await;
 
-        let hits = search(state, &session, *root, "").await;
+        let hits = search(state, session, *root, "").await;
         assert!(hits.is_empty());
     }
 
@@ -58,7 +53,7 @@ mod search {
     async fn whitespace_query_returns_no_hits(state: TestState, session: Session, root: Uuid) {
         test::upload(state, &session.user, *root, "notes.txt", b"notes").await;
 
-        let hits = search(state, &session, *root, "   \t  ").await;
+        let hits = search(state, session, *root, "   \t  ").await;
         assert!(hits.is_empty());
     }
 
@@ -67,7 +62,7 @@ mod search {
     async fn unmatched_query_returns_no_hits(state: TestState, session: Session, root: Uuid) {
         test::upload(state, &session.user, *root, "notes.txt", b"notes").await;
 
-        let hits = search(state, &session, *root, "missing").await;
+        let hits = search(state, session, *root, "missing").await;
         assert!(hits.is_empty());
     }
 
@@ -76,7 +71,7 @@ mod search {
     async fn substring_match_finds_file(state: TestState, session: Session, root: Uuid) {
         let file = test::upload(state, &session.user, *root, "quarterly-report.pdf", b"pdf").await;
 
-        let hits = search(state, &session, *root, "report").await;
+        let hits = search(state, session, *root, "report").await;
         assert_eq!(names(&hits), ["quarterly-report.pdf"]);
         assert_eq!(hits[0].file.id, file.id);
     }
@@ -99,7 +94,7 @@ mod search {
             .unwrap();
         test::upload(state, &session.user, *root, "other.txt", b"x").await;
 
-        let hits = search(state, &session, *root, "Reports").await;
+        let hits = search(state, session, *root, "Reports").await;
         assert_eq!(names(&hits), ["Reports"]);
         assert_eq!(hits[0].file.id, folder.id);
         assert_eq!(hits[0].file.kind, crate::file::model::FileKind::Directory);
@@ -110,7 +105,7 @@ mod search {
     async fn match_is_case_insensitive(state: TestState, session: Session, root: Uuid) {
         test::upload(state, &session.user, *root, "Report.PDF", b"pdf").await;
 
-        let hits = search(state, &session, *root, "report").await;
+        let hits = search(state, session, *root, "report").await;
         assert_eq!(names(&hits), ["Report.PDF"]);
     }
 
@@ -140,7 +135,7 @@ mod search {
         )
         .await;
 
-        let hits = search(state, &session, *root, "deep-notes").await;
+        let hits = search(state, session, *root, "deep-notes").await;
         assert_eq!(names(&hits), ["deep-notes.txt"]);
         assert_eq!(hits[0].file.id, nested.id);
         assert_eq!(hits[0].file.parent, Some(docs.id));
@@ -164,7 +159,7 @@ mod search {
         )
         .await;
 
-        let hits = search(state, &session, *root, "only-here").await;
+        let hits = search(state, session, *root, "only-here").await;
         assert_eq!(names(&hits), ["only-here.txt"]);
         assert_eq!(hits[0].file.root_id, *root);
 
@@ -203,7 +198,7 @@ mod search {
         test::upload(state, &session.user, *root, "my-report.txt", b"a").await;
         test::upload(state, &session.user, *root, "report.txt", b"b").await;
 
-        let hits = search(state, &session, *root, "report").await;
+        let hits = search(state, session, *root, "report").await;
         assert_eq!(names(&hits), ["report.txt", "my-report.txt"]);
     }
 
@@ -217,7 +212,7 @@ mod search {
         test::upload(state, &session.user, *root, "repository.txt", b"a").await;
         test::upload(state, &session.user, *root, "rep.txt", b"b").await;
 
-        let hits = search(state, &session, *root, "rep").await;
+        let hits = search(state, session, *root, "rep").await;
         assert_eq!(names(&hits), ["rep.txt", "repository.txt"]);
     }
 
@@ -229,7 +224,7 @@ mod search {
         test::upload(state, &session.user, *root, "a%b.txt", b"lit").await;
         test::upload(state, &session.user, *root, "axxb.txt", b"wild").await;
 
-        let hits = search(state, &session, *root, "a%b").await;
+        let hits = search(state, session, *root, "a%b").await;
         assert_eq!(names(&hits), ["a%b.txt"]);
     }
 
@@ -241,7 +236,7 @@ mod search {
         test::upload(state, &session.user, *root, "a_b.txt", b"lit").await;
         test::upload(state, &session.user, *root, "axb.txt", b"wild").await;
 
-        let hits = search(state, &session, *root, "a_b").await;
+        let hits = search(state, session, *root, "a_b").await;
         assert_eq!(names(&hits), ["a_b.txt"]);
     }
 
@@ -250,8 +245,11 @@ mod search {
     async fn rename_updates_searchable_name(state: TestState, session: Session, root: Uuid) {
         let file = test::upload(state, &session.user, *root, "before.txt", b"x").await;
 
-        assert_eq!(names(&search(state, &session, *root, "before").await), ["before.txt"]);
-        assert!(search(state, &session, *root, "after").await.is_empty());
+        assert_eq!(
+            names(&search(state, session, *root, "before").await),
+            ["before.txt"]
+        );
+        assert!(search(state, session, *root, "after").await.is_empty());
 
         state
             .services
@@ -266,8 +264,11 @@ mod search {
             .await
             .unwrap();
 
-        assert!(search(state, &session, *root, "before").await.is_empty());
-        assert_eq!(names(&search(state, &session, *root, "after").await), ["after.txt"]);
+        assert!(search(state, session, *root, "before").await.is_empty());
+        assert_eq!(
+            names(&search(state, session, *root, "after").await),
+            ["after.txt"]
+        );
     }
 
     /// Trashing independently removes the live name from search results.
@@ -280,14 +281,12 @@ mod search {
             .files
             .delete_many(
                 &ctx(state, &session.user, *root).await,
-                TrashFiles {
-                    ids: vec![file.id],
-                },
+                TrashFiles { ids: vec![file.id] },
             )
             .await
             .unwrap();
 
-        let hits = search(state, &session, *root, "doomed").await;
+        let hits = search(state, session, *root, "doomed").await;
         assert!(hits.is_empty());
     }
 
@@ -297,7 +296,7 @@ mod search {
     async fn query_is_trimmed_before_match(state: TestState, session: Session, root: Uuid) {
         test::upload(state, &session.user, *root, "notes.txt", b"n").await;
 
-        let hits = search(state, &session, *root, "  notes  ").await;
+        let hits = search(state, session, *root, "  notes  ").await;
         assert_eq!(names(&hits), ["notes.txt"]);
     }
 
@@ -445,7 +444,7 @@ mod search {
     async fn short_query_matches_substring(state: TestState, session: Session, root: Uuid) {
         test::upload(state, &session.user, *root, "report.pdf", b"pdf").await;
 
-        let hits = search(state, &session, *root, "rep").await;
+        let hits = search(state, session, *root, "rep").await;
         assert_eq!(names(&hits), ["report.pdf"]);
     }
 
@@ -454,14 +453,10 @@ mod search {
     ///
     /// `raport` is not contained in `report.pdf`; only similarity can hit.
     #[test]
-    async fn typo_match_depends_on_trigram_backend(
-        state: TestState,
-        session: Session,
-        root: Uuid,
-    ) {
+    async fn typo_match_depends_on_trigram_backend(state: TestState, session: Session, root: Uuid) {
         test::upload(state, &session.user, *root, "report.pdf", b"pdf").await;
 
-        let hits = search(state, &session, *root, "raport").await;
+        let hits = search(state, session, *root, "raport").await;
 
         #[cfg(feature = "postgres")]
         assert_eq!(names(&hits), ["report.pdf"]);

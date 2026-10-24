@@ -212,11 +212,13 @@ impl DeletionQueue {
         }
 
         let mut live = Vec::new();
+        
         for (root_id, ids) in &live_by_root {
             live.extend(self.repository.files.get_live_many(*root_id, ids).await?);
         }
 
         let mut trashed = Vec::new();
+
         for (root_id, ids) in &trash_by_root {
             trashed.extend(
                 self.repository
@@ -237,9 +239,11 @@ impl DeletionQueue {
         );
 
         let mut deleted = HashSet::new();
+
         for (root_id, ids) in &live_by_root {
             deleted.extend(self.repository.files.delete_many(*root_id, ids).await?);
         }
+
         for (root_id, ids) in &trash_by_root {
             deleted.extend(self.repository.trash.delete_many(*root_id, ids).await?);
         }

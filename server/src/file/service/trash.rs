@@ -1,4 +1,5 @@
 use crate::{
+    activity::{ActivityQueue, ActivityQueueHandle, queue::ProcessActivity},
     db::{
         files::{FileRepository, FileTable, TrashRepository},
         tx::Transactor,
@@ -19,12 +20,23 @@ use uuid::Uuid;
 pub struct TrashFileService {
     trash: TrashRepository,
     files: FileRepository,
+    activity: ActivityQueueHandle,
     tx: Transactor,
 }
 
 impl TrashFileService {
-    pub fn new(trash: TrashRepository, files: FileRepository, tx: Transactor) -> Self {
-        Self { trash, files, tx }
+    pub fn new(
+        trash: TrashRepository,
+        files: FileRepository,
+        activity: ActivityQueueHandle,
+        tx: Transactor,
+    ) -> Self {
+        Self {
+            trash,
+            files,
+            activity,
+            tx,
+        }
     }
 
     /// Permanently delete one trashed item and its descendants.
@@ -108,6 +120,19 @@ impl TrashFileService {
 
         tx.commit().await?;
 
+        if let Err(e) = ActivityQueue::submit(
+            &self.activity,
+            ProcessActivity::ProcessRestore {
+                root_id: ctx.root.id,
+                username: ctx.user.username.clone(),
+                ids: vec![id],
+            },
+        )
+        .await
+        {
+            tracing::error!(error = %e, "unable to submit activity to queue");
+        }
+
         Ok(())
     }
 
@@ -162,6 +187,19 @@ impl TrashFileService {
         self.files.insert_many(&mut tx, &restored).await?;
 
         tx.commit().await?;
+
+        if let Err(e) = ActivityQueue::submit(
+            &self.activity,
+            ProcessActivity::ProcessRestore {
+                root_id: ctx.root.id,
+                username: ctx.user.username.clone(),
+                ids: restored.into_iter().map(|file| file.id).collect(),
+            },
+        )
+        .await
+        {
+            tracing::error!(error = %e, "unable to submit activity to queue");
+        }
 
         Ok(())
     }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import ActivityBrowser from "../components/ActivityBrowser.svelte";
   import FileBrowser from "../components/file-browser/FileBrowser.svelte";
   import PanelShell from "../components/PanelShell.svelte";
   import TrashBrowser from "../components/TrashBrowser.svelte";
@@ -15,6 +16,7 @@
   const rootId = $derived(route.params.root_id);
   const parentId = $derived(route.params.parent_id ?? null);
   const viewingTrash = $derived(isActive("/files/trash"));
+  const viewingActivity = $derived(isActive("/files/:root_id/activity"));
   const selected = $derived(
     viewingTrash ? undefined : roots.find((root) => root.id === rootId),
   );
@@ -30,7 +32,13 @@
   });
 
   $effect(() => {
-    if (viewingTrash || rootId || !loaded || roots.length === 0) {
+    if (
+      viewingTrash ||
+      viewingActivity ||
+      rootId ||
+      !loaded ||
+      roots.length === 0
+    ) {
       return;
     }
 
@@ -44,7 +52,7 @@
   });
 </script>
 
-<PanelShell bind:open={session.menuOpen} label="Roots">
+<PanelShell bind:open={session.menuOpen} label="Folders">
   {#snippet sidebar()}
     <UserSidebar {roots} {selected} />
   {/snippet}
@@ -56,6 +64,10 @@
     <div class="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col">
       {#if viewingTrash && loaded}
         <TrashBrowser {roots} />
+      {:else if viewingActivity && selected}
+        {#key selected.id}
+          <ActivityBrowser root={selected} />
+        {/key}
       {:else if selected}
         <FileBrowser folder={selected} {parentId} {roots} />
       {:else if loaded && rootId}

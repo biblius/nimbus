@@ -424,3 +424,26 @@ export type DeletionResult = {
 export type DeletionEvent =
   | { type: "progress"; result: DeletionResult }
   | { type: "end" };
+
+/** Target of an activity action. */
+export type ActivityTarget =
+  | { t_type: "single"; id: string; name: string }
+  | { t_type: "multiple"; count: number };
+
+/** Payload stored in `root_activity.data`. */
+export type ActivityData =
+  | ({ type: "create" } & ActivityTarget)
+  | ({ type: "trash" } & ActivityTarget)
+  | ({ type: "share" } & ActivityTarget)
+  | { type: "move"; target: ActivityTarget; to: string }
+  | { type: "rename"; id: string; from: string; to: string }
+  | { type: "restore"; target: ActivityTarget; to: string }
+  | { type: "edit"; id: string; name: string };
+
+/** A user action in a root. */
+export type Activity = {
+  rootId: string;
+  username: string;
+  data: ActivityData;
+  createdAt: string;
+};

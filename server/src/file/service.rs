@@ -7,8 +7,12 @@ pub use share::ShareService;
 pub use trash::TrashFileService;
 
 use crate::{
+    activity::{
+        Activity, ActivityData, ActivityQueue, ActivityQueueHandle, queue::ProcessActivity,
+    },
     error::AppError,
     file::{
+        UserRootContext,
         format::{DocFormat, FileType},
         model::{FileEntry, FileKind},
         storage::Storage,
@@ -45,14 +49,13 @@ pub(crate) fn preview_content_for(
         return Ok((storage.preview_path(hash), mime));
     }
 
-    let file_type = file.file_type.as_ref().ok_or_else(|| {
-        AppError::Unprocessable("File type is required for preview".into())
-    })?;
+    let file_type = file
+        .file_type
+        .as_ref()
+        .ok_or_else(|| AppError::Unprocessable("File type is required for preview".into()))?;
 
     if matches!(file_type, FileType::Doc(DocFormat::Docx)) {
-        return Err(AppError::ResourceMissing(
-            "Preview does not exist".into(),
-        ));
+        return Err(AppError::ResourceMissing("Preview does not exist".into()));
     }
 
     if !file.previewable_as_original() {
@@ -234,4 +237,19 @@ async fn zip_tree(
     }
 
     Ok(())
+}
+
+pub(super) async fn activity(
+    handle: &ActivityQueueHandle,
+    ctx: &UserRootContext,
+    data: ActivityData,
+) {
+    if let Err(e) = ActivityQueue::submit(
+        handle,
+        ProcessActivity::Process(Activity::new(ctx.root.id, ctx.user.username.clone(), data)),
+    )
+    .await
+    {
+        tracing::error!(error = %e, "unable to submit activity to queue");
+    };
 }

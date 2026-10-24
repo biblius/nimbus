@@ -4,7 +4,13 @@ use super::super::{
     storage::{Storage, TempFile, UploadWriter},
 };
 use crate::{
+    activity::{
+        Activity, ActivityData, ActivityQueue, ActivityQueueHandle, ActivityTarget,
+        queue::ProcessActivity,
+    },
     db::{
+        Repository,
+        activity::ActivityRepository,
         files::{FileRepository, NewFile, ShareRepository, TrashRepository},
         tx::Transactor,
         user_roots::UserRootRepository,
@@ -19,6 +25,7 @@ use crate::{
         },
         tree::{FileEntryTree, FileTree},
     },
+    model::{List, Pagination},
     user::model::{Role, User},
 };
 use chrono::Utc;
@@ -36,30 +43,41 @@ pub struct FileService {
     share: ShareRepository,
     trash: TrashRepository,
     folders: UserRootRepository,
+    activity: ActivityRepository,
     storage: Storage,
-    processing: ProcessingQueueHandle,
+    processing_q: ProcessingQueueHandle,
+    activity_q: ActivityQueueHandle,
     tx: Transactor,
 }
 
 impl FileService {
     pub fn new(
-        files: FileRepository,
-        share: ShareRepository,
-        trash: TrashRepository,
-        folders: UserRootRepository,
+        repository: Repository,
         storage: Storage,
-        processing: ProcessingQueueHandle,
+        processing_q: ProcessingQueueHandle,
+        activity_q: ActivityQueueHandle,
         tx: Transactor,
     ) -> Self {
         Self {
-            files,
-            share,
-            trash,
-            folders,
+            files: repository.files,
+            share: repository.share,
+            trash: repository.trash,
+            folders: repository.folders,
+            activity: repository.activity,
             storage,
-            processing,
+            processing_q,
+            activity_q,
             tx,
         }
+    }
+
+    #[instrument(skip(self, ctx), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
+    pub async fn list_activities(
+        &self,
+        ctx: &UserRootContext,
+        pagination: Pagination,
+    ) -> Result<List<Activity>, AppError> {
+        self.activity.list(ctx.root.id, pagination).await
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -83,11 +101,7 @@ impl FileService {
 
     /// Fuzzy / substring name search within the current root, ordered by rank.
     #[instrument(skip(self, ctx, q), fields(user_id = %ctx.user.id, root_id = %ctx.root.id, q = %q), err(Debug))]
-    pub async fn search(
-        &self,
-        ctx: &UserRootContext,
-        q: &str,
-    ) -> Result<Vec<FileView>, AppError> {
+    pub async fn search(&self, ctx: &UserRootContext, q: &str) -> Result<Vec<FileView>, AppError> {
         self.files.search_by_name(ctx.root.id, q).await
     }
 
@@ -175,6 +189,16 @@ impl FileService {
             })
             .await?;
 
+        super::activity(
+            &self.activity_q,
+            ctx,
+            ActivityData::Create(ActivityTarget::Single {
+                id: entry.id,
+                name: entry.name.clone(),
+            }),
+        )
+        .await;
+
         Ok(entry)
     }
 
@@ -205,6 +229,16 @@ impl FileService {
             return Err(AppError::Internal);
         };
 
+        super::activity(
+            &self.activity_q,
+            ctx,
+            ActivityData::Create(ActivityTarget::Single {
+                id: file.id,
+                name: file.name.clone(),
+            }),
+        )
+        .await;
+
         Ok(file)
     }
 
@@ -225,6 +259,7 @@ impl FileService {
     /// Persist a directory upload. Insert staged dirs and files, then move blobs into storage.
     ///
     /// The [`TempFile`]s should be obtained via [`Self::start_upload`].
+    /// `files` first element is the BLOB and the second the directory they go in
     #[instrument(
         skip(self, ctx, dirs, files),
         fields(user_id = %ctx.user.id, root_id = %ctx.root.id),
@@ -323,10 +358,23 @@ impl FileService {
         tx.commit().await?;
 
         for entry in entries.iter().filter(|entry| entry.kind == FileKind::File) {
-            if let Err(error) = ProcessingQueue::submit(&self.processing, entry).await {
+            if let Err(error) = ProcessingQueue::submit(&self.processing_q, entry).await {
                 tracing::error!(file = %entry.id, %error, "failed to enqueue file for processing");
             }
         }
+
+        let target = if entries.len() == 1 {
+            ActivityTarget::Single {
+                id: entries[0].id,
+                name: entries[0].name.clone(),
+            }
+        } else {
+            ActivityTarget::Multiple {
+                count: entries.len(),
+            }
+        };
+
+        super::activity(&self.activity_q, ctx, ActivityData::Create(target)).await;
 
         Ok(entries)
     }
@@ -366,41 +414,41 @@ impl FileService {
     }
 
     /// Persist new bytes and point the existing file row at them.
-    #[instrument(skip(self, ctx, existing, file), fields(user_id = %ctx.user.id, file_id = %existing.id, name = %file.name), err(Debug))]
+    #[instrument(skip(self, ctx, file, tmp_file), fields(user_id = %ctx.user.id, file_id = %file.id, name = %file.name), err(Debug))]
     pub async fn finish_overwrite(
         &self,
         ctx: &UserRootContext,
-        existing: FileEntry,
-        mut file: TempFile,
+        file: FileEntry,
+        mut tmp_file: TempFile,
     ) -> Result<(), AppError> {
         ctx.require(AccessMode::WRITE)?;
 
-        if existing.root_id != ctx.root.id {
+        if file.root_id != ctx.root.id {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         }
 
-        let Some(old_hash) = existing.hash.as_deref() else {
+        let Some(old_hash) = file.hash.as_deref() else {
             // Should never happen
             return Err(AppError::Unprocessable(
                 "Original file is missing hash".into(),
             ));
         };
 
-        let content_changed = old_hash != file.hash.as_str();
+        let content_changed = old_hash != tmp_file.hash.as_str();
 
         if !content_changed {
             tracing::info!("file contents are the same, skipping overwrite");
             return Ok(());
         }
 
-        let quota = self.files.root_quota(existing.root_id).await?;
+        let quota = self.files.root_quota(file.root_id).await?;
 
         if quota > 0 {
-            let used = self.files.root_quota_usage(existing.root_id).await?;
+            let used = self.files.root_quota_usage(file.root_id).await?;
 
             if used
-                .saturating_sub(existing.size_bytes)
-                .saturating_add(file.size)
+                .saturating_sub(file.size_bytes)
+                .saturating_add(tmp_file.size)
                 > quota
             {
                 return Err(AppError::QuotaExceeded);
@@ -410,7 +458,7 @@ impl FileService {
         // Text files with no extension can cause problems
         //
         // Prefer from extension and fallback to existing.
-        let file_type = existing
+        let file_type = file
             .file_type
             .as_ref()
             .unwrap_or(&FileType::Text(TextFormat::Txt));
@@ -420,15 +468,15 @@ impl FileService {
         self.files
             .update_content(
                 &mut *tx,
-                existing.root_id,
-                existing.id,
-                &file.hash,
-                file.size,
+                file.root_id,
+                file.id,
+                &tmp_file.hash,
+                tmp_file.size,
                 file_type,
             )
             .await?;
 
-        self.storage.persist(&mut file).await?;
+        self.storage.persist(&mut tmp_file).await?;
 
         tx.commit().await?;
 
@@ -444,6 +492,16 @@ impl FileService {
                 tracing::error!(%error, hash = %old_hash, "failed to count replaced blob");
             }
         }
+
+        super::activity(
+            &self.activity_q,
+            ctx,
+            ActivityData::Edit {
+                id: file.id,
+                name: file.name,
+            },
+        )
+        .await;
 
         Ok(())
     }
@@ -684,7 +742,19 @@ impl FileService {
 
         self.trash
             .trash(file.root_id, ctx.user.id, &[file.id])
-            .await
+            .await?;
+
+        super::activity(
+            &self.activity_q,
+            ctx,
+            ActivityData::Trash(ActivityTarget::Single {
+                id: file.id,
+                name: file.name.clone(),
+            }),
+        )
+        .await;
+
+        Ok(())
     }
 
     /// Move every listed file in the root to the trash, including descendants.
@@ -697,7 +767,20 @@ impl FileService {
         input.validate()?;
         ctx.require(AccessMode::WRITE)?;
 
-        self.trash.trash(ctx.root.id, ctx.user.id, &input.ids).await
+        self.trash
+            .trash(ctx.root.id, ctx.user.id, &input.ids)
+            .await?;
+
+        super::activity(
+            &self.activity_q,
+            ctx,
+            ActivityData::Trash(ActivityTarget::Multiple {
+                count: input.ids.len(),
+            }),
+        )
+        .await;
+
+        Ok(())
     }
 
     /// Change the display name of a live file or directory.
@@ -725,10 +808,21 @@ impl FileService {
 
         self.files.update_name(file.root_id, id, name).await?;
 
+        super::activity(
+            &self.activity_q,
+            ctx,
+            ActivityData::Rename {
+                id: file.id,
+                from: file.name.clone(),
+                to: name.to_string(),
+            },
+        )
+        .await;
+
         Ok(())
     }
 
-    /// Change the parent of live files. Trashed files are rejected.
+    /// Change the parent of multiple files.
     #[instrument(skip(self, ctx, input), fields(user_id = %ctx.user.id, root_id = %ctx.root.id), err(Debug))]
     pub async fn move_files(
         &self,
@@ -736,15 +830,17 @@ impl FileService {
         input: MoveFiles,
     ) -> Result<(), AppError> {
         input.validate()?;
+
         ctx.require(AccessMode::WRITE)?;
 
         let root_id = ctx.root.id;
+
         let mut ids = Vec::with_capacity(input.ids.len());
         let mut seen = HashSet::with_capacity(input.ids.len());
 
-        for id in input.ids {
-            if seen.insert(id) {
-                ids.push(id);
+        for id in input.ids.iter() {
+            if seen.insert(*id) {
+                ids.push(*id);
             }
         }
 
@@ -779,7 +875,24 @@ impl FileService {
             }
         }
 
-        self.files.move_to_parent(root_id, input.parent, &ids).await
+        self.files
+            .move_to_parent(root_id, input.parent, &ids)
+            .await?;
+
+        if let Err(e) = ActivityQueue::submit(
+            &self.activity_q,
+            ProcessActivity::ProcessMove {
+                root_id: ctx.root.id,
+                username: ctx.user.username.clone(),
+                ids: input.ids,
+            },
+        )
+        .await
+        {
+            tracing::error!(error = %e, "unable to submit activity to queue");
+        }
+
+        Ok(())
     }
 
     /// Copy live files (and descendants, for directories) into `input.target_root_id`.
@@ -908,9 +1021,9 @@ impl FileService {
         let mut ids = Vec::with_capacity(input.ids.len());
         let mut seen = HashSet::with_capacity(input.ids.len());
 
-        for id in input.ids {
-            if seen.insert(id) {
-                ids.push(id);
+        for id in input.ids.iter() {
+            if seen.insert(*id) {
+                ids.push(*id);
             }
         }
 
@@ -921,7 +1034,22 @@ impl FileService {
                 Some(input.sharing_mode),
                 input.share_expires_at,
             )
-            .await
+            .await?;
+
+        if let Err(e) = ActivityQueue::submit(
+            &self.activity_q,
+            ProcessActivity::ProcessShare {
+                root_id: ctx.root.id,
+                username: ctx.user.username.clone(),
+                ids: input.ids,
+            },
+        )
+        .await
+        {
+            tracing::error!(error = %e, "unable to submit activity to queue");
+        }
+
+        Ok(())
     }
 
     /// Clear the public share on live files and every descendant.

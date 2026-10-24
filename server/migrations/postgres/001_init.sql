@@ -160,3 +160,15 @@ CREATE TABLE user_roots (
 );
 
 CREATE INDEX user_roots_user_idx ON user_roots (user_id);
+
+CREATE TABLE root_activity (
+  root_id UUID NOT NULL REFERENCES roots (id) ON DELETE CASCADE,
+  username TEXT NOT NULL,
+  data JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+-- All activity queries are scoped to a root.
+CREATE INDEX root_activity_root_id_created_at_idx ON root_activity (root_id, created_at DESC);
+
+CREATE INDEX root_activity_root_id_username_idx ON root_activity (root_id, username);

@@ -189,6 +189,7 @@ pub fn router(state: AppState) -> Router {
             post(files::share_files).delete(files::unshare_files),
         )
         .route("/roots/{root_id}/tree", get(files::tree))
+        .route("/roots/{root_id}/activity", get(files::list_activities))
         .route("/roots/{root_id}/trash", get(files::trash))
         .route("/roots/{root_id}/trash/restore", post(files::restore_all))
         .route("/roots/{root_id}/trash/{id}", delete(files::delete_trash))

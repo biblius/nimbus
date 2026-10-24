@@ -16,8 +16,11 @@
     root: Root;
     /** Non-empty search text from parent. */
     query: string;
-    /** Optional; if not provided use navigate(). */
-    onNavigate?: (parentId: string | null) => void;
+    /**
+     * Optional; if not provided use navigate().
+     * `fileId` selects/highlights that file via `?file=` (same as activity links).
+     */
+    onNavigate?: (parentId: string | null, fileId?: string) => void;
   } = $props();
 
   let dirs = $state.raw<Record<string, FileEntry>>({});
@@ -42,18 +45,23 @@
     return [rootName, ...parts].join(" / ");
   }
 
-  function goTo(parentId: string | null) {
+  function goTo(parentId: string | null, fileId?: string) {
     if (onNavigate) {
-      onNavigate(parentId);
+      onNavigate(parentId, fileId);
       return;
     }
+    const search = fileId ? { file: fileId } : undefined;
     if (parentId) {
       navigate("/files/:root_id/dir/:parent_id", {
         params: { root_id: root.id, parent_id: parentId },
+        search,
       });
       return;
     }
-    navigate("/files/:root_id", { params: { root_id: root.id } });
+    navigate("/files/:root_id", {
+      params: { root_id: root.id },
+      search,
+    });
   }
 
   function openResult(entry: FileView) {
@@ -61,7 +69,7 @@
       goTo(entry.file.id);
       return;
     }
-    goTo(entry.file.parent);
+    goTo(entry.file.parent, entry.file.id);
   }
 
   // Load directory map for path labels whenever the root changes.
