@@ -91,10 +91,10 @@ impl ActivityRepository {
             ActivityRow,
             r#"
             SELECT
-                root_id,
+                root_id AS "root_id: Uuid",
                 username,
                 data AS "data: Json<ActivityData>",
-                created_at
+                created_at AS "created_at: DateTime<Utc>"
             FROM root_activity
             WHERE root_id = $1
             ORDER BY created_at DESC, username ASC

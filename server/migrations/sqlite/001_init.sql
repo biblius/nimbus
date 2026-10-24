@@ -163,17 +163,13 @@ CREATE TABLE user_roots (
 CREATE INDEX user_roots_user_idx ON user_roots (user_id);
 
 CREATE TABLE root_activity (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  -- Groups activities when they are for multiple files
-  activity_id BLOB NOT NULL,
   root_id BLOB NOT NULL REFERENCES roots (id) ON DELETE CASCADE,
-  user_id BLOB REFERENCES users (id) ON DELETE SET NULL,
   username TEXT NOT NULL,
-  data TEXT,
+  data TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 
 -- All activity queries are scoped to a root.
 CREATE INDEX root_activity_root_id_created_at_idx ON root_activity (root_id, created_at);
 
-CREATE INDEX root_activity_root_id_activity_id_idx ON root_activity (root_id, activity_id);
+CREATE INDEX root_activity_root_id_username_idx ON root_activity (root_id, username);
