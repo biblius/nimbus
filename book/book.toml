@@ -1,9 +1,8 @@
 [book]
 authors = ["biblius"]
 language = "en"
-multilingual = false
 src = "src"
-title = "Nimbus Hosting Guide"
+title = "Nimbus Hosting Manual"
 
 [build]
 build-dir = "book"
