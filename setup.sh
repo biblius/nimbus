@@ -23,8 +23,6 @@ if [[ " $* " == *" -c "* ]]; then
 	unset ADDRESS
 	unset CORS_ALLOWED_ORIGINS
 	unset CORS_ALLOWED_HEADERS
-	unset COOKIE_NAME
-	unset COOKIE_DOMAIN
 	unset SMTP_HOST
 	unset SMTP_PORT
 	unset SMTP_USERNAME

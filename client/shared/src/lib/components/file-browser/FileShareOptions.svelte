@@ -67,7 +67,7 @@
       await navigator.clipboard.writeText(publicLink);
       toastSuccess(message);
     } catch {
-      toastError("Could not copy the public link");
+      toastError(`Could not copy link for ${entry.name}`);
     }
   }
 

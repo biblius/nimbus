@@ -9,16 +9,15 @@
   const WQ_HINT_MS = 2500;
 
   let {
-    url,
+    load,
     name,
     rootId,
     fileId,
     onUpdated,
     editing = $bindable(false),
     readonly = false,
-    credentials = "omit",
   }: {
-    url: string;
+    load: () => Promise<Blob>;
     name: string;
     /** Required when not `readonly` (for overwrite). */
     rootId?: string;
@@ -27,8 +26,6 @@
     editing?: boolean;
     /** Hide editing controls and never enter edit mode. */
     readonly?: boolean;
-    /** Use `"include"` for authenticated blob routes. */
-    credentials?: RequestCredentials;
   } = $props();
 
   // Called from parent
@@ -106,15 +103,15 @@
       editing = false;
       onUpdated?.(blob.size);
     } catch {
-      toastError("Could not save file");
+      toastError(`Could not save ${name}`);
     } finally {
       saving = false;
     }
   }
 
   $effect(() => {
-    const contentUrl = url;
-    const creds = credentials;
+    const loadBlob = load;
+    const fileName = name;
 
     text = "";
     draft = "";
@@ -125,12 +122,9 @@
 
     let cancelled = false;
 
-    fetch(contentUrl, { credentials: creds })
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error("fetch failed");
-        }
-        const value = await res.text();
+    loadBlob()
+      .then(async (blob) => {
+        const value = await blob.text();
         if (cancelled) {
           return;
         }
@@ -142,7 +136,7 @@
         if (cancelled) {
           return;
         }
-        error = "Could not load file";
+        error = `Could not load ${fileName}`;
         loading = false;
       });
 

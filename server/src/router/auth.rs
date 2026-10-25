@@ -23,11 +23,11 @@ use crate::{
             PasskeySetupChallenge, PasswordChange, PasswordReset, PasswordResetRequest,
             StartPasskeyLogin, UserPasskeyView,
         },
-        session::{ActiveSessionView, Session},
+        session::{ActiveSessionView, Session, SESSION_COOKIE_NAME},
     },
     error::AppError,
     router::middleware::RemoteAddress,
-    state::{AppState, HttpConfiguration},
+    state::AppState,
     user::model::{UpdateSelf, UserView},
 };
 
@@ -112,10 +112,7 @@ pub(crate) async fn logout(
 ) -> Result<Response, AppError> {
     state.services.auth.logout(session.id).await?;
 
-    Ok(clear_session_cookie(
-        StatusCode::NO_CONTENT.into_response(),
-        &state.http_config,
-    ))
+    Ok(clear_session_cookie(StatusCode::NO_CONTENT.into_response()))
 }
 
 pub(crate) async fn list_sessions(
@@ -144,27 +141,21 @@ pub(crate) async fn expire_session(
     state.services.auth.expire_session(&session, id).await?;
 
     if current {
-        return Ok(clear_session_cookie(
-            StatusCode::NO_CONTENT.into_response(),
-            &state.http_config,
-        ));
+        return Ok(clear_session_cookie(StatusCode::NO_CONTENT.into_response()));
     }
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-fn clear_session_cookie(mut response: Response, config: &HttpConfiguration) -> Response {
-    let mut cookie = Cookie::build((&*config.cookie_name, ""))
+fn clear_session_cookie(mut response: Response) -> Response {
+    // Host-only + Secure; name is fixed in SESSION_COOKIE_NAME.
+    let cookie = Cookie::build((SESSION_COOKIE_NAME, ""))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
-        .secure(config.cookie_secure)
+        .secure(true)
         .max_age(time::Duration::ZERO)
         .build();
-
-    if !config.cookie_domain.is_empty() {
-        cookie.set_domain(&*config.cookie_domain);
-    }
 
     match HeaderValue::from_str(&cookie.to_string()) {
         Ok(value) => {
@@ -326,22 +317,17 @@ pub(crate) async fn finish_native_login(
 }
 
 async fn login_response(result: LoginResult, state: &AppState) -> Result<Response, AppError> {
-    let config = &state.http_config;
-
     let cookie = match result {
         LoginResult::Session { session_id } => {
             let session = state.services.auth.get_session_by_id(session_id).await?;
 
-            let mut cookie = Cookie::build((&*config.cookie_name, session.id.to_string()))
+            // Host-only (no Domain) + always Secure.
+            let mut cookie = Cookie::build((SESSION_COOKIE_NAME, session.id.to_string()))
                 .path("/")
                 .http_only(true)
                 .same_site(SameSite::Lax)
-                .secure(config.cookie_secure)
+                .secure(true)
                 .build();
-
-            if !config.cookie_domain.is_empty() {
-                cookie.set_domain(&*config.cookie_domain);
-            }
 
             match session.expires_at {
                 Some(expires_at) => {

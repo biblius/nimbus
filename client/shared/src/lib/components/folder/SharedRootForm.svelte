@@ -81,7 +81,7 @@
     if (cause instanceof ApiError && cause.status === 403) {
       return cause.message;
     }
-    return "Could not save the folder";
+    return `Could not save ${name}`;
   }
 
   function toggleMembership(id: string) {

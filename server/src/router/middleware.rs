@@ -1,5 +1,5 @@
 use crate::{
-    auth::session::Session,
+    auth::session::{Session, SESSION_COOKIE_NAME},
     error::{AppError, AuthFailure},
     state::AppState,
     user::model::Role,
@@ -58,8 +58,8 @@ pub async fn session_check(
             }
         }
     } else {
-        match CookieJar::from_headers(request.headers()).get(state.http_config.cookie_name.as_ref())
-        {
+        match CookieJar::from_headers(request.headers()).get(SESSION_COOKIE_NAME) {
+
             Some(session_id) => match session_id.value().parse() {
                 Ok(id) => id,
                 Err(e) => {

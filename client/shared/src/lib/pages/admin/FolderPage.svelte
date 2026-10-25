@@ -90,7 +90,9 @@
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not load the folder",
+          : folder
+            ? `Could not load ${folder.name}`
+            : "Could not load folder",
       );
     }
   }
@@ -124,6 +126,7 @@
     deleting = true;
     deleteOpen = false;
     const id = folder.id;
+    const name = folder.name;
     const href = listHref();
 
     try {
@@ -133,7 +136,7 @@
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not remove the folder",
+          : `Could not remove ${name}`,
       );
       deleting = false;
     }
@@ -164,7 +167,9 @@
   {#if notFound}
     <p class="text-sm text-muted-foreground">This folder does not exist.</p>
   {:else if failed}
-    <p class="text-sm text-muted-foreground">Could not load the folder.</p>
+    <p class="text-sm text-muted-foreground">
+      {folder ? `Could not load ${folder.name}.` : "Could not load folder."}
+    </p>
   {:else if !folder}
     <p class="text-sm text-muted-foreground">Loading…</p>
   {:else if editing}

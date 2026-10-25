@@ -84,7 +84,7 @@
           destination = null;
           await reload(root.id);
         } catch {
-          toastError("Could not restore this item");
+          toastError(`Could not restore ${node.name}`);
         }
       },
     };
@@ -126,7 +126,7 @@
       await trackDeletion(session.client.deleteTrash(root.id, node.id));
       await reload(root.id);
     } catch {
-      toastError("Could not permanently delete this item");
+      toastError(`Could not permanently delete ${node.name}`);
     } finally {
       deleting = false;
     }

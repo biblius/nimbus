@@ -90,7 +90,7 @@
                   cause.status === 401 &&
                   selfService
                 ? "Current password is incorrect"
-                : "Could not save the user",
+                : `Could not save ${username}`,
         );
       }
     } finally {

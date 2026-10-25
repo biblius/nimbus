@@ -10,16 +10,14 @@ use axum::{
     Router,
     body::Body,
     extract::DefaultBodyLimit,
-    http::{HeaderName, HeaderValue, Method, StatusCode, header},
+    http::{StatusCode, header},
     middleware as axum_middleware,
     response::{IntoResponse, Response, Sse, sse::Event},
     routing::{delete, get, post, put},
 };
 use axum_extra::{TypedHeader, headers::Range};
 use futures::Stream;
-use std::{
-    convert::Infallible, io::SeekFrom, ops::Bound, path::Path, str::FromStr, time::Duration,
-};
+use std::{convert::Infallible, io::SeekFrom, ops::Bound, path::Path, time::Duration};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncSeekExt},
@@ -27,54 +25,13 @@ use tokio::{
 };
 use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
-use tower_http::{
-    cors::{AllowCredentials, CorsLayer},
-    trace::TraceLayer,
-};
+use tower_http::trace::TraceLayer;
 use tracing::Span;
 
 use crate::{error::AppError, file::service::DownloadBody, state::AppState};
 
 pub fn router(state: AppState) -> Router {
     let upload_max = state.upload_max_bytes;
-
-    let origins = state.http_config.cors_origins.iter().filter_map(|origin| {
-        match HeaderValue::from_str(origin) {
-            Ok(value) => Some(value),
-            Err(error) => {
-                tracing::warn!(%error, origin, "skipping invalid CORS origin");
-                None
-            }
-        }
-    });
-
-    let headers =
-        state
-            .http_config
-            .cors_headers
-            .iter()
-            .filter_map(|name| match HeaderName::from_str(name) {
-                Ok(value) => Some(value),
-                Err(error) => {
-                    tracing::warn!(%error, name, "skipping invalid CORS header");
-                    None
-                }
-            });
-
-    let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::AllowOrigin::list(origins))
-        .allow_headers(tower_http::cors::AllowHeaders::list(headers))
-        .expose_headers([HeaderName::from_static(
-            crate::auth::model::OTP_TOKEN_HEADER,
-        )])
-        .allow_credentials(AllowCredentials::yes())
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::DELETE,
-            Method::PUT,
-            Method::PATCH,
-        ]);
 
     let public = Router::new()
         .route("/auth/login", post(auth::credentials_login))
@@ -238,47 +195,95 @@ pub fn router(state: AppState) -> Router {
         .merge(session)
         .nest("/admin", admin);
 
-    Router::new()
+    let app = Router::new()
         .route("/_health", get(health))
         .nest("/api", api)
-        .fallback(web::static_handler)
-        .layer(cors)
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &axum::http::Request<_>| {
-                    if request.uri().path().starts_with("/api") {
-                        tracing::info_span!("api")
-                    } else {
-                        Span::none()
-                    }
-                })
-                .on_request(|request: &axum::http::Request<_>, span: &Span| {
+        .fallback(web::static_handler);
+
+    // Cross-origin access is only for local Vite / Tauri during development.
+    // Release builds are same-origin (embedded SPA) or native Bearer (no CORS).
+    #[cfg(debug_assertions)]
+    let app = {
+        use axum::http::{HeaderName, HeaderValue, Method};
+        use std::str::FromStr;
+        use tower_http::cors::{AllowCredentials, CorsLayer};
+
+        let origins = state.http_config.cors_origins.iter().filter_map(|origin| {
+            match HeaderValue::from_str(origin) {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    tracing::warn!(%error, origin, "skipping invalid CORS origin");
+                    None
+                }
+            }
+        });
+
+        let headers = state
+            .http_config
+            .cors_headers
+            .iter()
+            .filter_map(|name| match HeaderName::from_str(name) {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    tracing::warn!(%error, name, "skipping invalid CORS header");
+                    None
+                }
+            });
+
+        let cors = CorsLayer::new()
+            .allow_origin(tower_http::cors::AllowOrigin::list(origins))
+            .allow_headers(tower_http::cors::AllowHeaders::list(headers))
+            .expose_headers([HeaderName::from_static(
+                crate::auth::model::OTP_TOKEN_HEADER,
+            )])
+            .allow_credentials(AllowCredentials::yes())
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::DELETE,
+                Method::PUT,
+                Method::PATCH,
+            ]);
+
+        app.layer(cors)
+    };
+
+    app.layer(
+        TraceLayer::new_for_http()
+            .make_span_with(|request: &axum::http::Request<_>| {
+                if request.uri().path().starts_with("/api") {
+                    tracing::info_span!("api")
+                } else {
+                    Span::none()
+                }
+            })
+            .on_request(|request: &axum::http::Request<_>, span: &Span| {
+                if span.is_disabled() {
+                    return;
+                }
+
+                tracing::info!(
+                    method = %request.method(),
+                    path = %request.uri().path(),
+                    query = %request.uri().query().unwrap_or(""),
+                    "request"
+                );
+            })
+            .on_response(
+                |response: &axum::http::Response<_>, latency: Duration, span: &Span| {
                     if span.is_disabled() {
                         return;
                     }
 
                     tracing::info!(
-                        method = %request.method(),
-                        path = %request.uri().path(),
-                        query = %request.uri().query().unwrap_or(""),
-                        "request"
+                        status = %response.status(),
+                        elapsed_ms = latency.as_millis(),
+                        "response"
                     );
-                })
-                .on_response(
-                    |response: &axum::http::Response<_>, latency: Duration, span: &Span| {
-                        if span.is_disabled() {
-                            return;
-                        }
-
-                        tracing::info!(
-                            status = %response.status(),
-                            elapsed_ms = latency.as_millis(),
-                            "response"
-                        );
-                    },
-                ),
-        )
-        .with_state(state)
+                },
+            ),
+    )
+    .with_state(state)
 }
 
 async fn health() -> impl IntoResponse {

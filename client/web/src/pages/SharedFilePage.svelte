@@ -1,14 +1,14 @@
 <script lang="ts">
   import { CircleAlert, Download, Link2Off } from "@lucide/svelte";
-  import { ApiError } from "../api-errors";
-  import SharedFileBrowser from "../components/file-browser/SharedFileBrowser.svelte";
-  import SharedFilePreview from "../components/file-browser/SharedFilePreview.svelte";
-  import Button from "../components/ui/button/button.svelte";
-  import { isPreviewable } from "../fileKind";
-  import { route } from "../router";
-  import { session } from "../session.svelte";
-  import { toastError } from "../toast";
-  import type { SharedFileView } from "../types";
+  import { ApiError } from "@nimbus/shared/api-errors";
+  import { route } from "@nimbus/shared/router";
+  import { session } from "@nimbus/shared/session";
+  import { toastError } from "@nimbus/shared/toast";
+  import type { SharedFileView } from "@nimbus/shared/types";
+  import Button from "@nimbus/lib/components/ui/button/button.svelte";
+  import { isPreviewable } from "@nimbus/lib/fileKind";
+  import SharedFileBrowser from "../components/SharedFileBrowser.svelte";
+  import SharedFilePreview from "../components/SharedFilePreview.svelte";
 
   type LoadState = "loading" | "ready" | "not-found" | "error";
 

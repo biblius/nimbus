@@ -38,8 +38,6 @@ services:
       #     DATABASE_URL: postgres://nimbus:nimbus@postgres:5432/nimbus
       #     VALKEY_URL: redis://valkey:6379
       #     UPLOAD_DIR: /var/lib/nimbus
-      #     COOKIE_SECURE: "false"
-      #     COOKIE_DOMAIN: ""
       #     NIMBUS_ORIGIN: http://localhost:8080
       #     CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:1420,http://tauri.localhost,https://tauri.localhost,tauri://localhost
       #     SMTP_HOST: ${SMTP_HOST:-}

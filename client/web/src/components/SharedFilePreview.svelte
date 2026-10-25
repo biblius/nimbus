@@ -18,7 +18,10 @@
     Type,
     X,
   } from "@lucide/svelte";
-  import { fitMiddleEllipsis, formatBytes } from "../../format";
+  import { session } from "@nimbus/shared/session";
+  import { toastError } from "@nimbus/shared/toast";
+  import type { SharedFileView } from "@nimbus/shared/types";
+  import { fitMiddleEllipsis, formatBytes } from "@nimbus/lib/format";
   import {
     FILE_FAMILY_LABELS,
     fileFamily,
@@ -33,15 +36,12 @@
     parsePreviewFilter,
     type FileFamily,
     type PreviewFilter,
-  } from "../../fileKind";
-  import { session } from "../../session.svelte";
-  import { kv } from "../../storage";
-  import { toastError } from "../../toast";
-  import type { SharedFileView } from "../../types";
-  import { cn } from "../../utils";
-  import AudioPreviewContent from "./preview/AudioPreviewContent.svelte";
-  import ImagePreviewContent from "./preview/ImagePreviewContent.svelte";
-  import VideoPreviewContent from "./preview/VideoPreviewContent.svelte";
+  } from "@nimbus/lib/fileKind";
+  import { kv } from "@nimbus/lib/storage";
+  import { cn } from "@nimbus/lib/utils";
+  import AudioPreviewContent from "@nimbus/lib/components/file-browser/preview/AudioPreviewContent.svelte";
+  import ImagePreviewContent from "@nimbus/lib/components/file-browser/preview/ImagePreviewContent.svelte";
+  import VideoPreviewContent from "@nimbus/lib/components/file-browser/preview/VideoPreviewContent.svelte";
 
   let {
     files: inputFiles,
@@ -130,15 +130,19 @@
   const isZip = $derived(current != null && isZipFile(current));
   const fileName = $derived(current?.file.name ?? "");
   const canDownload = $derived(current?.file.sharingMode === "download");
-  /** Inline preview blob URL (original or derived previewBlob). */
-  const contentPreviewUrl = $derived(
-    current ? session.client.sharedContentPreviewUrl(current.file.id) : "",
-  );
   /** Range-capable stream URL for video / audio. */
   const streamUrl = $derived(
     current ? session.client.sharedContentUrl(current.file.id) : "",
   );
   let displayName = $state("");
+
+  const previewLoad = $derived.by(() => {
+    const id = current?.file.id;
+    if (id == null) {
+      return () => Promise.reject(new Error("no file"));
+    }
+    return () => session.client.sharedContentPreview(id);
+  });
 
   // Fit the file name in the header by dynamically computing the width.
   function observeFileName(name: string) {
@@ -587,7 +591,7 @@
     )}
   >
     {#if current && isImage}
-      <ImagePreviewContent url={contentPreviewUrl} name={current.file.name} />
+      <ImagePreviewContent load={previewLoad} name={current.file.name} />
     {:else if current && isVideo}
       <VideoPreviewContent
         src={streamUrl}
@@ -603,32 +607,29 @@
         crossorigin="anonymous"
       />
     {:else if current && isXlsx}
-      {#await import("./preview/XlsxPreviewContent.svelte") then { default: XlsxPreviewContent }}
-        <XlsxPreviewContent url={contentPreviewUrl} name={current.file.name} />
+      {#await import("@nimbus/lib/components/file-browser/preview/XlsxPreviewContent.svelte") then { default: XlsxPreviewContent }}
+        <XlsxPreviewContent load={previewLoad} name={current.file.name} />
       {/await}
     {:else if current && isZip}
-      {#await import("./preview/ZipPreviewContent.svelte") then { default: ZipPreviewContent }}
-        <ZipPreviewContent url={contentPreviewUrl} name={current.file.name} />
+      {#await import("@nimbus/lib/components/file-browser/preview/ZipPreviewContent.svelte") then { default: ZipPreviewContent }}
+        <ZipPreviewContent load={previewLoad} name={current.file.name} />
       {/await}
     {:else if current && isText}
-      {#await import("./preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}
+      {#await import("@nimbus/lib/components/file-browser/preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}
         <TextPreviewContent
-          url={contentPreviewUrl}
+          load={previewLoad}
           name={current.file.name}
           readonly
         />
       {/await}
     {:else if current && isPdf}
-      {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
-        <PdfPreviewContent url={contentPreviewUrl} name={current.file.name} />
+      {#await import("@nimbus/lib/components/file-browser/preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
+        <PdfPreviewContent load={previewLoad} name={current.file.name} />
       {/await}
     {:else if current && isDocx}
       {#if current.metadata?.previewBlob}
-        {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
-          <PdfPreviewContent
-            url={contentPreviewUrl}
-            name={current.file.name}
-          />
+        {#await import("@nimbus/lib/components/file-browser/preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
+          <PdfPreviewContent load={previewLoad} name={current.file.name} />
         {/await}
       {:else}
         <div

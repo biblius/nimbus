@@ -37,6 +37,7 @@ import {
   type UploadProgress,
 } from "@nimbus/shared/api-errors";
 import type { NimbusApi } from "@nimbus/shared/nimbus-api";
+import { clearSessionCookie, setSessionCookie } from "./session-cookie";
 
 export {
   ApiError,
@@ -78,8 +79,40 @@ export class NimbusClient implements NimbusApi {
     this.accessToken = options.accessToken ?? null;
   }
 
+  /** Server origin (scheme + host), derived from the `/api` base URL. */
+  private origin(): string | null {
+    if (!this.root) {
+      return null;
+    }
+    try {
+      return new URL(this.root).origin;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Mirror the Bearer session into an HttpOnly webview cookie for media streams. */
+  private async syncSessionCookie(token: string | null): Promise<void> {
+    const origin = this.origin();
+    if (!origin) {
+      return;
+    }
+
+    try {
+      if (token) {
+        await setSessionCookie(origin, token);
+      } else {
+        await clearSessionCookie(origin);
+      }
+    } catch (error) {
+      // Media streams need this cookie; surface failures instead of silent warn.
+      console.error("failed to sync session cookie", origin, error);
+    }
+  }
+
   private async setAccessToken(token: string | null): Promise<void> {
     this.accessToken = token;
+    await this.syncSessionCookie(token);
     await this.onAccessTokenChange?.(token);
   }
 
@@ -692,6 +725,24 @@ export class NimbusClient implements NimbusApi {
     return response.blob();
   }
 
+  /** Fetch inline preview content (original blob or derived `previewBlob`). */
+  async contentPreview(rootId: string, id: string): Promise<Blob> {
+    const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview`;
+    const response = await this.send(path);
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw this.httpError(response.status, body, path);
+    }
+
+    return response.blob();
+  }
+
   /** Replace an existing file's blob (multipart `file` field). */
   overwrite(
     rootId: string,
@@ -766,6 +817,23 @@ export class NimbusClient implements NimbusApi {
 
   async sharedContent(fileId: string): Promise<Blob> {
     const path = `/files/shared/${encodeURIComponent(fileId)}/blob/chunk`;
+    const response = await this.send(path, { credentials: "omit" });
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw this.httpError(response.status, body, path);
+    }
+
+    return response.blob();
+  }
+
+  async sharedContentPreview(fileId: string): Promise<Blob> {
+    const path = `/files/shared/${encodeURIComponent(fileId)}/preview`;
     const response = await this.send(path, { credentials: "omit" });
 
     if (!response.ok) {

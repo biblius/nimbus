@@ -139,7 +139,7 @@ export class FileFocus {
           toastError(
             cause instanceof TypeError
               ? "The server could not be reached"
-              : "Could not open that file",
+              : "Could not open file",
           );
         });
     });

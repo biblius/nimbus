@@ -5,11 +5,28 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "allow-session-cookie",
     "opener:default",
+    "dialog:default",
     "sql:default",
     "sql:allow-load",
     "sql:allow-select",
     "sql:allow-execute",
+    "fs:allow-read-file",
+    "fs:allow-read-dir",
+    "fs:allow-stat",
+    "fs:scope-home-recursive",
+    "fs:scope-desktop-recursive",
+    "fs:scope-document-recursive",
+    "fs:scope-download-recursive",
+    "fs:scope-picture-recursive",
+    "fs:scope-video-recursive",
+    "fs:scope-audio-recursive",
+    "fs:scope-temp-recursive",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "/**" }, { "path": "**" }]
+    },
     {
       "identifier": "http:default",
       "allow": [

@@ -39,9 +39,6 @@ pub struct ServiceState {
 pub struct HttpConfiguration {
     pub cors_origins: Arc<[String]>,
     pub cors_headers: Arc<[String]>,
-    pub cookie_domain: Arc<str>,
-    pub cookie_name: Arc<str>,
-    pub cookie_secure: bool,
 }
 
 impl AppState {
@@ -167,9 +164,6 @@ impl AppState {
         let http_config = HttpConfiguration {
             cors_origins: Arc::from(args.allowed_origins()),
             cors_headers: Arc::from(args.allowed_headers()),
-            cookie_domain: args.cookie_domain().into(),
-            cookie_name: args.cookie_name().into(),
-            cookie_secure: args.cookie_secure(),
         };
 
         let services = ServiceState {
@@ -202,9 +196,6 @@ impl Default for HttpConfiguration {
         HttpConfiguration {
             cors_origins: Arc::from([String::from("http://localhost:5173")]),
             cors_headers: Arc::from([String::from("Authorization"), String::from("Content-Type")]),
-            cookie_domain: "".into(),
-            cookie_name: "nimbus_session".into(),
-            cookie_secure: false,
         }
     }
 }

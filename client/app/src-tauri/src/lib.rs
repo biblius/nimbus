@@ -1,5 +1,6 @@
 #[cfg(desktop)]
 mod desktop;
+mod session_cookie;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -52,11 +53,17 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:nimbus.db", migrations)
                 .build(),
         )
+        .invoke_handler(tauri::generate_handler![
+            session_cookie::set_session_cookie,
+            session_cookie::clear_session_cookie,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running nimbus");
 }

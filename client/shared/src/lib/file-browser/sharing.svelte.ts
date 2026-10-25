@@ -97,7 +97,7 @@ export class FileSharing {
       await navigator.clipboard.writeText(this.publicLink(entry));
       toastSuccess(message);
     } catch {
-      toastError("Could not copy the public link");
+      toastError(`Could not copy link for ${entry.file.name}`);
     }
   }
 
@@ -146,7 +146,9 @@ export class FileSharing {
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not create a public link",
+          : ids.length === 1
+            ? `Could not share ${entry.name}`
+            : `Could not share ${ids.length} items`,
       );
     } finally {
       if (this.opts.rootId() === rootId) {
@@ -192,7 +194,9 @@ export class FileSharing {
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not stop sharing",
+          : ids.length === 1
+            ? `Could not stop sharing ${entry.name}`
+            : `Could not stop sharing ${ids.length} items`,
       );
     } finally {
       if (this.opts.rootId() === rootId) {

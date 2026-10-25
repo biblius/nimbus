@@ -55,7 +55,7 @@
         loading = false;
       }}
       onerror={() => {
-        error = "Could not load audio";
+        error = `Could not load ${name}`;
         loading = false;
       }}
     ></audio>

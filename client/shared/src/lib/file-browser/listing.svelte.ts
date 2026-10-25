@@ -214,13 +214,21 @@ export class FileListing {
         return;
       }
 
+      const folderName =
+        this.locationEntry?.id === parent
+          ? this.locationEntry.name
+          : (this.ancestors.find((crumb) => crumb.id === parent)?.name ??
+            this.ancestors.at(-1)?.name);
+
       this.ancestors = [];
       this.locationEntry = null;
 
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not open this folder",
+          : folderName
+            ? `Could not open ${folderName}`
+            : "Could not open folder",
       );
     }
   }
@@ -259,10 +267,18 @@ export class FileListing {
         return;
       }
       this.entries = [];
+      const folderName =
+        parent === null
+          ? null
+          : (this.locationEntry?.name ??
+            this.ancestors.find((crumb) => crumb.id === parent)?.name ??
+            this.ancestors.at(-1)?.name);
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not list this folder",
+          : folderName
+            ? `Could not list ${folderName}`
+            : "Could not list folder",
       );
     } finally {
       if (currentLoad === this.latestLoad) {

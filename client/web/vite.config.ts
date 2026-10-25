@@ -1,9 +1,22 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+const sharedLib = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../shared/src/lib",
+);
+
 export default defineConfig({
+  resolve: {
+    alias: {
+      // Web-only pages can import shared internals without expanding package exports.
+      "@nimbus/lib": sharedLib,
+    },
+  },
   plugins: [
     tailwindcss(),
     svelte(),

@@ -670,6 +670,26 @@ export class NimbusClient implements NimbusApi {
     return response.blob();
   }
 
+  /** Fetch inline preview content (original blob or derived `previewBlob`). */
+  async contentPreview(rootId: string, id: string): Promise<Blob> {
+    const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/preview`;
+    const response = await fetch(`${this.root}${path}`, {
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw this.httpError(response.status, body, path);
+    }
+
+    return response.blob();
+  }
+
   /** Replace an existing file's blob (multipart `file` field). */
   overwrite(
     rootId: string,
@@ -723,6 +743,26 @@ export class NimbusClient implements NimbusApi {
   /** Fetch publicly shared file bytes for inline preview (allowed in view mode). */
   async sharedContent(fileId: string): Promise<Blob> {
     const path = `/files/shared/${encodeURIComponent(fileId)}/blob/chunk`;
+    const response = await fetch(`${this.root}${path}`, {
+      credentials: "omit",
+    });
+
+    if (!response.ok) {
+      let body: ErrorBody | null = null;
+      try {
+        body = (await response.json()) as ErrorBody;
+      } catch {
+        body = null;
+      }
+      throw this.httpError(response.status, body, path);
+    }
+
+    return response.blob();
+  }
+
+  /** Fetch publicly shared inline preview content. */
+  async sharedContentPreview(fileId: string): Promise<Blob> {
+    const path = `/files/shared/${encodeURIComponent(fileId)}/preview`;
     const response = await fetch(`${this.root}${path}`, {
       credentials: "omit",
     });

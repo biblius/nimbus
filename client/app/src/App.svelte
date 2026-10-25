@@ -1,5 +1,5 @@
 <script lang="ts">
-  import "@nimbus/shared/router";
+  import { initRouter } from "@nimbus/shared/router";
   import { clearSession, session } from "@nimbus/shared/session";
   import { parseServerOrigin } from "@nimbus/shared/server-url";
   import { SvelteToast } from "@zerodevx/svelte-toast";
@@ -15,6 +15,12 @@
     saveEndpoint,
   } from "./settings";
   import { NimbusClient } from "./api";
+  import { listenNativeFileDrop } from "./native-file-drop";
+  import { pickNativeFiles, pickNativeFolder } from "./native-file-pick";
+  import { setSessionCookie } from "./session-cookie";
+
+  // Native never registers public share viewer routes.
+  initRouter();
 
   let ready = $state(false);
 
@@ -45,6 +51,16 @@
       accessToken,
     );
 
+    // Persisted Bearer is restored above; also mirror it into the webview
+    // cookie jar so chunked media streams authenticate without CORS.
+    if (origin && accessToken) {
+      try {
+        await setSessionCookie(origin, accessToken);
+      } catch (error) {
+        console.warn("failed to restore session cookie", error);
+      }
+    }
+
     session.configureEndpoint = async (url: string) => {
       const normalized = parseServerOrigin(url);
 
@@ -56,11 +72,22 @@
       session.endpoint = normalized;
 
       const token = await loadAccessToken();
+      // Rebuild so setAccessToken/syncSessionCookie targets the new origin.
       session.client = buildClient(apiBaseUrl(normalized), token);
+      if (token) {
+        try {
+          await setSessionCookie(normalized, token);
+        } catch (error) {
+          console.warn("failed to restore session cookie", error);
+        }
+      }
     };
 
     const { openUrl } = await import("@tauri-apps/plugin-opener");
     session.openExternalUrl = (url) => openUrl(url);
+    session.listenFileDrop = listenNativeFileDrop;
+    session.pickFiles = pickNativeFiles;
+    session.pickFolder = pickNativeFolder;
 
     ready = true;
   });

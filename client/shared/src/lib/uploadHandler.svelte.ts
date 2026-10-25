@@ -1,5 +1,9 @@
 import { ApiError } from "./api-errors";
-import { session } from "./session.svelte";
+import {
+  session,
+  type NativeDropBatch,
+  type NativeDropEvent,
+} from "./session.svelte";
 import type { FileEntry } from "./types";
 
 /// How many files are sent at the same time.
@@ -78,6 +82,28 @@ export class UploadHandler {
     }
 
     input.value = "";
+    await this.uploadFolderFiles(files);
+  }
+
+  /** Native OS multi-file dialog (Tauri). No-op if cancelled or unavailable. */
+  async fromNativeFilePicker() {
+    const files = await session.pickFiles?.();
+
+    if (!files) {
+      return;
+    }
+
+    await this.uploadFiles(files);
+  }
+
+  /** Native OS folder dialog (Tauri). No-op if cancelled or unavailable. */
+  async fromNativeFolderPicker() {
+    const files = await session.pickFolder?.();
+
+    if (!files) {
+      return;
+    }
+
     await this.uploadFolderFiles(files);
   }
 
@@ -249,6 +275,58 @@ export class UploadHandler {
     this.fileDragActive = false;
 
     const batch = await collectDropped(event.dataTransfer);
+    await this.fromDropBatch(batch);
+  }
+
+  /**
+   * Subscribe to Tauri OS file drops. Returns a disposer for `$effect` cleanup.
+   * HTML5 drag events do not fire in the webview while native DnD is on.
+   */
+  attachNativeDrop(canAccept: () => boolean): () => void {
+    const listen = session.listenFileDrop;
+
+    if (!listen) {
+      return () => {};
+    }
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen((event: NativeDropEvent) => {
+      if (!canAccept()) {
+        this.fileDragActive = false;
+        return;
+      }
+
+      if (event.type === "enter") {
+        this.fileDragActive = true;
+        return;
+      }
+
+      if (event.type === "leave") {
+        this.fileDragActive = false;
+        return;
+      }
+
+      this.fileDragActive = false;
+      void this.fromDropBatch(event.batch);
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+        return;
+      }
+
+      unlisten = fn;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+      this.fileDragActive = false;
+    };
+  }
+
+  async fromDropBatch(batch: NativeDropBatch) {
     const uploads = [this.uploadFiles(batch.files)];
 
     for (const files of batch.directories) {

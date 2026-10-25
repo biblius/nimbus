@@ -5,6 +5,9 @@ use uuid::Uuid;
 
 use crate::user::model::User;
 
+/// HttpOnly session cookie name. Fixed so the desktop client and server always agree.
+pub const SESSION_COOKIE_NAME: &str = "nimbus_session";
+
 #[derive(Debug, Clone, FromRow)]
 pub struct SessionRecord {
     pub id: Uuid,

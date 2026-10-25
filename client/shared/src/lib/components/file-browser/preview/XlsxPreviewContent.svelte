@@ -2,16 +2,7 @@
   import { read, utils, type WorkBook } from "xlsx";
   import { cn } from "../../../utils";
 
-  let {
-    url,
-    name,
-    credentials = "omit",
-  }: {
-    url: string;
-    name: string;
-    /** Use `"include"` for authenticated blob routes. */
-    credentials?: RequestCredentials;
-  } = $props();
+  let { load, name }: { load: () => Promise<Blob>; name: string } = $props();
 
   let loading = $state(true);
   let error = $state("");
@@ -46,8 +37,8 @@
   }
 
   $effect(() => {
-    const contentUrl = url;
-    const creds = credentials;
+    const loadBlob = load;
+    const fileName = name;
 
     loading = true;
     error = "";
@@ -58,13 +49,8 @@
 
     let cancelled = false;
 
-    fetch(contentUrl, { credentials: creds })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error("fetch failed");
-        }
-        return res.arrayBuffer();
-      })
+    loadBlob()
+      .then((blob) => blob.arrayBuffer())
       .then((buffer) => {
         if (cancelled) {
           return;
@@ -89,7 +75,7 @@
         if (cancelled) {
           return;
         }
-        error = "Could not load spreadsheet";
+        error = `Could not load ${fileName}`;
         loading = false;
       });
 

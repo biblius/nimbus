@@ -132,17 +132,19 @@
   const isXlsx = $derived(current != null && isXlsxFile(current));
   const isZip = $derived(current != null && isZipFile(current));
   const fileName = $derived(current?.file.name ?? "");
-  /** Inline preview blob URL (original or derived previewBlob). */
-  const contentPreviewUrl = $derived(
-    current
-      ? session.client.contentPreviewUrl(rootId, current.file.id)
-      : "",
-  );
   /** Range-capable stream URL for video / audio. */
   const streamUrl = $derived(
     current ? session.client.contentUrl(rootId, current.file.id) : "",
   );
   let displayName = $state("");
+
+  const previewLoad = $derived.by(() => {
+    const id = current?.file.id;
+    if (id == null) {
+      return () => Promise.reject(new Error("no file"));
+    }
+    return () => session.client.contentPreview(rootId, id);
+  });
 
   // Fit the file name in the header by dynamically computing the width.
   function observeFileName(name: string) {
@@ -578,50 +580,37 @@
     )}
   >
     {#if current && isImage}
-      <ImagePreviewContent
-        url={contentPreviewUrl}
-        name={current.file.name}
-        credentials="include"
-      />
+      <ImagePreviewContent load={previewLoad} name={current.file.name} />
     {:else if current && isVideo}
       <VideoPreviewContent
         src={streamUrl}
         name={current.file.name}
         {autoplay}
-        crossorigin="use-credentials"
+        crossorigin={session.native ? undefined : "use-credentials"}
       />
     {:else if current && isAudio}
       <AudioPreviewContent
         src={streamUrl}
         name={current.file.name}
         {autoplay}
-        crossorigin="use-credentials"
+        crossorigin={session.native ? undefined : "use-credentials"}
       />
     {:else if current && isXlsx}
       {#await import("./preview/XlsxPreviewContent.svelte") then { default: XlsxPreviewContent }}
-        <XlsxPreviewContent
-          url={contentPreviewUrl}
-          name={current.file.name}
-          credentials="include"
-        />
+        <XlsxPreviewContent load={previewLoad} name={current.file.name} />
       {/await}
     {:else if current && isZip}
       {#await import("./preview/ZipPreviewContent.svelte") then { default: ZipPreviewContent }}
-        <ZipPreviewContent
-          url={contentPreviewUrl}
-          name={current.file.name}
-          credentials="include"
-        />
+        <ZipPreviewContent load={previewLoad} name={current.file.name} />
       {/await}
     {:else if current && isText}
       {#await import("./preview/TextPreviewContent.svelte") then { default: TextPreviewContent }}
         <TextPreviewContent
           bind:this={textPreview}
-          url={contentPreviewUrl}
+          load={previewLoad}
           {rootId}
           fileId={current.file.id}
           name={current.file.name}
-          credentials="include"
           {readonly}
           {onUpdated}
           bind:editing
@@ -629,20 +618,12 @@
       {/await}
     {:else if current && isPdf}
       {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
-        <PdfPreviewContent
-          url={contentPreviewUrl}
-          name={current.file.name}
-          credentials="include"
-        />
+        <PdfPreviewContent load={previewLoad} name={current.file.name} />
       {/await}
     {:else if current && isDocx}
       {#if current.metadata?.previewBlob}
         {#await import("./preview/PdfPreviewContent.svelte") then { default: PdfPreviewContent }}
-          <PdfPreviewContent
-            url={contentPreviewUrl}
-            name={current.file.name}
-            credentials="include"
-          />
+          <PdfPreviewContent load={previewLoad} name={current.file.name} />
         {/await}
       {:else}
         <div

@@ -17,16 +17,7 @@
   const LAZY_ROOT_MARGIN = "100% 0px";
   const RENDER_DEBOUNCE_MS = 140;
 
-  let {
-    url,
-    name,
-    credentials = "omit",
-  }: {
-    url: string;
-    name: string;
-    /** Use `"include"` for authenticated blob routes. */
-    credentials?: RequestCredentials;
-  } = $props();
+  let { load, name }: { load: () => Promise<Blob>; name: string } = $props();
 
   let loading = $state(true);
   let error = $state("");
@@ -70,7 +61,8 @@
   });
 
   $effect(() => {
-    const contentUrl = url;
+    const loadBlob = load;
+    const fileName = name;
 
     loading = true;
     error = "";
@@ -85,13 +77,7 @@
     let loadingTask: ReturnType<typeof getDocument> | null = null;
     let doc: PDFDocumentProxy | null = null;
 
-    fetch(contentUrl, { credentials })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error("fetch failed");
-        }
-        return res.blob();
-      })
+    loadBlob()
       .then(async (blob) => {
         if (cancelled) {
           return;
@@ -136,7 +122,7 @@
         if (cancelled) {
           return;
         }
-        error = "Could not load PDF";
+        error = `Could not load ${fileName}`;
         loading = false;
       });
 

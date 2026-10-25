@@ -123,13 +123,16 @@ export class FileDrafts {
       return "The server could not be reached";
     }
     const noun = this.draftKind === "text" ? "file" : "folder";
+    const name = this.directoryName.trim();
     if (cause instanceof ApiError && cause.status === 403) {
       return `You cannot create a ${noun} here`;
     }
     if (cause instanceof ApiError && cause.status === 422) {
       return `That ${noun} name is not allowed`;
     }
-    return `Could not create the ${noun}`;
+    return name
+      ? `Could not create ${name}`
+      : `Could not create the ${noun}`;
   }
 
   /** Append `.txt` when the name has no extension; leave user-provided ones alone. */

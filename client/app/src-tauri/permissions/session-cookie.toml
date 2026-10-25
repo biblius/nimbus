@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-session-cookie"
+description = "Allow setting and clearing the Nimbus session cookie in the webview"
+commands.allow = ["set_session_cookie", "clear_session_cookie"]

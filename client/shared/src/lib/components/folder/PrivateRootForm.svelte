@@ -55,7 +55,7 @@
           ? "The server could not be reached"
           : cause instanceof ApiError && cause.status === 403
             ? cause.message
-            : "Could not save the folder",
+            : `Could not save ${name}`,
       );
     } finally {
       busy = false;

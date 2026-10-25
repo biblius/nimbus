@@ -192,6 +192,8 @@ export interface NimbusApi {
 
   content(rootId: string, id: string): Promise<Blob>;
 
+  contentPreview(rootId: string, id: string): Promise<Blob>;
+
   overwrite(
       rootId: string,
       id: string,
@@ -210,6 +212,8 @@ export interface NimbusApi {
     ): Promise<void>;
 
   sharedContent(fileId: string): Promise<Blob>;
+
+  sharedContentPreview(fileId: string): Promise<Blob>;
 
   sharedDownload(fileId: string, name: string): Promise<void>;
 

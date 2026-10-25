@@ -1,24 +1,26 @@
 <script lang="ts">
   import { Download, Eye, Folder } from "@lucide/svelte";
   import { onDestroy, untrack } from "svelte";
-  import { navigate } from "../../router";
-  import { PreviewQueue } from "../../previewQueue.svelte";
-  import { session } from "../../session.svelte";
-  import { toastError } from "../../toast";
-  import { kv, type FilesViewMode } from "../../storage";
-  import type { SharedFileView } from "../../types";
+  import { navigate } from "@nimbus/shared/router";
+  import { session } from "@nimbus/shared/session";
+  import { toastError } from "@nimbus/shared/toast";
+  import type { SharedFileView } from "@nimbus/shared/types";
+  import { PreviewQueue } from "@nimbus/lib/previewQueue.svelte";
+  import { kv, type FilesViewMode } from "@nimbus/lib/storage";
   import {
     FILE_ICON_CHIP_CLASS,
     fileIconChipStyle,
     hasListThumbnail,
     isPreviewable,
-  } from "../../fileKind";
-  import { formatBytes, formatDatetime } from "../../format";
-  import { cn } from "../../utils";
-  import FilePathCrumbs, { type Crumb } from "./FilePathCrumbs.svelte";
-  import FileTypeIcon from "./FileTypeIcon.svelte";
-  import FileViewModeMenu from "./FileViewModeMenu.svelte";
-  import Button from "../ui/button/button.svelte";
+  } from "@nimbus/lib/fileKind";
+  import { formatBytes, formatDatetime } from "@nimbus/lib/format";
+  import { cn } from "@nimbus/lib/utils";
+  import FilePathCrumbs, {
+    type Crumb,
+  } from "@nimbus/lib/components/file-browser/FilePathCrumbs.svelte";
+  import FileTypeIcon from "@nimbus/lib/components/file-browser/FileTypeIcon.svelte";
+  import FileViewModeMenu from "@nimbus/lib/components/file-browser/FileViewModeMenu.svelte";
+  import Button from "@nimbus/lib/components/ui/button/button.svelte";
 
   /** Guards against cycles / absurd depth when walking ancestors. */
   const MAX_DEPTH = 64;
@@ -176,8 +178,13 @@
           return;
         }
 
+        const folderName =
+          ancestors.find((crumb) => crumb.id === parent)?.name ??
+          ancestors.at(-1)?.name;
         ancestors = [];
-        toastError("Could not open this folder");
+        toastError(
+          folderName ? `Could not open ${folderName}` : "Could not open folder",
+        );
       });
     }
 
@@ -198,10 +205,17 @@
 
       entries = [];
 
+      const folderName =
+        parent === null
+          ? shareRoot.file.name
+          : (ancestors.find((crumb) => crumb.id === parent)?.name ??
+            ancestors.at(-1)?.name ??
+            shareRoot.file.name);
+
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not list this folder",
+          : `Could not list ${folderName}`,
       );
     } finally {
       if (currentLoad === latestLoad) {

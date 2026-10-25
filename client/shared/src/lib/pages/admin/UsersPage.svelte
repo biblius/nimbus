@@ -105,6 +105,7 @@
     }
 
     const userId = deleteUser.id;
+    const username = deleteUser.username;
 
     deleting = true;
 
@@ -126,7 +127,7 @@
           ? "The server could not be reached"
           : cause instanceof ApiError && cause.status === 403
             ? cause.message
-            : "Could not remove user",
+            : `Could not remove ${username}`,
       );
     }
     deleting = false;

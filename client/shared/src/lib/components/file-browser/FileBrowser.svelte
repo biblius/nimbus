@@ -328,7 +328,7 @@
       const entry = listing.entries.find(
         (item) => item.file.id === pendingDelete[0],
       );
-      return `Delete ${entry ? listing.label(entry) : "this item"}?`;
+      return `Delete ${entry ? listing.label(entry) : "item"}?`;
     }
     return `Delete ${pendingDelete.length} items?`;
   });
@@ -421,6 +421,15 @@
   let seenTiles: boolean | undefined;
 
   onDestroy(() => previews.clear());
+
+  // Tauri intercepts OS file drops; wire its events instead of HTML5 DnD.
+  $effect(() => {
+    if (!session.listenFileDrop) {
+      return;
+    }
+
+    return uploads.attachNativeDrop(() => hasWriteAccess(root));
+  });
 
   function onWindowKeydown(event: KeyboardEvent) {
     if (event.key !== "Escape") {
@@ -650,25 +659,27 @@
       <div
         class="relative z-10 flex w-full shrink-0 items-center justify-evenly gap-0.5 rounded-xl border border-border bg-card p-0.5 shadow-sm sm:w-auto sm:justify-start sm:self-start"
       >
-        <input
-          bind:this={fileInput}
-          type="file"
-          class="sr-only"
-          multiple
-          tabindex={-1}
-          aria-hidden="true"
-          onchange={(event) => uploads.fromFileInput(event)}
-        />
-        <input
-          bind:this={folderInput}
-          type="file"
-          class="sr-only"
-          multiple
-          webkitdirectory
-          tabindex={-1}
-          aria-hidden="true"
-          onchange={(event) => uploads.fromFolderInput(event)}
-        />
+        {#if !session.native}
+          <input
+            bind:this={fileInput}
+            type="file"
+            class="sr-only"
+            multiple
+            tabindex={-1}
+            aria-hidden="true"
+            onchange={(event) => uploads.fromFileInput(event)}
+          />
+          <input
+            bind:this={folderInput}
+            type="file"
+            class="sr-only"
+            multiple
+            webkitdirectory
+            tabindex={-1}
+            aria-hidden="true"
+            onchange={(event) => uploads.fromFolderInput(event)}
+          />
+        {/if}
         {#if selection.selectMode}
           <Button
             type="button"
@@ -782,11 +793,23 @@
                 </Button>
               </span>
             {/snippet}
-            <MenuItem onclick={() => fileInput?.click()}>
+            <MenuItem
+              onclick={() =>
+                session.native
+                  ? uploads.fromNativeFilePicker()
+                  : fileInput?.click()
+              }
+            >
               <FileIcon size={15} />
               File
             </MenuItem>
-            <MenuItem onclick={() => folderInput?.click()}>
+            <MenuItem
+              onclick={() =>
+                session.native
+                  ? uploads.fromNativeFolderPicker()
+                  : folderInput?.click()
+              }
+            >
               <Folder size={15} />
               Folder
             </MenuItem>

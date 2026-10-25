@@ -107,7 +107,7 @@
       toastError(
         cause instanceof TypeError
           ? "The server could not be reached"
-          : "Could not remove the folder",
+          : `Could not remove ${folder.name}`,
       );
       deleting = false;
     }

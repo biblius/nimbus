@@ -26,18 +26,6 @@ pub struct StartArgs {
     #[arg(long)]
     cors_allowed_headers: Option<String>,
 
-    /// Name of the session cookie.
-    #[arg(long)]
-    cookie_name: Option<String>,
-
-    /// Domain of the session cookie. Empty keeps the cookie host-only.
-    #[arg(long)]
-    cookie_domain: Option<String>,
-
-    /// Set the session cookie Secure attribute.
-    #[arg(long)]
-    cookie_secure: Option<String>,
-
     /// Database URL.
     #[arg(long)]
     db_url: Option<String>,
@@ -196,10 +184,6 @@ impl StartArgs {
 arg!(log, "RUST_LOG", default "info".to_string());
 arg!(address, "ADDRESS", default "0.0.0.0:8080".to_string());
 
-arg!(cookie_name, "COOKIE_NAME", default "nimbus_session".to_string());
-arg!(cookie_domain, "COOKIE_DOMAIN", default String::new());
-arg!(cookie_secure, "COOKIE_SECURE", default true, bool);
-
 #[cfg(feature = "postgres")]
 arg!(db_url, "DATABASE_URL", panic "Database url not found; Pass --db-url or set DATABASE_URL");
 
@@ -255,19 +239,19 @@ impl fmt::Display for StartArgs {
 
         writeln!(f, "address: {}", self.address())?;
         writeln!(f, "log: {}", self.log())?;
-        writeln!(
-            f,
-            "cors_allowed_origins: {}",
-            self.allowed_origins().join(", ")
-        )?;
-        writeln!(
-            f,
-            "cors_allowed_headers: {}",
-            self.allowed_headers().join(", ")
-        )?;
-        writeln!(f, "cookie_name: {}", self.cookie_name())?;
-        writeln!(f, "cookie_domain: {}", show(&self.cookie_domain()))?;
-        writeln!(f, "cookie_secure: {}", self.cookie_secure())?;
+        #[cfg(debug_assertions)]
+        {
+            writeln!(
+                f,
+                "cors_allowed_origins: {}",
+                self.allowed_origins().join(", ")
+            )?;
+            writeln!(
+                f,
+                "cors_allowed_headers: {}",
+                self.allowed_headers().join(", ")
+            )?;
+        }
         #[cfg(debug_assertions)]
         writeln!(f, "db_url: {}", self.db_url())?;
         writeln!(f, "valkey_url: {}", show(&self.valkey_url()))?;

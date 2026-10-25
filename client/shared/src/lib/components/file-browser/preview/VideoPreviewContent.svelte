@@ -47,7 +47,7 @@
         loading = false;
       }}
       onerror={() => {
-        error = "Could not load video";
+        error = `Could not load ${name}`;
         loading = false;
       }}
     ></video>
