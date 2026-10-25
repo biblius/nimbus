@@ -4,8 +4,8 @@ dist
 
 # Rust build output and generated Tauri files
 target
-client/app/src-tauri/target
-client/app/src-tauri/gen
+client/desktop/src-tauri/target
+client/desktop/src-tauri/gen
 
 package-lock.json
 data

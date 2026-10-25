@@ -11,5 +11,5 @@ npm-debug.log*
 client/**/node_modules
 client/**/dist
 client/**/.svelte-kit
-client/app/src-tauri/target
-client/app/src-tauri/gen
+client/desktop/src-tauri/target
+client/desktop/src-tauri/gen

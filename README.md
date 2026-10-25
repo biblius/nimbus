@@ -13,7 +13,7 @@ Nimbus is a self-hosted file sharing application.
     - [Clients](#clients)
 - [Releases](#releases)
   - [nimbus-server](#nimbus-server)
-  - [Nimbus Tauri app](#nimbus-tauri-app)
+  - [Nimbus desktop](#nimbus-desktop)
 
 ## Development disclaimer (AI LMAO)
 
@@ -163,9 +163,9 @@ in that they are deduplicated.
 
 #### Clients
 
-Clients are further divided into the `web` and `app` directories, intended for web and native devices respectively.
+Clients are further divided into the `web` and `desktop` directories, intended for web and native desktop respectively.
 The `shared` directory contains the code used by both directories - a SPA shell. `web` is built with Vite and
-its `dist` is embedded into `nimbus-server` at compile time. `app` is a Tauri app built with cargo.
+its `dist` is embedded into `nimbus-server` at compile time. `desktop` is a desktop-only Tauri app (no Android/iOS).
 
 ### Testing
 
@@ -222,7 +222,9 @@ Release targets:
 
 Every release will have 2 variants built with `sqlite` and `postgres` as the database engine.
 
-### Nimbus Tauri app
+### Nimbus desktop
+
+Desktop only (Linux, macOS, Windows). Mobile targets are not supported.
 
 Release targets:
 

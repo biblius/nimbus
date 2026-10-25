@@ -1,12 +1,12 @@
 [package]
-name = "nimbus-app"
+name = "nimbus-desktop"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [lib]
-name = "nimbus_app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+name = "nimbus_desktop_lib"
+crate-type = ["cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

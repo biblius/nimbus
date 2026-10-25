@@ -4,7 +4,6 @@ mod session_cookie;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
         Migration {

@@ -39,7 +39,7 @@ services:
       #     VALKEY_URL: redis://valkey:6379
       #     UPLOAD_DIR: /var/lib/nimbus
       #     NIMBUS_ORIGIN: http://localhost:8080
-      #     CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:1420,http://tauri.localhost,https://tauri.localhost,tauri://localhost
+      #     CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:1420,tauri://localhost
       #     SMTP_HOST: ${SMTP_HOST:-}
       #     SMTP_PORT: ${SMTP_PORT:-587}
       #     SMTP_USERNAME: ${SMTP_USERNAME:-}

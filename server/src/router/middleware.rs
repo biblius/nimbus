@@ -30,7 +30,7 @@ pub async fn admin_check(request: Request, next: Next) -> Response {
 
 /// Load the session from the session cookie or an `Authorization: Bearer` token.
 ///
-/// Bearer tokens are how the desktop and mobile clients authenticate across origins.
+/// Bearer tokens are how the desktop client authenticates across origins.
 /// Cookie auth relies on `SameSite`.
 pub async fn session_check(
     axum::extract::State(state): axum::extract::State<AppState>,

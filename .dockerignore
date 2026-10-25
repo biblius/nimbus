@@ -6,11 +6,11 @@ preview
 **/*.db
 **/node_modules
 **/dist
-client/app/src
-client/app/src-tauri
-client/app/index.html
-client/app/vite.config.ts
-client/app/svelte.config.js
-client/app/tsconfig.json
+client/desktop/src
+client/desktop/src-tauri
+client/desktop/index.html
+client/desktop/vite.config.ts
+client/desktop/svelte.config.js
+client/desktop/tsconfig.json
 *.md
 .npm-logs

@@ -40,8 +40,8 @@ pub struct LoginCredentials {
     #[serde(default)]
     pub remember: bool,
 
-    /// Never expire until logout. For native (mobile/desktop)
-    /// clients that store a Bearer token. Web never sets this.
+    /// Never expire until logout. For the native desktop client
+    /// that stores a Bearer token. Web never sets this.
     #[serde(default)]
     pub permanent: bool,
 }

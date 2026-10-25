@@ -30,7 +30,7 @@ import type { UploadProgress } from "./api-errors";
 
 /**
  * Platform API surface implemented by the web and native clients.
- * Concrete clients live in `@nimbus/web` and `@nimbus/app`.
+ * Concrete clients live in `@nimbus/web` and `@nimbus/desktop`.
  */
 export interface NimbusApi {
   login(
