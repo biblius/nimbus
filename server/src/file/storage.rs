@@ -6,10 +6,13 @@ use tokio::{fs::File, io::AsyncWriteExt};
 use uuid::Uuid;
 
 const DATA_DIR: &str = "data";
+const PREVIEW_DIR: &str = "preview";
+const TMP_DIR: &str = "tmp";
 
 /// Content-addressed bytes on the local filesystem.
 ///
 /// Database rows point at these blobs by hash so identical uploads share one file.
+/// Layout under [Self::root] (`UPLOAD_DIR`): `data/`, `preview/`, `tmp/`.
 #[derive(Clone)]
 pub struct Storage {
     /// Root directory of all files stored in Nimbus.
@@ -18,13 +21,9 @@ pub struct Storage {
     root: PathBuf,
 
     /// Directory for generated preview blobs (content-addressed by hash).
-    ///
-    /// See [crate::config::StartArgs::preview_dir]
     preview: PathBuf,
 
     /// Ephemeral files (in-progress uploads, zip archives).
-    ///
-    /// See [crate::config::StartArgs::tmp_dir]
     tmp: PathBuf,
 
     max_bytes: i64,
@@ -81,7 +80,9 @@ pub struct TempFile {
 }
 
 impl Storage {
-    pub fn new(root: PathBuf, preview: PathBuf, tmp: PathBuf, max_bytes: usize) -> Self {
+    pub fn new(root: PathBuf, max_bytes: usize) -> Self {
+        let preview = root.join(PREVIEW_DIR);
+        let tmp = root.join(TMP_DIR);
         Self {
             root,
             preview,

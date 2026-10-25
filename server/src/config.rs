@@ -34,17 +34,9 @@ pub struct StartArgs {
     #[arg(long)]
     valkey_url: Option<String>,
 
-    /// Upload directory where all files end up.
+    /// Root data directory (`data/`, `preview/`, and `tmp/` are created under it).
     #[arg(long)]
     upload_dir: Option<String>,
-
-    /// Directory for generated file previews (content-addressed by hash).
-    #[arg(long)]
-    preview_dir: Option<String>,
-
-    /// Directory for ephemeral files (uploads in progress, zip downloads).
-    #[arg(long)]
-    tmp_dir: Option<String>,
 
     /// Days a soft-deleted file stays recoverable.
     #[arg(long)]
@@ -195,8 +187,6 @@ arg!(
 arg!(valkey_url, "VALKEY_URL", default String::new());
 
 arg!(upload_dir, "UPLOAD_DIR", default "./data".to_string());
-arg!(preview_dir, "PREVIEW_DIR", default "./preview".to_string());
-arg!(tmp_dir, "TMP_DIR", default "./tmp".to_string());
 arg!(file_retention_days, "FILE_RETENTION_DAYS", default 30, u16);
 arg!(
     file_deletion_interval_secs,
@@ -254,8 +244,6 @@ impl fmt::Display for StartArgs {
         writeln!(f, "db_url: {}", self.db_url())?;
         writeln!(f, "valkey_url: {}", show(&self.valkey_url()))?;
         writeln!(f, "upload_dir: {}", self.upload_dir())?;
-        writeln!(f, "preview_dir: {}", self.preview_dir())?;
-        writeln!(f, "tmp_dir: {}", self.tmp_dir())?;
         writeln!(f, "file_retention_days: {}", self.file_retention_days())?;
         writeln!(
             f,

@@ -90,12 +90,7 @@ impl AppState {
             .build()
             .unwrap_or_else(|error| panic!("unable to build WebAuthn: {error}"));
 
-        let storage = Storage::new(
-            args.upload_dir().into(),
-            args.preview_dir().into(),
-            args.tmp_dir().into(),
-            args.upload_max_bytes(),
-        );
+        let storage = Storage::new(args.upload_dir().into(), args.upload_max_bytes());
 
         let email = EmailSender::new(
             args.smtp_host(),

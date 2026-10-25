@@ -203,12 +203,7 @@ async fn build_services(
         "http://localhost",
     );
 
-    let storage = Storage::new(
-        storage_dir.join("storage"),
-        storage_dir.join("preview"),
-        storage_dir.join("tmp"),
-        1024 * 1024,
-    );
+    let storage = Storage::new(storage_dir.join("storage"), 1024 * 1024);
     let repository = Repository::new(pool.clone());
 
     let rp_origin =
