@@ -423,7 +423,7 @@ impl UserRepository {
 
     /// Delete one passkey owned by the user.
     #[instrument(skip(self), fields(user_id = %user_id, passkey_id = %id), err(Debug))]
-    pub async fn delete_passkey(&self, user_id: Uuid, id: i64) -> Result<(), AppError> {
+    pub async fn delete_passkey(&self, user_id: Uuid, id: Uuid) -> Result<(), AppError> {
         let result = sqlx::query!(
             r#"
             DELETE FROM user_passkeys
@@ -464,7 +464,7 @@ impl UserRepository {
             UserPasskey,
             r#"
             SELECT
-                id AS "id!",
+                id AS "id: Uuid",
                 user_id AS "user_id: Uuid",
                 data AS "data: Json<Passkey>",
                 created_at AS "created_at: DateTime<Utc>"
@@ -485,20 +485,22 @@ impl UserRepository {
         user_id: Uuid,
         passkey: Passkey,
     ) -> Result<UserPasskey, AppError> {
+        let id = Uuid::new_v4();
         let now = Utc::now();
         let data = Json(passkey);
 
         sqlx::query_as!(
             UserPasskey,
             r#"
-            INSERT INTO user_passkeys (user_id, data, created_at)
-            VALUES ($1, $2, $3)
+            INSERT INTO user_passkeys (id, user_id, data, created_at)
+            VALUES ($1, $2, $3, $4)
             RETURNING
-                id AS "id!",
+                id AS "id: Uuid",
                 user_id AS "user_id: Uuid",
                 data AS "data: Json<Passkey>",
                 created_at AS "created_at: DateTime<Utc>"
             "#,
+            id,
             user_id,
             data as Json<Passkey>,
             now
@@ -527,7 +529,7 @@ impl UserRepository {
     #[instrument(skip(self, passkey), err(Debug))]
     pub async fn apply_passkey_authentication(
         &self,
-        id: i64,
+        id: Uuid,
         passkey: Passkey,
     ) -> Result<(), AppError> {
         let data = Json(passkey);

@@ -126,7 +126,7 @@ fn strong_password(password: &str) -> Result<(), validify::ValidationError> {
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct UserPasskey {
-    pub id: i64,
+    pub id: Uuid,
     pub user_id: Uuid,
     pub data: Json<Passkey>,
     pub created_at: DateTime<Utc>,
@@ -136,7 +136,7 @@ pub struct UserPasskey {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserPasskeyView {
-    pub id: i64,
+    pub id: Uuid,
     pub created_at: DateTime<Utc>,
     pub algorithm: String,
 }

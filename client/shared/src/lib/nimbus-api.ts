@@ -63,7 +63,7 @@ export interface NimbusApi {
 
   listPasskeys(): Promise<UserPasskeyView[]>;
 
-  deletePasskey(id: number): Promise<void>;
+  deletePasskey(id: string): Promise<void>;
 
   startPasskeySetup(): Promise<PasskeySetupChallenge>;
 

@@ -512,7 +512,7 @@ impl AuthenticationService {
 
     /// Remove one of the signed-in user's registered passkeys.
     #[instrument(skip(self, session), fields(user_id = %session.user.id, passkey_id = %id), err(Debug))]
-    pub async fn delete_passkey(&self, session: &Session, id: i64) -> Result<(), AppError> {
+    pub async fn delete_passkey(&self, session: &Session, id: Uuid) -> Result<(), AppError> {
         self.repo.users.delete_passkey(session.user.id, id).await
     }
 

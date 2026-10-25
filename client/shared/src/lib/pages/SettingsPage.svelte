@@ -35,7 +35,7 @@
   let otpValidation = $state<ValidationError | undefined>();
   let passkeys = $state<UserPasskeyView[]>([]);
   let passkeyBusy = $state(false);
-  let deletePasskeyId = $state<number | null>(null);
+  let deletePasskeyId = $state<string | null>(null);
   let deletingPasskey = $state(false);
 
   let passkeysEnabled = $derived(passkeys.length > 0);

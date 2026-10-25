@@ -273,7 +273,7 @@ export class NimbusClient implements NimbusApi {
     return this.request<UserPasskeyView[]>("/auth/passkeys");
   }
 
-  deletePasskey(id: number): Promise<void> {
+  deletePasskey(id: string): Promise<void> {
     return this.request<void>(`/auth/passkeys/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });

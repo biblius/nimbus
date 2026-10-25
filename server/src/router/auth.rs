@@ -235,7 +235,7 @@ pub(crate) async fn list_passkeys(
 pub(crate) async fn delete_passkey(
     State(state): State<AppState>,
     session: Session,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
     state.services.auth.delete_passkey(&session, id).await?;
     Ok(StatusCode::NO_CONTENT)

@@ -30,7 +30,7 @@ CREATE TABLE sessions (
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);
 
 CREATE TABLE user_passkeys (
-  id BIGSERIAL PRIMARY KEY,
+  id UUID PRIMARY KEY NOT NULL,
   user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   data JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL

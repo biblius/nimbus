@@ -60,7 +60,7 @@ export type OtpSetup = {
 
 /** Passkey row from `GET /auth/passkeys` (no public-key material). */
 export type UserPasskeyView = {
-  id: number;
+  id: string;
   createdAt: string;
   algorithm: string;
 };

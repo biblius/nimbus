@@ -4,7 +4,7 @@
 --
 -- Type mapping (sqlx):
 --   UUID / TIMESTAMPTZ -> BLOB / TEXT
---   BIGINT / BIGSERIAL -> INTEGER (64-bit) / INTEGER AUTOINCREMENT
+--   BIGINT             -> INTEGER (64-bit)
 --   JSONB              -> TEXT
 CREATE TABLE users (
   id BLOB PRIMARY KEY NOT NULL,
@@ -34,7 +34,7 @@ CREATE TABLE sessions (
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);
 
 CREATE TABLE user_passkeys (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id BLOB PRIMARY KEY NOT NULL,
   user_id BLOB NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   data TEXT NOT NULL,
   created_at TEXT NOT NULL

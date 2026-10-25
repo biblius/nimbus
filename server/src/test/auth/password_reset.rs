@@ -243,10 +243,11 @@ mod auth_password_reset {
         // Placeholder JSON is enough for EXISTS / DELETE; never deserialized here.
         sqlx::query(
             r#"
-            INSERT INTO user_passkeys (user_id, data, created_at)
-            VALUES ($1, $2, $3)
+            INSERT INTO user_passkeys (id, user_id, data, created_at)
+            VALUES ($1, $2, $3, $4)
             "#,
         )
+        .bind(Uuid::new_v4())
         .bind(user_id)
         .bind(serde_json::json!({ "test": true }))
         .bind(Utc::now())
