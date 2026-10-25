@@ -97,7 +97,7 @@ impl AppState {
             args.smtp_port(),
             args.smtp_username(),
             args.smtp_password(),
-            args.mail_from_name(),
+            args.email_from(),
             Arc::clone(&nimbus_origin),
         );
 

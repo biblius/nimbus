@@ -67,7 +67,7 @@ pub struct StartArgs {
     smtp_password: Option<String>,
 
     #[arg(long)]
-    mail_from_name: Option<String>,
+    email_from: Option<String>,
 
     /// Public UI origin (scheme + host + optional port). Used for email links,
     /// WebAuthn RP origin, and native passkey handoff. Not the `/api` prefix.
@@ -205,7 +205,7 @@ arg!(smtp_host, "SMTP_HOST", default String::new());
 arg!(smtp_port, "SMTP_PORT", default 587, u16);
 arg!(smtp_username, "SMTP_USERNAME", default String::new());
 arg!(smtp_password, "SMTP_PASSWORD", default String::new());
-arg!(mail_from_name, "MAIL_FROM_NAME", default "Nimbus".to_string());
+arg!(email_from, "EMAIL_FROM", default "Nimbus".to_string());
 arg!(nimbus_origin, "NIMBUS_ORIGIN", default "http://localhost:5173".to_string());
 arg!(webauthn_rp_id, "WEBAUTHN_RP_ID", default String::new());
 
@@ -259,7 +259,7 @@ impl fmt::Display for StartArgs {
         writeln!(f, "smtp_port: {}", self.smtp_port())?;
         writeln!(f, "smtp_username: {}", show(&self.smtp_username()))?;
         writeln!(f, "smtp_password: {}", redact(&self.smtp_password()))?;
-        writeln!(f, "mail_from_name: {}", self.mail_from_name())?;
+        writeln!(f, "email_from: {}", self.email_from())?;
         writeln!(f, "nimbus_origin: {}", self.nimbus_origin())?;
         let rp_id = self.webauthn_rp_id();
         write!(

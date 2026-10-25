@@ -11,7 +11,8 @@ if [[ " $* " == *" -r "* ]]; then
 	docker compose down --volumes
 	docker compose up -d
 	sqlx migrate run --source server/migrations/postgres
-	PGPASSWORD='nimbus' psql -U nimbus -h localhost -p 5434 -f server/seeds/dev.sql
+	# PGPASSWORD='nimbus' psql -U nimbus -h localhost -p 5434 -f server/seeds/dev.sql
+	return 0 2>/dev/null || exit 0
 fi
 
 if [[ " $* " == *" -c "* ]]; then
@@ -27,7 +28,7 @@ if [[ " $* " == *" -c "* ]]; then
 	unset SMTP_PORT
 	unset SMTP_USERNAME
 	unset SMTP_PASSWORD
-	unset MAIL_FROM_NAME
+	unset EMAIL_FROM
 	unset NIMBUS_ORIGIN
 	unset WEBAUTHN_RP_ID
 	echo "Cleaned up environment variables."

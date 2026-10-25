@@ -1,0 +1,12 @@
+[book]
+authors = ["biblius"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Nimbus Hosting Guide"
+
+[build]
+build-dir = "book"
+
+[output.html]
+git-repository-url = "https://github.com/biblius/nimbus"

@@ -44,7 +44,7 @@ services:
       #     SMTP_PORT: ${SMTP_PORT:-587}
       #     SMTP_USERNAME: ${SMTP_USERNAME:-}
       #     SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      #     MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Nimbus}
+      #     EMAIL_FROM: ${EMAIL_FROM:-Nimbus}
       #   ports:
       #     - "8080:8080"
       #   volumes:

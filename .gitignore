@@ -6,6 +6,7 @@
 /node_modules
 .npm-logs/
 npm-debug.log*
+/book/book
 
 client/**/node_modules
 client/**/dist
