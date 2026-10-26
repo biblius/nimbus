@@ -24,11 +24,9 @@ pub async fn set_session_cookie(
 ) -> Result<(), String> {
     // Cookie jar APIs must not run on the async command worker (deadlocks on
     // WebView2; GTK main-iteration must stay on the UI thread via the runtime queue).
-    tauri::async_runtime::spawn_blocking(move || {
-        set_session_cookie_blocking(app, origin, value)
-    })
-    .await
-    .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || set_session_cookie_blocking(app, origin, value))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 fn set_session_cookie_blocking(
@@ -45,11 +43,15 @@ fn set_session_cookie_blocking(
     let cookie = Cookie::build((SESSION_COOKIE_NAME, value))
         .domain(host)
         .path("/")
-        .http_only(true)
-        .secure(true)
-        .same_site(SameSite::None)
-        .max_age(Duration::days(400))
-        .build();
+        .http_only(true);
+
+    #[cfg(debug_assertions)]
+    let cookie = cookie.secure(false).same_site(SameSite::Lax);
+
+    #[cfg(not(debug_assertions))]
+    let cookie = cookie.secure(true).same_site(SameSite::None);
+
+    let cookie = cookie.max_age(Duration::days(400)).build();
 
     let window = app
         .get_webview_window("main")

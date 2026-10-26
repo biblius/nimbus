@@ -127,7 +127,7 @@
 </script>
 
 <Dialog
-  open={true}
+  {open}
   title="Update available"
   description="A newer version of Nimbus is ready to install."
   {busy}
