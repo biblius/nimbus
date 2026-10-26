@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-download"
+description = "Allow streaming authenticated downloads to a user-chosen path"
+commands.allow = ["download_to_path"]

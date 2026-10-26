@@ -1,5 +1,5 @@
-#[cfg(desktop)]
 mod desktop;
+mod download;
 mod session_cookie;
 mod upload;
 
@@ -29,30 +29,23 @@ pub fn run() {
         },
     ];
 
-    let mut builder = tauri::Builder::default();
-
-    #[cfg(desktop)]
-    {
-        builder = builder
-            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-                desktop::show_main_window(app);
-            }))
-            .plugin(tauri_plugin_updater::Builder::new().build())
-            .plugin(tauri_plugin_process::init())
-            .setup(|app| {
-                desktop::setup_tray(app)?;
-                Ok(())
-            })
-            .on_window_event(|window, event| {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    // Keep running in the tray instead of quitting.
-                    let _ = window.hide();
-                    api.prevent_close();
-                }
-            });
-    }
-
-    builder
+    tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            desktop::show_main_window(app);
+        }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .setup(|app| {
+            desktop::setup_tray(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Keep running in the tray instead of quitting.
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_fs::init())
@@ -66,6 +59,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             session_cookie::set_session_cookie,
             session_cookie::clear_session_cookie,
+            download::download_to_path,
             upload::upload_multipart,
             upload::cancel_upload,
         ])

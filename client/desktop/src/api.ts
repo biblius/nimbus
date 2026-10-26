@@ -37,6 +37,7 @@ import {
   type UploadProgress,
 } from "@nimbus/shared/api-errors";
 import type { NimbusApi } from "@nimbus/shared/nimbus-api";
+import { nativeDownloadToPath } from "./native-download";
 import { nativeUploadHttpError, nativeUploadMultipart } from "./native-upload";
 import type { NativeUploadFile } from "./native-types";
 import { clearSessionCookie, setSessionCookie } from "./session-cookie";
@@ -891,34 +892,36 @@ export class NimbusClient implements NimbusNativeApi {
     );
   }
 
-  /** Authenticated download via tauri-http + blob object URL. */
+  /**
+   * Native save dialog + Rust stream-to-disk.
+   * Webview `<a download>` / blob URLs do not save files in Tauri.
+   */
   private async triggerDownload(
     path: string,
     name: string,
     init: RequestInit = {},
   ): Promise<void> {
-    const response = await this.send(path, init);
+    const token =
+      init.credentials === "omit" ? null : (this.accessToken ?? null);
 
-    if (!response.ok) {
-      let body: ErrorBody | null = null;
-      try {
-        body = (await response.json()) as ErrorBody;
-      } catch {
-        body = null;
-      }
-      throw this.httpError(response.status, body, path);
+    const response = await nativeDownloadToPath(
+      `${this.root}${path}`,
+      token,
+      name,
+    );
+
+    // User cancelled the save dialog.
+    if (response === null) {
+      return;
     }
 
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = name;
-    anchor.rel = "noopener";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    if (response.status < 200 || response.status >= 300) {
+      const body =
+        response.body && typeof response.body === "object"
+          ? (response.body as ErrorBody)
+          : null;
+      throw this.httpError(response.status, body, path);
+    }
   }
 
   async download(rootId: string, id: string, name: string): Promise<void> {

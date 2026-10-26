@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "allow-session-cookie",
+    "allow-download",
     "allow-upload",
     "opener:default",
     "dialog:default",
