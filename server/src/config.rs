@@ -191,7 +191,7 @@ arg!(file_retention_days, "FILE_RETENTION_DAYS", default 30, u16);
 arg!(
     file_deletion_interval_secs,
     "FILE_DELETION_INTERVAL_SECS",
-    default 30,
+    default 300,
     u64
 );
 arg!(
