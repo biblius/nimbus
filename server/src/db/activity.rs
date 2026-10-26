@@ -87,23 +87,22 @@ impl ActivityRepository {
             return Ok(List::new(0, Vec::new()));
         }
 
-        let activity = sqlx::query_as!(
-            ActivityRow,
+        let activity = sqlx::query_as::<_, ActivityRow>(
             r#"
             SELECT
-                root_id AS "root_id: Uuid",
+                root_id,
                 username,
-                data AS "data: Json<ActivityData>",
-                created_at AS "created_at: DateTime<Utc>"
+                data,
+                created_at
             FROM root_activity
             WHERE root_id = $1
             ORDER BY created_at DESC, username ASC
             LIMIT $2 OFFSET $3
             "#,
-            root_id,
-            limit,
-            offset,
         )
+        .bind(root_id)
+        .bind(limit)
+        .bind(offset)
         .fetch_all(&self.pool)
         .await?
         .into_iter()

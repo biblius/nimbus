@@ -8,7 +8,7 @@ use validify::{Validate, ValidationError, Validify, field_err};
 use crate::{search_column, sort_column};
 
 /// User row, including secrets. Never serialize this to a client.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct User {
     pub id: Uuid,
     pub username: String,

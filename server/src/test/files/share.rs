@@ -189,15 +189,15 @@ mod share {
         assert!(state.services.share.get(file.id).await.is_ok());
 
         let past = Utc::now() - Duration::hours(1);
-        sqlx::query!(
+        sqlx::query(
             r#"
             UPDATE files
             SET share_expires_at = $1
             WHERE id = $2
             "#,
-            past,
-            file.id
         )
+        .bind(past)
+        .bind(file.id)
         .execute(&state.pool)
         .await
         .unwrap();

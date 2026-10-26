@@ -450,17 +450,16 @@ impl TrashRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn list_trashed_ids(&self, root_id: Uuid) -> Result<Vec<FileRef>, AppError> {
-        sqlx::query_as!(
-            FileRef,
+        sqlx::query_as::<_, FileRef>(
             r#"
             SELECT
-                id AS "id: Uuid",
-                root_id AS "root_id: Uuid"
+                id,
+                root_id
             FROM trashed_files
             WHERE root_id = $1
             "#,
-            root_id
         )
+        .bind(root_id)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)
@@ -473,8 +472,7 @@ impl TrashRepository {
         root_id: Uuid,
         id: Uuid,
     ) -> Result<Vec<FileRef>, AppError> {
-        sqlx::query_as!(
-            FileRef,
+        sqlx::query_as::<_, FileRef>(
             r#"
             WITH RECURSIVE tree AS (
                 SELECT id, root_id
@@ -489,13 +487,13 @@ impl TrashRepository {
                 JOIN tree parent ON child.parent = parent.id
             )
             SELECT
-                id AS "id!: Uuid",
-                root_id AS "root_id!: Uuid"
+                id,
+                root_id
             FROM tree
             "#,
-            id,
-            root_id
         )
+        .bind(id)
+        .bind(root_id)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)
@@ -507,17 +505,16 @@ impl TrashRepository {
         &self,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<FileRef>, AppError> {
-        sqlx::query_as!(
-            FileRef,
+        sqlx::query_as::<_, FileRef>(
             r#"
             SELECT
-                id AS "id: Uuid",
-                root_id AS "root_id: Uuid"
+                id,
+                root_id
             FROM trashed_files
             WHERE trashed_at < $1
             "#,
-            cutoff
         )
+        .bind(cutoff)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)

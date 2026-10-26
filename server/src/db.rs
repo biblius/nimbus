@@ -69,18 +69,26 @@ pub async fn connect(url: &str) -> Result<DbPool, AppError> {
         .connect(url)
         .await?;
 
+    // SQLite allows one writer at a time. A wide pool turns concurrent
+    // service/queue writes into SQLITE_BUSY ("database is locked").
+    // We use a single connection and wait longer if anything else
+    // holds the file.
     #[cfg(feature = "sqlite")]
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(20)
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(30))
         .after_connect(|conn, _| {
             Box::pin(async move {
                 sqlx::query("PRAGMA foreign_keys = ON")
                     .execute(&mut *conn)
                     .await?;
-                sqlx::query("PRAGMA busy_timeout = 5000")
+                sqlx::query("PRAGMA busy_timeout = 30000")
                     .execute(&mut *conn)
                     .await?;
                 sqlx::query("PRAGMA journal_mode = WAL")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("PRAGMA synchronous = NORMAL")
                     .execute(&mut *conn)
                     .await?;
                 Ok(())
@@ -115,21 +123,29 @@ pub async fn connect_with_retry(url: &str) -> DbPool {
 }
 
 pub async fn migrate(pool: &DbPool) -> Result<(), AppError> {
-    let result = {
+    let migrations = {
         #[cfg(feature = "postgres")]
         {
-            sqlx::migrate!("./migrations/postgres").run(pool).await
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/migrations/postgres"))
         }
         #[cfg(feature = "sqlite")]
         {
-            sqlx::migrate!("./migrations/sqlite").run(pool).await
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/migrations/sqlite"))
         }
     };
 
-    result.map_err(|error| {
-        tracing::error!(%error, "database migration failed");
-        AppError::Internal
-    })
+    sqlx::migrate::Migrator::new(migrations)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "failed to load database migrations");
+            AppError::Internal
+        })?
+        .run(pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "database migration failed");
+            AppError::Internal
+        })
 }
 
 #[cfg(feature = "sqlite")]

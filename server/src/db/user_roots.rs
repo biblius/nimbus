@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::{Executor, QueryBuilder};
+use sqlx::{Executor, FromRow, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -11,8 +11,19 @@ use crate::{
         model::{Root, RootAssignment},
     },
     model::{List, PaginationSort, ToSearchColumn},
-    user::model::{AddMember, Member, Role, UserSearch, UserSort},
+    user::model::{AddMember, Member, UserSearch, UserSort},
 };
+
+#[derive(FromRow)]
+struct RootAccessRow {
+    id: Uuid,
+    name: String,
+    quota: i64,
+    owner: Option<Uuid>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    access_mode: Option<AccessMode>,
+}
 
 #[derive(Clone)]
 pub struct UserRootRepository {
@@ -38,7 +49,7 @@ impl UserRootRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO user_roots (
                 root_id,
@@ -49,10 +60,10 @@ impl UserRootRepository {
             ON CONFLICT (root_id, user_id) DO UPDATE SET
                 access_mode = EXCLUDED.access_mode
             "#,
-            assignment.root_id,
-            assignment.user_id,
-            assignment.access_mode as _,
         )
+        .bind(assignment.root_id)
+        .bind(assignment.user_id)
+        .bind(assignment.access_mode)
         .execute(executor)
         .await?;
         Ok(())
@@ -103,24 +114,24 @@ impl UserRootRepository {
         user_id: Uuid,
         root_id: Uuid,
     ) -> Result<Option<(Root, Option<AccessMode>)>, AppError> {
-        let row = sqlx::query!(
+        let row = sqlx::query_as::<_, RootAccessRow>(
             r#"
             SELECT
-                r.id AS "id: Uuid",
+                r.id,
                 r.name,
                 r.quota_bytes AS quota,
-                r.owner AS "owner?: Uuid",
-                r.created_at AS "created_at: DateTime<Utc>",
-                r.updated_at AS "updated_at: DateTime<Utc>",
-                uf.access_mode AS "access_mode?: AccessMode"
+                r.owner,
+                r.created_at,
+                r.updated_at,
+                uf.access_mode
             FROM roots r
             LEFT JOIN user_roots uf
                 ON uf.root_id = r.id AND uf.user_id = $2
             WHERE r.id = $1
             "#,
-            root_id,
-            user_id,
         )
+        .bind(root_id)
+        .bind(user_id)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -141,7 +152,7 @@ impl UserRootRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn can_access(&self, user_id: Uuid, root_id: Uuid) -> Result<bool, AppError> {
-        let found = sqlx::query_scalar!(
+        let found = sqlx::query_scalar::<_, i32>(
             r#"
             SELECT 1
             FROM roots
@@ -155,9 +166,9 @@ impl UserRootRepository {
                 )
             )
             "#,
-            root_id,
-            user_id,
         )
+        .bind(root_id)
+        .bind(user_id)
         .fetch_optional(&self.pool)
         .await?;
         Ok(found.is_some())
@@ -241,23 +252,22 @@ impl UserRootRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn list_users_in(&self, root_id: Uuid) -> Result<Vec<Member>, AppError> {
-        sqlx::query_as!(
-            Member,
+        sqlx::query_as::<_, Member>(
             r#"
             SELECT
-                u.id AS "id: Uuid",
+                u.id,
                 u.username,
                 u.email,
-                u.role AS "role: Role",
-                uf.access_mode AS "access_mode: AccessMode",
-                u.created_at AS "created_at: DateTime<Utc>"
+                u.role,
+                uf.access_mode,
+                u.created_at
             FROM user_roots uf
             JOIN users u ON uf.user_id = u.id
             WHERE root_id = $1
             ORDER BY username
             "#,
-            root_id
         )
+        .bind(root_id)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)

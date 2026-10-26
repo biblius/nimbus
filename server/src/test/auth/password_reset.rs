@@ -47,14 +47,14 @@ mod auth_password_reset {
     }
 
     async fn passkey_enabled(state: &TestState, user_id: Uuid) -> bool {
-        sqlx::query_scalar!(
+        sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS(
                 SELECT 1 FROM user_passkeys WHERE user_id = $1
-            ) AS "exists!: bool"
+            )
             "#,
-            user_id
         )
+        .bind(user_id)
         .fetch_one(&state.pool)
         .await
         .unwrap()

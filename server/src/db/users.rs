@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use sqlx::{Executor, QueryBuilder};
 use tracing::instrument;
 use uuid::Uuid;
@@ -25,11 +25,11 @@ impl UserRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn count(&self) -> Result<i64, AppError> {
-        sqlx::query_scalar!(
+        sqlx::query_scalar::<_, i64>(
             r#"
-            SELECT COUNT(*) AS "count!"
+            SELECT COUNT(*)
             FROM users
-            "#
+            "#,
         )
         .fetch_one(&self.pool)
         .await
@@ -38,13 +38,13 @@ impl UserRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn count_admins(&self) -> Result<i64, AppError> {
-        sqlx::query_scalar!(
+        sqlx::query_scalar::<_, i64>(
             r#"
-            SELECT COUNT(*) AS "count!"
+            SELECT COUNT(*)
             FROM users 
             WHERE role = $1"#,
-            Role::Admin as _
         )
+        .bind(Role::Admin)
         .fetch_one(&self.pool)
         .await
         .map_err(AppError::from)
@@ -52,13 +52,13 @@ impl UserRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn exists(&self, username: &str) -> Result<bool, AppError> {
-        let count = sqlx::query_scalar!(
+        let count = sqlx::query_scalar::<_, i64>(
             r#"
-            SELECT COUNT(*) AS "count!"
+            SELECT COUNT(*)
             FROM users 
             WHERE username = $1"#,
-            username
         )
+        .bind(username)
         .fetch_one(&self.pool)
         .await?;
         Ok(count > 0)
@@ -66,23 +66,22 @@ impl UserRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn get_by_id(&self, id: Uuid) -> Result<User, AppError> {
-        let user = sqlx::query_as!(
-            User,
+        let user = sqlx::query_as::<_, User>(
             r#"
             SELECT
-                id AS "id: Uuid",
+                id,
                 username,
-                password AS "password!",
+                password,
                 email,
-                role AS "role: Role",
+                role,
                 otp_secret,
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                created_at,
+                updated_at
             FROM users
             WHERE id = $1
             "#,
-            id
         )
+        .bind(id)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -94,23 +93,22 @@ impl UserRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn get_by_username(&self, username: &str) -> Result<Option<User>, AppError> {
-        sqlx::query_as!(
-            User,
+        sqlx::query_as::<_, User>(
             r#"
             SELECT
-                id AS "id: Uuid",
+                id,
                 username,
-                password AS "password!",
+                password,
                 email,
-                role AS "role: Role",
+                role,
                 otp_secret,
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                created_at,
+                updated_at
             FROM users
             WHERE username = $1
             "#,
-            username
         )
+        .bind(username)
         .fetch_optional(&self.pool)
         .await
         .map_err(AppError::from)
@@ -118,23 +116,22 @@ impl UserRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn get_by_email(&self, email: &str) -> Result<Option<User>, AppError> {
-        sqlx::query_as!(
-            User,
+        sqlx::query_as::<_, User>(
             r#"
             SELECT
-                id AS "id: Uuid",
+                id,
                 username,
-                password AS "password!",
+                password,
                 email,
-                role AS "role: Role",
+                role,
                 otp_secret,
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                created_at,
+                updated_at
             FROM users
             WHERE email = $1
             "#,
-            email
         )
+        .bind(email)
         .fetch_optional(&self.pool)
         .await
         .map_err(AppError::from)
@@ -217,8 +214,7 @@ impl UserRepository {
     {
         let now = Utc::now();
 
-        sqlx::query_as!(
-            User,
+        sqlx::query_as::<_, User>(
             r#"
             INSERT INTO users (
                 id,
@@ -231,22 +227,22 @@ impl UserRepository {
             )
             VALUES ($1, $2, $3, $4, $5, $6, $6)
             RETURNING
-                id AS "id: Uuid",
+                id,
                 username,
-                password AS "password!",
+                password,
                 email,
-                role AS "role: Role",
+                role,
                 otp_secret,
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                created_at,
+                updated_at
             "#,
-            id,
-            user.username,
-            user.password,
-            user.email,
-            user.role as _,
-            now
         )
+        .bind(id)
+        .bind(&user.username)
+        .bind(&user.password)
+        .bind(&user.email)
+        .bind(user.role)
+        .bind(now)
         .fetch_one(executor)
         .await
         .map_err(AppError::from)
@@ -263,8 +259,7 @@ impl UserRepository {
     ) -> Result<UserView, AppError> {
         let now = Utc::now();
 
-        let user = sqlx::query_as!(
-            User,
+        let user = sqlx::query_as::<_, User>(
             r#"
             UPDATE users
             SET
@@ -275,22 +270,22 @@ impl UserRepository {
                 updated_at = $5
             WHERE id = $6
             RETURNING
-                id AS "id: Uuid",
+                id,
                 username,
-                password AS "password!",
+                password,
                 email,
-                role AS "role: Role",
+                role,
                 otp_secret,
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                created_at,
+                updated_at
             "#,
-            username,
-            email,
-            role as _,
-            password,
-            now,
-            id
         )
+        .bind(username)
+        .bind(email)
+        .bind(role)
+        .bind(password)
+        .bind(now)
+        .bind(id)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -315,7 +310,7 @@ impl UserRepository {
     {
         let now = Utc::now();
 
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             UPDATE users 
             SET 
@@ -323,10 +318,10 @@ impl UserRepository {
                 updated_at = $2 
             WHERE 
                 id = $3"#,
-            password,
-            now,
-            id
         )
+        .bind(password)
+        .bind(now)
+        .bind(id)
         .execute(executor)
         .await?;
 
@@ -341,7 +336,7 @@ impl UserRepository {
     pub async fn update_otp_secret(&self, id: Uuid, secret: &str) -> Result<(), AppError> {
         let now = Utc::now();
 
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             UPDATE users 
             SET 
@@ -350,10 +345,10 @@ impl UserRepository {
             WHERE 
                 id = $3
             "#,
-            secret,
-            now,
-            id
         )
+        .bind(secret)
+        .bind(now)
+        .bind(id)
         .execute(&self.pool)
         .await?;
 
@@ -376,7 +371,7 @@ impl UserRepository {
     {
         let now = Utc::now();
 
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             UPDATE users
             SET
@@ -385,9 +380,9 @@ impl UserRepository {
             WHERE
                 id = $2
             "#,
-            now,
-            id
         )
+        .bind(now)
+        .bind(id)
         .execute(executor)
         .await?;
 
@@ -408,13 +403,13 @@ impl UserRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        sqlx::query!(
+        sqlx::query(
             r#"
             DELETE FROM user_passkeys
             WHERE user_id = $1
             "#,
-            user_id
         )
+        .bind(user_id)
         .execute(executor)
         .await?;
 
@@ -424,14 +419,14 @@ impl UserRepository {
     /// Delete one passkey owned by the user.
     #[instrument(skip(self), fields(user_id = %user_id, passkey_id = %id), err(Debug))]
     pub async fn delete_passkey(&self, user_id: Uuid, id: Uuid) -> Result<(), AppError> {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             DELETE FROM user_passkeys
             WHERE id = $1 AND user_id = $2
             "#,
-            id,
-            user_id
         )
+        .bind(id)
+        .bind(user_id)
         .execute(&self.pool)
         .await?;
 
@@ -447,7 +442,8 @@ impl UserRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        let result = sqlx::query!(r#"DELETE FROM users WHERE id = $1"#, id)
+        let result = sqlx::query(r#"DELETE FROM users WHERE id = $1"#)
+            .bind(id)
             .execute(executor)
             .await?;
 
@@ -460,20 +456,19 @@ impl UserRepository {
 
     #[instrument(skip(self), fields(user_id = %user_id), err(Debug))]
     pub async fn list_passkeys(&self, user_id: Uuid) -> Result<Vec<UserPasskey>, AppError> {
-        sqlx::query_as!(
-            UserPasskey,
+        sqlx::query_as::<_, UserPasskey>(
             r#"
             SELECT
-                id AS "id: Uuid",
-                user_id AS "user_id: Uuid",
-                data AS "data: Json<Passkey>",
-                created_at AS "created_at: DateTime<Utc>"
+                id,
+                user_id,
+                data,
+                created_at
             FROM user_passkeys
             WHERE user_id = $1
             ORDER BY created_at
             "#,
-            user_id
         )
+        .bind(user_id)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)
@@ -489,22 +484,21 @@ impl UserRepository {
         let now = Utc::now();
         let data = Json(passkey);
 
-        sqlx::query_as!(
-            UserPasskey,
+        sqlx::query_as::<_, UserPasskey>(
             r#"
             INSERT INTO user_passkeys (id, user_id, data, created_at)
             VALUES ($1, $2, $3, $4)
             RETURNING
-                id AS "id: Uuid",
-                user_id AS "user_id: Uuid",
-                data AS "data: Json<Passkey>",
-                created_at AS "created_at: DateTime<Utc>"
+                id,
+                user_id,
+                data,
+                created_at
             "#,
-            id,
-            user_id,
-            data as Json<Passkey>,
-            now
         )
+        .bind(id)
+        .bind(user_id)
+        .bind(data)
+        .bind(now)
         .fetch_one(&self.pool)
         .await
         .map_err(AppError::from)
@@ -513,11 +507,11 @@ impl UserRepository {
     /// Whether any account already owns this authenticator credential.
     #[instrument(skip(self, cred_id), err(Debug))]
     pub async fn passkey_cred_id_taken(&self, cred_id: &CredentialID) -> Result<bool, AppError> {
-        let passkeys = sqlx::query_scalar!(
+        let passkeys = sqlx::query_scalar::<_, Json<Passkey>>(
             r#"
-            SELECT data AS "data: Json<Passkey>"
+            SELECT data
             FROM user_passkeys
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await?;
@@ -533,15 +527,15 @@ impl UserRepository {
         passkey: Passkey,
     ) -> Result<(), AppError> {
         let data = Json(passkey);
-        sqlx::query!(
+        sqlx::query(
             r#"
             UPDATE user_passkeys
             SET data = $1
             WHERE id = $2 
             "#,
-            data as Json<Passkey>,
-            id
         )
+        .bind(data)
+        .bind(id)
         .execute(&self.pool)
         .await?;
         Ok(())

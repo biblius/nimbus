@@ -42,8 +42,7 @@ impl SessionRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        sqlx::query_as!(
-            SessionRecord,
+        sqlx::query_as::<_, SessionRecord>(
             r#"
             INSERT INTO sessions (
                 id,
@@ -56,21 +55,21 @@ impl SessionRepository {
             )
             VALUES ($1, $2, $3, $4, $5, $5, $6)
             RETURNING
-                id AS "id: Uuid",
-                user_id AS "user_id: Uuid",
+                id,
+                user_id,
                 remote_address,
                 user_agent,
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>",
-                expires_at AS "expires_at: DateTime<Utc>"
+                created_at,
+                updated_at,
+                expires_at
             "#,
-            session.id,
-            session.user_id,
-            session.remote_address,
-            session.user_agent,
-            session.now,
-            session.expires_at,
         )
+        .bind(session.id)
+        .bind(session.user_id)
+        .bind(session.remote_address)
+        .bind(session.user_agent)
+        .bind(session.now)
+        .bind(session.expires_at)
         .fetch_one(executor)
         .await
         .map_err(AppError::from)
@@ -78,22 +77,21 @@ impl SessionRepository {
 
     #[instrument(skip_all, err(Debug))]
     pub async fn get(&self, id: Uuid) -> Result<Option<SessionRecord>, AppError> {
-        sqlx::query_as!(
-            SessionRecord,
+        sqlx::query_as::<_, SessionRecord>(
             r#"
             SELECT
-                id AS "id: Uuid",
-                user_id AS "user_id: Uuid",
+                id,
+                user_id,
                 remote_address,
                 user_agent,
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>",
-                expires_at AS "expires_at: DateTime<Utc>"
+                created_at,
+                updated_at,
+                expires_at
             FROM sessions
             WHERE id = $1
             "#,
-            id
         )
+        .bind(id)
         .fetch_optional(&self.pool)
         .await
         .map_err(AppError::from)
@@ -104,26 +102,25 @@ impl SessionRepository {
     pub async fn list_live_for_user(&self, user_id: Uuid) -> Result<Vec<SessionRecord>, AppError> {
         let now = Utc::now();
 
-        sqlx::query_as!(
-            SessionRecord,
+        sqlx::query_as::<_, SessionRecord>(
             r#"
             SELECT
-                id AS "id: Uuid",
-                user_id AS "user_id: Uuid",
+                id,
+                user_id,
                 remote_address,
                 user_agent,
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>",
-                expires_at AS "expires_at: DateTime<Utc>"
+                created_at,
+                updated_at,
+                expires_at
             FROM sessions
             WHERE
                 user_id = $1
             AND (expires_at IS NULL OR expires_at > $2)
             ORDER BY created_at DESC
             "#,
-            user_id,
-            now,
         )
+        .bind(user_id)
+        .bind(now)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)
@@ -133,7 +130,7 @@ impl SessionRepository {
     pub async fn expire(&self, id: Uuid) -> Result<(), AppError> {
         let now = Utc::now();
 
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             UPDATE sessions 
             SET 
@@ -141,9 +138,9 @@ impl SessionRepository {
                 updated_at = $1 
             WHERE id = $2
             "#,
-            now,
-            id
         )
+        .bind(now)
+        .bind(id)
         .execute(&self.pool)
         .await?;
 
@@ -160,7 +157,8 @@ impl SessionRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        let result = sqlx::query!(r#"DELETE FROM sessions WHERE id = $1"#, id)
+        let result = sqlx::query(r#"DELETE FROM sessions WHERE id = $1"#)
+            .bind(id)
             .execute(executor)
             .await?;
 
@@ -183,7 +181,7 @@ impl SessionRepository {
     {
         let now = Utc::now();
 
-        sqlx::query!(
+        sqlx::query(
             r#"
             UPDATE sessions
             SET 
@@ -193,9 +191,9 @@ impl SessionRepository {
                 user_id = $2 
             AND (expires_at IS NULL OR expires_at > $1)
             "#,
-            now,
-            user_id
         )
+        .bind(now)
+        .bind(user_id)
         .execute(executor)
         .await?;
 
@@ -206,7 +204,7 @@ impl SessionRepository {
     pub async fn expire_others(&self, user_id: Uuid, keep: Uuid) -> Result<(), AppError> {
         let now = Utc::now();
 
-        sqlx::query!(
+        sqlx::query(
             r#"
             UPDATE sessions
             SET 
@@ -217,10 +215,10 @@ impl SessionRepository {
             AND id != $3 
             AND (expires_at IS NULL OR expires_at > $1)
             "#,
-            now,
-            user_id,
-            keep,
         )
+        .bind(now)
+        .bind(user_id)
+        .bind(keep)
         .execute(&self.pool)
         .await?;
 

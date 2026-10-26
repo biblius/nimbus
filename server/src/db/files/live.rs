@@ -11,7 +11,7 @@ use crate::{
         tree::FileEntryTree,
     },
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use sqlx::{Executor, FromRow, QueryBuilder};
 use std::collections::{HashMap, HashSet};
 use tracing::instrument;
@@ -53,8 +53,7 @@ impl FileRepository {
     {
         let now = Utc::now();
 
-        sqlx::query_as!(
-            Root,
+        sqlx::query_as::<_, Root>(
             r#"
             INSERT INTO roots (
                 id,
@@ -66,19 +65,19 @@ impl FileRepository {
             )
             VALUES ($1, $2, $3, $4, $5, $5)
             RETURNING 
-                id AS "id: Uuid",
+                id,
                 name,
                 quota_bytes AS quota,
-                owner AS "owner?: Uuid",
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                owner,
+                created_at,
+                updated_at
             "#,
-            id,
-            name,
-            quota,
-            owner,
-            now
         )
+        .bind(id)
+        .bind(name)
+        .bind(quota)
+        .bind(owner)
+        .bind(now)
         .fetch_one(executor)
         .await
         .map_err(AppError::from)
@@ -88,23 +87,22 @@ impl FileRepository {
     pub async fn list_private_roots(&self) -> Result<Vec<RootView>, AppError> {
         let full = AccessMode::FULL;
 
-        sqlx::query_as!(
-            RootView,
+        sqlx::query_as::<_, RootView>(
             r#"
             SELECT
-                id AS "id: Uuid",
+                id,
                 name,
                 quota_bytes AS quota,
-                owner AS "owner?: Uuid",
-                $1 AS "access_mode!: AccessMode",
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                owner,
+                $1 AS access_mode,
+                created_at,
+                updated_at
             FROM roots
             WHERE owner IS NOT NULL
             ORDER BY name
             "#,
-            full as _
         )
+        .bind(full)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)
@@ -114,23 +112,22 @@ impl FileRepository {
     pub async fn list_shared_roots(&self) -> Result<Vec<RootView>, AppError> {
         let full = AccessMode::FULL;
 
-        sqlx::query_as!(
-            RootView,
+        sqlx::query_as::<_, RootView>(
             r#"
             SELECT
-                id AS "id: Uuid",
+                id,
                 name,
                 quota_bytes AS quota,
-                owner AS "owner?: Uuid",
-                $1 AS "access_mode!: AccessMode",
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                owner,
+                $1 AS access_mode,
+                created_at,
+                updated_at
             FROM roots
             WHERE owner IS NULL
             ORDER BY name
             "#,
-            full as _
         )
+        .bind(full)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)
@@ -141,20 +138,19 @@ impl FileRepository {
     pub async fn list_accessible_roots(&self, user_id: Uuid) -> Result<Vec<RootView>, AppError> {
         let full = AccessMode::FULL;
 
-        sqlx::query_as!(
-            RootView,
+        sqlx::query_as::<_, RootView>(
             r#"
             SELECT
-                r.id AS "id: Uuid",
+                r.id,
                 r.name,
                 r.quota_bytes AS quota,
-                r.owner AS "owner?: Uuid",
+                r.owner,
                 CASE
                     WHEN r.owner = $1 THEN $2
                     ELSE uf.access_mode
-                END AS "access_mode!: AccessMode",
-                r.created_at AS "created_at: DateTime<Utc>",
-                r.updated_at AS "updated_at: DateTime<Utc>"
+                END AS access_mode,
+                r.created_at,
+                r.updated_at
             FROM roots r
             LEFT JOIN user_roots uf
                 ON uf.root_id = r.id AND uf.user_id = $1
@@ -162,9 +158,9 @@ impl FileRepository {
                OR uf.user_id IS NOT NULL
             ORDER BY r.owner IS NULL, r.name
             "#,
-            user_id,
-            full as _
         )
+        .bind(user_id)
+        .bind(full)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)
@@ -194,8 +190,7 @@ impl FileRepository {
     {
         let now = Utc::now();
 
-        sqlx::query_as!(
-            Root,
+        sqlx::query_as::<_, Root>(
             r#"
             UPDATE roots
             SET
@@ -204,18 +199,18 @@ impl FileRepository {
                 updated_at = $3
             WHERE id = $4
             RETURNING
-                id AS "id: Uuid",
+                id,
                 name,
                 quota_bytes AS quota,
-                owner AS "owner?: Uuid",
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                owner,
+                created_at,
+                updated_at
             "#,
-            name,
-            quota_bytes,
-            now,
-            id
         )
+        .bind(name)
+        .bind(quota_bytes)
+        .bind(now)
+        .bind(id)
         .fetch_optional(executor)
         .await?
         .ok_or_else(|| AppError::ResourceMissing("Folder does not exist".into()))
@@ -225,7 +220,7 @@ impl FileRepository {
     pub async fn set_quota(&self, root_id: Uuid, quota_bytes: i64) -> Result<(), AppError> {
         let now = Utc::now();
 
-        let updated = sqlx::query!(
+        let updated = sqlx::query(
             r#"
             UPDATE roots
             SET
@@ -233,10 +228,10 @@ impl FileRepository {
                 updated_at = $2
             WHERE id = $3
             "#,
-            quota_bytes,
-            now,
-            root_id
         )
+        .bind(quota_bytes)
+        .bind(now)
+        .bind(root_id)
         .execute(&self.pool)
         .await?
         .rows_affected();
@@ -250,19 +245,18 @@ impl FileRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn get_root(&self, id: Uuid) -> Result<Option<Root>, AppError> {
-        sqlx::query_as!(
-            Root,
+        sqlx::query_as::<_, Root>(
             r#"
             SELECT
-                id AS "id: Uuid",
+                id,
                 name,
                 quota_bytes AS quota,
-                owner AS "owner?: Uuid",
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                owner,
+                created_at,
+                updated_at
             FROM roots WHERE id = $1"#,
-            id
         )
+        .bind(id)
         .fetch_optional(&self.pool)
         .await
         .map_err(AppError::from)
@@ -270,10 +264,10 @@ impl FileRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn get_parent_name(&self, root_id: Uuid, id: Uuid) -> Result<String, AppError> {
-        sqlx::query_scalar!(
+        sqlx::query_scalar::<_, String>(
             r#"
             SELECT 
-                COALESCE(parent_file.name, roots.name) AS "name!"
+                COALESCE(parent_file.name, roots.name)
             FROM files AS child
             LEFT JOIN files AS parent_file
               ON parent_file.id = child.parent
@@ -284,9 +278,9 @@ impl FileRepository {
                 child.root_id = $1
             AND child.id = $2
             "#,
-            root_id,
-            id
         )
+        .bind(root_id)
+        .bind(id)
         .fetch_one(&self.pool)
         .await
         .map_err(AppError::from)
@@ -294,21 +288,20 @@ impl FileRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn get_private_root(&self, user_id: Uuid) -> Result<Root, AppError> {
-        sqlx::query_as!(
-            Root,
+        sqlx::query_as::<_, Root>(
             r#"
             SELECT
-                id AS "id: Uuid",
+                id,
                 name,
                 quota_bytes AS quota,
-                owner AS "owner?: Uuid",
-                created_at AS "created_at: DateTime<Utc>",
-                updated_at AS "updated_at: DateTime<Utc>"
+                owner,
+                created_at,
+                updated_at
             FROM roots
             WHERE owner = $1
             "#,
-            user_id
         )
+        .bind(user_id)
         .fetch_one(&self.pool)
         .await
         .map_err(AppError::from)
@@ -317,14 +310,14 @@ impl FileRepository {
     /// Quota on this user's assignment. `0` is unlimited.
     #[instrument(skip(self), err(Debug))]
     pub async fn root_quota(&self, root_id: Uuid) -> Result<i64, AppError> {
-        sqlx::query_scalar!(
+        sqlx::query_scalar::<_, i64>(
             r#"
             SELECT quota_bytes 
             FROM roots 
             WHERE id = $1 
             "#,
-            root_id
         )
+        .bind(root_id)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| {
@@ -335,14 +328,14 @@ impl FileRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn get_file_name(&self, root_id: Uuid, id: Uuid) -> Result<String, AppError> {
-        sqlx::query_scalar!(
+        sqlx::query_scalar::<_, String>(
             r#"
             SELECT name FROM files
             WHERE root_id = $1 AND id = $2
             "#,
-            root_id,
-            id
         )
+        .bind(root_id)
+        .bind(id)
         .fetch_one(&self.pool)
         .await
         .map_err(AppError::from)
@@ -795,15 +788,15 @@ impl FileRepository {
     /// Bytes stored in a root. Directory rows are excluded.
     #[instrument(skip(self), err(Debug))]
     pub async fn root_quota_usage(&self, root_id: Uuid) -> Result<i64, AppError> {
-        sqlx::query_scalar!(
+        sqlx::query_scalar::<_, i64>(
             r#"
-            SELECT CAST(COALESCE(SUM(size_bytes), 0) AS BIGINT) AS "usage!"
+            SELECT CAST(COALESCE(SUM(size_bytes), 0) AS BIGINT)
             FROM files
             WHERE root_id = $1
               AND "type" = 'f'
             "#,
-            root_id
         )
+        .bind(root_id)
         .fetch_one(&self.pool)
         .await
         .map_err(AppError::from)
@@ -819,16 +812,16 @@ impl FileRepository {
     ) -> Result<(), AppError> {
         let now = Utc::now();
 
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             UPDATE files
             SET updated_at = $3
             WHERE root_id = $1 AND id = $2
             "#,
-            root_id,
-            file_id,
-            now
         )
+        .bind(root_id)
+        .bind(file_id)
+        .bind(now)
         .execute(&self.pool)
         .await?;
 
@@ -836,7 +829,7 @@ impl FileRepository {
             return Err(AppError::ResourceMissing("File does not exist".into()));
         }
 
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO file_metadata (file_id, preview_64, preview_256, preview_blob)
             VALUES ($1, $2, $3, $4)
@@ -845,11 +838,11 @@ impl FileRepository {
                 preview_256 = EXCLUDED.preview_256,
                 preview_blob = EXCLUDED.preview_blob
             "#,
-            file_id,
-            metadata.preview_64,
-            metadata.preview_256,
-            metadata.preview_blob
         )
+        .bind(file_id)
+        .bind(&metadata.preview_64)
+        .bind(&metadata.preview_256)
+        .bind(&metadata.preview_blob)
         .execute(&self.pool)
         .await?;
 
@@ -937,15 +930,15 @@ impl FileRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        sqlx::query_scalar!(
+        sqlx::query_scalar::<_, i64>(
             r#"
             SELECT (
                 (SELECT COUNT(*) FROM files WHERE hash = $1) +
                 (SELECT COUNT(*) FROM trashed_files WHERE hash = $1)
-            ) AS "count!"
+            )
             "#,
-            hash
         )
+        .bind(hash)
         .fetch_one(executor)
         .await
         .map_err(AppError::from)
@@ -1287,12 +1280,12 @@ impl FileRepository {
     where
         E: Executor<'e, Database = Db>,
     {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             DELETE FROM roots WHERE id = $1
             "#,
-            id
         )
+        .bind(id)
         .execute(executor)
         .await?;
 
@@ -1305,17 +1298,16 @@ impl FileRepository {
 
     #[instrument(skip(self), err(Debug))]
     pub async fn list_file_ids(&self, root_id: Uuid) -> Result<Vec<FileRef>, AppError> {
-        sqlx::query_as!(
-            FileRef,
+        sqlx::query_as::<_, FileRef>(
             r#"
             SELECT
-                id AS "id: Uuid",
-                root_id AS "root_id: Uuid"
+                id,
+                root_id
             FROM files
             WHERE root_id = $1
             "#,
-            root_id
         )
+        .bind(root_id)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::from)

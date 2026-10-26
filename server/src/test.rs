@@ -60,10 +60,10 @@ pub struct TestState {
 
 impl TestState {
     pub async fn init() -> Self {
-        // let _ = tracing_subscriber::fmt()
-        //     .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        //     .with_test_writer()
-        //     .try_init();
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
 
         let storage_dir =
             std::env::temp_dir().join(format!("nimbus-{uuid}", uuid = Uuid::new_v4()));
@@ -372,7 +372,7 @@ pub fn blob_count(dir: &Path) -> usize {
 }
 
 pub fn preview_count(dir: &Path) -> usize {
-    let root = dir.join("preview");
+    let root = dir.join("storage").join("preview");
     if !root.exists() {
         return 0;
     }
@@ -380,7 +380,7 @@ pub fn preview_count(dir: &Path) -> usize {
 }
 
 pub fn preview_path(dir: &Path, hash: &str) -> PathBuf {
-    dir.join("preview").join(hash)
+    dir.join("storage").join("preview").join(hash)
 }
 
 fn walk(path: &Path) -> usize {

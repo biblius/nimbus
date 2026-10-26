@@ -246,7 +246,7 @@ impl FileEntry {
 }
 
 /// A file id used when submitting hard deletes.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, FromRow)]
 pub struct FileRef {
     pub id: Uuid,
     pub root_id: Uuid,
@@ -298,7 +298,7 @@ impl<'r> Decode<'r, Db> for FileKind {
 }
 
 /// A private or shared root folder. `owner` is set only for a private root.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct Root {
     pub id: Uuid,
@@ -311,7 +311,7 @@ pub struct Root {
 }
 
 /// A root as returned to a client. `owner` is set only for a private root.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct RootView {
     pub id: Uuid,
