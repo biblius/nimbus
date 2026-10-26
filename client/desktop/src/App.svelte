@@ -15,9 +15,8 @@
     saveEndpoint,
   } from "./settings";
   import { NimbusClient } from "./api";
-  import { listenNativeFileDrop } from "./native-file-drop";
-  import { pickNativeFiles, pickNativeFolder } from "./native-file-pick";
   import { setSessionCookie } from "./session-cookie";
+  import { UploadHandler } from "./uploadHandler.svelte";
   import UpdatePrompt from "./UpdatePrompt.svelte";
 
   // Native never registers public share viewer routes.
@@ -96,9 +95,7 @@
 
     const { openUrl } = await import("@tauri-apps/plugin-opener");
     session.openExternalUrl = (url) => openUrl(url);
-    session.listenFileDrop = listenNativeFileDrop;
-    session.pickFiles = pickNativeFiles;
-    session.pickFolder = pickNativeFolder;
+    session.createUploadHandler = (opts) => new UploadHandler(opts);
 
     ready = true;
   });

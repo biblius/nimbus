@@ -1,6 +1,7 @@
 #[cfg(desktop)]
 mod desktop;
 mod session_cookie;
+mod upload;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -61,9 +62,12 @@ pub fn run() {
                 .add_migrations("sqlite:nimbus.db", migrations)
                 .build(),
         )
+        .manage(upload::UploadRegistry::new())
         .invoke_handler(tauri::generate_handler![
             session_cookie::set_session_cookie,
             session_cookie::clear_session_cookie,
+            upload::upload_multipart,
+            upload::cancel_upload,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nimbus");

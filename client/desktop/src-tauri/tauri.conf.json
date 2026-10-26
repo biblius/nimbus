@@ -34,6 +34,9 @@
     ]
   },
   "plugins": {
+    "fs": {
+      "requireLiteralLeadingDot": false
+    },
     "sql": {
       "preload": ["sqlite:nimbus.db"]
     },

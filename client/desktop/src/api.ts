@@ -37,6 +37,8 @@ import {
   type UploadProgress,
 } from "@nimbus/shared/api-errors";
 import type { NimbusApi } from "@nimbus/shared/nimbus-api";
+import { nativeUploadHttpError, nativeUploadMultipart } from "./native-upload";
+import type { NativeUploadFile } from "./native-types";
 import { clearSessionCookie, setSessionCookie } from "./session-cookie";
 
 export {
@@ -51,6 +53,8 @@ export {
   type UploadProgress,
 } from "@nimbus/shared/api-errors";
 
+export type { NativeUploadFile } from "./native-types";
+
 export type NimbusClientOptions = {
   /** Called when a response indicates the session is no longer valid. */
   onUnauthorized?: () => void;
@@ -61,10 +65,31 @@ export type NimbusClientOptions = {
 };
 
 /**
- * Native Tauri API client. Uses `@tauri-apps/plugin-http` and Bearer auth.
- * Same method surface as the web `NimbusClient`.
+ * Desktop extensions on top of the shared {@link NimbusApi}.
+ * Path uploads stream from disk with byte progress via a Tauri command.
  */
-export class NimbusClient implements NimbusApi {
+export interface NimbusNativeApi extends NimbusApi {
+  uploadPaths(
+    rootId: string,
+    parent: string | null,
+    files: NativeUploadFile[],
+    onProgress?: UploadProgress,
+    signal?: AbortSignal,
+  ): Promise<FileEntry>;
+
+  uploadDirPaths(
+    rootId: string,
+    parent: string | null,
+    files: NativeUploadFile[],
+    onProgress?: UploadProgress,
+    signal?: AbortSignal,
+  ): Promise<FileEntry[]>;
+}
+
+/**
+ * Native Tauri API client. Uses `@tauri-apps/plugin-http` and Bearer auth.
+ */
+export class NimbusClient implements NimbusNativeApi {
   private readonly root: string;
   private readonly onUnauthorized?: () => void;
   private readonly onAccessTokenChange?: (
@@ -440,7 +465,7 @@ export class NimbusClient implements NimbusApi {
     );
   }
 
-  /** Upload one file. `onProgress` reports bytes sent so far and the total body size. */
+  /** Upload one file. Prefer `uploadPaths` on desktop for progress. */
   upload(
     rootId: string,
     parent: string | null,
@@ -472,8 +497,7 @@ export class NimbusClient implements NimbusApi {
   }
 
   /**
-   * Upload a directory tree. Each file's `webkitRelativePath` is sent as the
-   * multipart filename so the server can recreate folders.
+   * Upload a directory tree. Prefer `uploadDirPaths` on desktop for progress.
    */
   uploadDir(
     rootId: string,
@@ -510,7 +534,114 @@ export class NimbusClient implements NimbusApi {
     );
   }
 
-  /** Multipart upload via tauri-http (no XHR / CORS). */
+  /**
+   * Stream filesystem paths as a single-file upload with byte progress.
+   * Uses the Rust multipart command (no XHR / CORS).
+   */
+  async uploadPaths(
+    rootId: string,
+    parent: string | null,
+    files: NativeUploadFile[],
+    onProgress?: UploadProgress,
+    signal?: AbortSignal,
+  ): Promise<FileEntry> {
+    if (files.length === 0) {
+      throw new ApiError(422, {
+        message: "File is required",
+        code: 0,
+        body: null,
+      });
+    }
+
+    const path = `/roots/${encodeURIComponent(rootId)}`;
+    const response = await this.nativeMultipart(
+      path,
+      parent,
+      files,
+      onProgress,
+      signal,
+    );
+
+    if (response.status < 200 || response.status >= 300) {
+      throw this.nativeHttpError(response.status, response.body, path);
+    }
+
+    if (Array.isArray(response.body) && response.body[0]) {
+      const total = files.reduce((sum, file) => sum + file.size, 0);
+      onProgress?.(total, total);
+      return response.body[0] as FileEntry;
+    }
+
+    throw this.nativeHttpError(response.status, response.body, path);
+  }
+
+  /**
+   * Stream a directory tree (relative `name`s) via `/upload/dir` with progress.
+   */
+  async uploadDirPaths(
+    rootId: string,
+    parent: string | null,
+    files: NativeUploadFile[],
+    onProgress?: UploadProgress,
+    signal?: AbortSignal,
+  ): Promise<FileEntry[]> {
+    if (files.length === 0) {
+      return [];
+    }
+
+    const path = `/roots/${encodeURIComponent(rootId)}/upload/dir`;
+    const response = await this.nativeMultipart(
+      path,
+      parent,
+      files,
+      onProgress,
+      signal,
+    );
+
+    if (response.status < 200 || response.status >= 300) {
+      throw this.nativeHttpError(response.status, response.body, path);
+    }
+
+    if (Array.isArray(response.body)) {
+      const total = files.reduce((sum, file) => sum + file.size, 0);
+      onProgress?.(total, total);
+      return response.body as FileEntry[];
+    }
+
+    throw this.nativeHttpError(response.status, response.body, path);
+  }
+
+  private async nativeMultipart(
+    path: string,
+    parent: string | null,
+    files: NativeUploadFile[],
+    onProgress: UploadProgress | undefined,
+    signal: AbortSignal | undefined,
+  ) {
+    const token = this.accessToken;
+    if (!token) {
+      throw this.httpError(401, null, path, "POST");
+    }
+
+    return nativeUploadMultipart(
+      `${this.root}${path}`,
+      token,
+      parent,
+      files,
+      onProgress,
+      signal,
+    );
+  }
+
+  private nativeHttpError(status: number, body: unknown, path: string): Error {
+    if (status === 401 && !isAuthChallenge(path, "POST")) {
+      void this.setAccessToken(null);
+      return nativeUploadHttpError(status, body, this.onUnauthorized);
+    }
+    return nativeUploadHttpError(status, body);
+  }
+
+  /** Multipart upload via tauri-http (no progress; legacy File-based path). */
   private async uploadForm<T>(
     path: string,
     body: FormData,
@@ -531,9 +662,7 @@ export class NimbusClient implements NimbusApi {
     let payload: ErrorBody | null = null;
     try {
       payload =
-        response.status === 204
-          ? null
-          : ((await response.json()) as ErrorBody);
+        response.status === 204 ? null : ((await response.json()) as ErrorBody);
     } catch {
       payload = null;
     }
@@ -628,11 +757,7 @@ export class NimbusClient implements NimbusApi {
   }
 
   /** Mark live files (and descendants, for directories) as publicly shared. */
-  shareFiles(
-    rootId: string,
-    ids: string[],
-    input: ShareFile,
-  ): Promise<void> {
+  shareFiles(rootId: string, ids: string[], input: ShareFile): Promise<void> {
     return this.request<void>(
       `/roots/${encodeURIComponent(rootId)}/files/share`,
       {
@@ -864,11 +989,7 @@ export class NimbusClient implements NimbusApi {
     );
   }
 
-  async icon(
-    rootId: string,
-    id: string,
-    size: 64 | 256 = 64,
-  ): Promise<Blob> {
+  async icon(rootId: string, id: string, size: 64 | 256 = 64): Promise<Blob> {
     const path = `/roots/${encodeURIComponent(rootId)}/files/${encodeURIComponent(id)}/icon?size=${size}`;
     const response = await this.send(path);
 
@@ -1069,12 +1190,7 @@ export class NimbusClient implements NimbusApi {
       } catch {
         body = null;
       }
-      throw this.httpError(
-        response.status,
-        body,
-        path,
-        init.method ?? "GET",
-      );
+      throw this.httpError(response.status, body, path, init.method ?? "GET");
     }
 
     if (response.status === 204) {

@@ -29,8 +29,8 @@ import type {
 import type { UploadProgress } from "./api-errors";
 
 /**
- * Platform API surface implemented by the web and native clients.
- * Concrete clients live in `@nimbus/web` and `@nimbus/desktop`.
+ * Shared API surface used by both clients.
+ * Platform extras live on `NimbusWebApi` / `NimbusNativeApi` in each app.
  */
 export interface NimbusApi {
   login(

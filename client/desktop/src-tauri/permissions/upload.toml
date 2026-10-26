@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-upload"
+description = "Allow multipart file uploads with progress and cancel"
+commands.allow = ["upload_multipart", "cancel_upload"]

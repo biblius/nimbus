@@ -5,6 +5,7 @@
   import { toastOptions } from "@nimbus/shared/toast";
   import { Router } from "sv-router";
   import { NimbusClient } from "./api";
+  import { UploadHandler } from "./uploadHandler.svelte";
 
   initRouter({
     // Public shared files. No session required, so these sit outside SessionApp.
@@ -21,6 +22,7 @@
   session.client = new NimbusClient(apiUrl, {
     onUnauthorized: clearSession,
   });
+  session.createUploadHandler = (opts) => new UploadHandler(opts);
 </script>
 
 <SvelteToast options={toastOptions} />

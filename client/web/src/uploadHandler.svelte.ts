@@ -1,31 +1,16 @@
-import { ApiError } from "./api-errors";
 import {
-  session,
-  type NativeDropBatch,
-  type NativeDropEvent,
-} from "./session.svelte";
-import type { FileEntry } from "./types";
+  applyUploadFailure,
+  pendingUploadPercent,
+  type PendingUpload,
+  type UploadHandlerOptions,
+} from "@nimbus/shared/pending-upload";
+import { session } from "@nimbus/shared/session";
 
 /// How many files are sent at the same time.
 const PARALLEL_UPLOADS = 10;
 
-export type PendingUpload = {
-  id: number;
-  name: string;
-  loaded: number;
-  total: number;
-  error: string;
-};
-
-export type UploadHandlerOptions = {
-  rootId: () => string;
-  locationId: () => string | null;
-  onCreated: (entry: FileEntry) => void;
-};
-
 /**
- * Queued file/folder uploads with progress, abort, and OS drag-drop.
- * One instance per FileBrowser mount.
+ * Browser uploads: `File` / FormData via XHR progress, HTML5 drag-drop.
  */
 export class UploadHandler {
   pending = $state<PendingUpload[]>([]);
@@ -41,10 +26,7 @@ export class UploadHandler {
   }
 
   percent(item: PendingUpload) {
-    if (item.total <= 0) {
-      return 0;
-    }
-    return Math.min(100, Math.round((item.loaded / item.total) * 100));
+    return pendingUploadPercent(item);
   }
 
   cancel(id: number) {
@@ -52,7 +34,6 @@ export class UploadHandler {
     this.remove(id);
   }
 
-  /** Drop a finished/failed row from the list (no abort). */
   dismiss(id: number) {
     this.remove(id);
   }
@@ -85,28 +66,6 @@ export class UploadHandler {
     await this.uploadFolderFiles(files);
   }
 
-  /** Native OS multi-file dialog (Tauri). No-op if cancelled or unavailable. */
-  async fromNativeFilePicker() {
-    const files = await session.pickFiles?.();
-
-    if (!files) {
-      return;
-    }
-
-    await this.uploadFiles(files);
-  }
-
-  /** Native OS folder dialog (Tauri). No-op if cancelled or unavailable. */
-  async fromNativeFolderPicker() {
-    const files = await session.pickFolder?.();
-
-    if (!files) {
-      return;
-    }
-
-    await this.uploadFolderFiles(files);
-  }
-
   async uploadFiles(files: File[]) {
     if (files.length === 0) {
       return;
@@ -129,7 +88,6 @@ export class UploadHandler {
         error: "",
       });
 
-      // Read the element back so later writes go through the reactive proxy.
       const item = this.pending[this.pending.length - 1];
 
       return { file, item, controller };
@@ -278,55 +236,7 @@ export class UploadHandler {
     await this.fromDropBatch(batch);
   }
 
-  /**
-   * Subscribe to Tauri OS file drops. Returns a disposer for `$effect` cleanup.
-   * HTML5 drag events do not fire in the webview while native DnD is on.
-   */
-  attachNativeDrop(canAccept: () => boolean): () => void {
-    const listen = session.listenFileDrop;
-
-    if (!listen) {
-      return () => {};
-    }
-
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
-    void listen((event: NativeDropEvent) => {
-      if (!canAccept()) {
-        this.fileDragActive = false;
-        return;
-      }
-
-      if (event.type === "enter") {
-        this.fileDragActive = true;
-        return;
-      }
-
-      if (event.type === "leave") {
-        this.fileDragActive = false;
-        return;
-      }
-
-      this.fileDragActive = false;
-      void this.fromDropBatch(event.batch);
-    }).then((fn) => {
-      if (disposed) {
-        fn();
-        return;
-      }
-
-      unlisten = fn;
-    });
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-      this.fileDragActive = false;
-    };
-  }
-
-  async fromDropBatch(batch: NativeDropBatch) {
+  async fromDropBatch(batch: { files: File[]; directories: File[][] }) {
     const uploads = [this.uploadFiles(batch.files)];
 
     for (const files of batch.directories) {
@@ -349,19 +259,8 @@ export class UploadHandler {
   failure(item: PendingUpload, cause: unknown) {
     this.controllers.delete(item.id);
 
-    if (cause instanceof DOMException && cause.name === "AbortError") {
+    if (applyUploadFailure(item, cause)) {
       this.remove(item.id);
-      return;
-    }
-
-    if (cause instanceof TypeError) {
-      item.error = "The server could not be reached";
-    } else if (cause instanceof ApiError && cause.status === 413) {
-      item.error = "Not enough space";
-    } else if (cause instanceof ApiError && cause.status === 403) {
-      item.error = "You cannot upload here";
-    } else {
-      item.error = "Upload failed";
     }
   }
 }

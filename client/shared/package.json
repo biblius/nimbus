@@ -5,6 +5,7 @@
   "exports": {
     "./api-errors": "./src/lib/api-errors.ts",
     "./nimbus-api": "./src/lib/nimbus-api.ts",
+    "./pending-upload": "./src/lib/pending-upload.ts",
     "./router": "./src/lib/router.ts",
     "./session": "./src/lib/session.svelte.ts",
     "./server-url": "./src/lib/server-url.ts",

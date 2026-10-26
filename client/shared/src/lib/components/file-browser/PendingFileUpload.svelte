@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PendingUpload } from "../../uploadHandler.svelte";
+  import type { PendingUpload } from "../../pending-upload";
 
   let {
     item,

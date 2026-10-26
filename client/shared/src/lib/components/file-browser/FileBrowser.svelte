@@ -30,7 +30,6 @@
     type Root,
   } from "../../types";
   import { kv, type FilesViewMode } from "../../storage";
-  import { UploadHandler } from "../../uploadHandler.svelte";
   import {
     FILE_ICON_CHIP_CLASS,
     fileIconChipStyle,
@@ -305,7 +304,7 @@
     getSize: () => (tiles ? 256 : 64),
   });
 
-  const uploads = new UploadHandler({
+  const uploads = session.createUploadHandler!({
     rootId: () => root.id,
     locationId: () => location.id,
     onCreated: (entry) => {
@@ -424,11 +423,11 @@
 
   // Tauri intercepts OS file drops; wire its events instead of HTML5 DnD.
   $effect(() => {
-    if (!session.listenFileDrop) {
+    if (!session.native) {
       return;
     }
 
-    return uploads.attachNativeDrop(() => hasWriteAccess(root));
+    return uploads.attachDrop(() => hasWriteAccess(root));
   });
 
   function onWindowKeydown(event: KeyboardEvent) {
@@ -467,28 +466,28 @@
   }
 
   function onWindowFileDragEnter(event: DragEvent) {
-    if (!canWrite) {
+    if (!canWrite || session.native) {
       return;
     }
     uploads.onWindowDragEnter(event);
   }
 
   function onWindowFileDragLeave(event: DragEvent) {
-    if (!canWrite) {
+    if (!canWrite || session.native) {
       return;
     }
     uploads.onWindowDragLeave(event);
   }
 
   function onWindowFileDragOver(event: DragEvent) {
-    if (!canWrite) {
+    if (!canWrite || session.native) {
       return;
     }
     uploads.onWindowDragOver(event);
   }
 
   function onWindowFileDrop(event: DragEvent) {
-    if (!canWrite) {
+    if (!canWrite || session.native) {
       return;
     }
     uploads.onWindowDrop(event);
@@ -795,9 +794,7 @@
             {/snippet}
             <MenuItem
               onclick={() =>
-                session.native
-                  ? uploads.fromNativeFilePicker()
-                  : fileInput?.click()
+                session.native ? uploads.pickFiles() : fileInput?.click()
               }
             >
               <FileIcon size={15} />
@@ -805,9 +802,7 @@
             </MenuItem>
             <MenuItem
               onclick={() =>
-                session.native
-                  ? uploads.fromNativeFolderPicker()
-                  : folderInput?.click()
+                session.native ? uploads.pickFolder() : folderInput?.click()
               }
             >
               <Folder size={15} />

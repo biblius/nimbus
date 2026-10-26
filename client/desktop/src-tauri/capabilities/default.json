@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "allow-session-cookie",
+    "allow-upload",
     "opener:default",
     "dialog:default",
     "process:default",
@@ -14,9 +15,6 @@
     "sql:allow-load",
     "sql:allow-select",
     "sql:allow-execute",
-    "fs:allow-read-file",
-    "fs:allow-read-dir",
-    "fs:allow-stat",
     "fs:scope-home-recursive",
     "fs:scope-desktop-recursive",
     "fs:scope-document-recursive",
@@ -26,8 +24,43 @@
     "fs:scope-audio-recursive",
     "fs:scope-temp-recursive",
     {
-      "identifier": "fs:scope",
-      "allow": [{ "path": "/**" }, { "path": "**" }]
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$PICTURE/**" },
+        { "path": "$VIDEO/**" },
+        { "path": "$AUDIO/**" },
+        { "path": "$TEMP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$PICTURE/**" },
+        { "path": "$VIDEO/**" },
+        { "path": "$AUDIO/**" },
+        { "path": "$TEMP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-stat",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$PICTURE/**" },
+        { "path": "$VIDEO/**" },
+        { "path": "$AUDIO/**" },
+        { "path": "$TEMP/**" }
+      ]
     },
     {
       "identifier": "http:default",

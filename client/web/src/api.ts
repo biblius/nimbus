@@ -46,7 +46,13 @@ export type NimbusClientOptions = {
   onUnauthorized?: () => void;
 };
 
-export class NimbusClient implements NimbusApi {
+/** Web extensions on top of the shared {@link NimbusApi}. */
+export interface NimbusWebApi extends NimbusApi {}
+
+/**
+ * Browser API client. Uses credentialed fetch / XHR (cookies + CORS).
+ */
+export class NimbusClient implements NimbusWebApi {
   private readonly root: string;
   private readonly onUnauthorized?: () => void;
 
