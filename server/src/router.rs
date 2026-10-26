@@ -73,6 +73,7 @@ pub fn router(state: AppState) -> Router {
     let session = Router::new()
         .route("/auth/me", get(auth::me).patch(auth::update_me))
         .route("/auth/logout", post(auth::logout))
+        .route("/auth/session/refresh", post(auth::refresh_session))
         .route(
             "/auth/sessions",
             get(auth::list_sessions).delete(auth::expire_other_sessions),

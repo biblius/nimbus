@@ -18,6 +18,7 @@
   import { listenNativeFileDrop } from "./native-file-drop";
   import { pickNativeFiles, pickNativeFolder } from "./native-file-pick";
   import { setSessionCookie } from "./session-cookie";
+  import UpdatePrompt from "./UpdatePrompt.svelte";
 
   // Native never registers public share viewer routes.
   initRouter();
@@ -51,13 +52,23 @@
       accessToken,
     );
 
-    // Persisted Bearer is restored above; also mirror it into the webview
-    // cookie jar so chunked media streams authenticate without CORS.
+    // Rotate the persisted Bearer on every launch, then mirror it into the
+    // webview cookie jar so chunked media streams authenticate without CORS.
     if (origin && accessToken) {
       try {
-        await setSessionCookie(origin, accessToken);
+        await session.client.refreshSession();
       } catch (error) {
-        console.warn("failed to restore session cookie", error);
+        console.warn("failed to rotate session", error);
+        // Offline/transient failure: keep the old Bearer. A 401 already
+        // cleared storage via onUnauthorized — don't revive a dead cookie.
+        const still = await loadAccessToken();
+        if (still) {
+          try {
+            await setSessionCookie(origin, still);
+          } catch (cookieError) {
+            console.warn("failed to restore session cookie", cookieError);
+          }
+        }
       }
     }
 
@@ -94,6 +105,7 @@
 </script>
 
 <SvelteToast options={toastOptions} />
+<UpdatePrompt />
 
 {#if ready}
   <Router />

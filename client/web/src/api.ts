@@ -106,6 +106,12 @@ export class NimbusClient implements NimbusApi {
     return this.request<void>("/auth/logout", { method: "POST" });
   }
 
+  refreshSession(): Promise<LoginResult> {
+    return this.request<LoginResult>("/auth/session/refresh", {
+      method: "POST",
+    });
+  }
+
   listSessions(): Promise<ActiveSessionView[]> {
     return this.request<ActiveSessionView[]>("/auth/sessions");
   }

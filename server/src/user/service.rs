@@ -180,7 +180,7 @@ impl UserService {
     }
 
     /// Update the signed-in user's own profile. Role is left unchanged.
-    #[instrument(skip(self, input), fields(user_id = %user_id, session_id = %session_id), err(Debug))]
+    #[instrument(skip(self, input, session_id), fields(user_id = %user_id), err(Debug))]
     pub async fn update_self(
         &self,
         user_id: Uuid,

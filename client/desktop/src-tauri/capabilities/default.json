@@ -8,6 +8,8 @@
     "allow-session-cookie",
     "opener:default",
     "dialog:default",
+    "process:default",
+    "updater:default",
     "sql:default",
     "sql:allow-load",
     "sql:allow-select",

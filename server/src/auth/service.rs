@@ -256,12 +256,55 @@ impl AuthenticationService {
             .collect())
     }
 
+    /// Rotate a session credential: insert a new row, delete the old one.
+    ///
+    /// Preserves `expires_at` (including permanent `None`). Intended for the
+    /// desktop client, which stores a long-lived Bearer token and should
+    /// refresh it on each app launch.
+    #[instrument(skip(self, session), fields(user_id = %session.user.id), err(Debug))]
+    pub async fn refresh_session(
+        &self,
+        session: Session,
+        remote_address: Option<String>,
+        user_agent: Option<String>,
+    ) -> Result<Session, AppError> {
+        if session.is_expired() {
+            return Err(AppError::Auth(AuthFailure::SessionNotFound));
+        }
+
+        let now = Utc::now();
+        let user = session.user;
+
+        let mut tx = self.repo.start_tx().await?;
+
+        let record = self
+            .repo
+            .sessions
+            .insert_with(
+                &mut *tx,
+                NewSession {
+                    id: Uuid::new_v4(),
+                    user_id: user.id,
+                    remote_address,
+                    user_agent,
+                    now,
+                    expires_at: session.expires_at,
+                },
+            )
+            .await?;
+
+        self.repo
+            .sessions
+            .delete_with(&mut *tx, session.id)
+            .await?;
+
+        tx.commit().await?;
+
+        Ok(Session::from_record(record, user))
+    }
+
     /// Expire one of the caller's sessions. Returns not found if missing or not owned.
-    #[instrument(
-        skip(self, session),
-        fields(user_id = %session.user.id, target = %session_id),
-        err(Debug)
-    )]
+    #[instrument(skip(self, session), fields(user_id = %session.user.id), err(Debug))]
     pub async fn expire_session(
         &self,
         session: &Session,

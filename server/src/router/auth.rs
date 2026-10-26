@@ -115,6 +115,30 @@ pub(crate) async fn logout(
     Ok(clear_session_cookie(StatusCode::NO_CONTENT.into_response()))
 }
 
+/// Rotate the caller's session credential (new id, old row deleted).
+pub(crate) async fn refresh_session(
+    State(state): State<AppState>,
+    RemoteAddress(remote_address): RemoteAddress,
+    user_agent: Option<TypedHeader<UserAgent>>,
+    session: Session,
+) -> Result<Response, AppError> {
+    let user_agent = user_agent.map(|TypedHeader(agent)| agent.as_str().to_owned());
+
+    let refreshed = state
+        .services
+        .auth
+        .refresh_session(session, Some(remote_address), user_agent)
+        .await?;
+
+    login_response(
+        LoginResult::Session {
+            session_id: refreshed.id,
+        },
+        &state,
+    )
+    .await
+}
+
 pub(crate) async fn list_sessions(
     State(state): State<AppState>,
     session: Session,

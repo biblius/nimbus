@@ -204,6 +204,13 @@ export class NimbusClient implements NimbusApi {
     }
   }
 
+  async refreshSession(): Promise<LoginResult> {
+    const result = await this.request<LoginResult>("/auth/session/refresh", {
+      method: "POST",
+    });
+    return this.rememberSession(result);
+  }
+
   listSessions(): Promise<ActiveSessionView[]> {
     return this.request<ActiveSessionView[]>("/auth/sessions");
   }

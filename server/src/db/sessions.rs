@@ -30,6 +30,18 @@ impl SessionRepository {
 
     #[instrument(skip(self, session), fields(user_id = %session.user_id), err(Debug))]
     pub async fn insert(&self, session: NewSession) -> Result<SessionRecord, AppError> {
+        self.insert_with(&self.pool, session).await
+    }
+
+    #[instrument(skip(self, executor, session), fields(user_id = %session.user_id), err(Debug))]
+    pub async fn insert_with<'e, E>(
+        &self,
+        executor: E,
+        session: NewSession,
+    ) -> Result<SessionRecord, AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
         sqlx::query_as!(
             SessionRecord,
             r#"
@@ -59,7 +71,7 @@ impl SessionRepository {
             session.now,
             session.expires_at,
         )
-        .fetch_one(&self.pool)
+        .fetch_one(executor)
         .await
         .map_err(AppError::from)
     }
@@ -136,7 +148,24 @@ impl SessionRepository {
         .await?;
 
         if result.rows_affected() == 0 {
-            tracing::warn!(%id, "attempted to expire session that does not exist");
+            tracing::warn!("attempted to expire session that does not exist");
+        }
+
+        Ok(())
+    }
+
+    /// Hard-delete a session row (used when rotating the credential).
+    #[instrument(skip(self, executor), err(Debug))]
+    pub async fn delete_with<'e, E>(&self, executor: E, id: Uuid) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Db>,
+    {
+        let result = sqlx::query!(r#"DELETE FROM sessions WHERE id = $1"#, id)
+            .execute(executor)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::ResourceMissing("Session does not exist".into()));
         }
 
         Ok(())

@@ -47,6 +47,9 @@ export interface NimbusApi {
 
   logout(): Promise<void>;
 
+  /** Rotate the current session credential; returns the new session id. */
+  refreshSession(): Promise<LoginResult>;
+
   listSessions(): Promise<ActiveSessionView[]>;
 
   expireSession(id: string): Promise<void>;
