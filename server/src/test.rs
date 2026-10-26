@@ -12,6 +12,7 @@
 //! containers are not dropped mid-suite.
 
 mod auth;
+mod config;
 mod files;
 mod members;
 mod users;
@@ -20,6 +21,7 @@ use crate::{
     activity::ActivityQueue,
     auth::{login_attempt::LoginAttemptStore, service::AuthenticationService, token::TokenStore},
     cache::Cache,
+    config::{Configuration, ConfigurationService, NimbusConfig},
     db::{self, DbPool, Repository, Transactor},
     email::EmailSender,
     error::AppError,
@@ -81,7 +83,7 @@ impl TestState {
         #[cfg(feature = "postgres")]
         let (cache, valkey) = init_valkey().await;
 
-        let (services, repository, storage) =
+        let (services, repository, storage, config) =
             build_services(pool.clone(), cache.clone(), &storage_dir).await;
 
         // Short sweep so expired-trash integration tests finish quickly.
@@ -89,7 +91,7 @@ impl TestState {
             repository.clone(),
             storage,
             std::time::Duration::from_secs(1),
-            30,
+            config,
         );
 
         Self {
@@ -193,34 +195,28 @@ async fn build_services(
     pool: DbPool,
     cache: Cache,
     storage_dir: &Path,
-) -> (ServiceState, Repository, Storage) {
-    let email = EmailSender::new(
-        String::new(),
-        0,
-        String::new(),
-        String::new(),
-        "Nimbus".into(),
-        "http://localhost",
-    );
+) -> (ServiceState, Repository, Storage, NimbusConfig) {
+    let config = NimbusConfig::in_memory(Configuration {
+        file_retention_days: 30,
+        smtp_host: String::new(),
+        smtp_port: 587,
+        smtp_username: String::new(),
+        smtp_password: String::new(),
+        email_from: "Nimbus".into(),
+        upload_max_bytes: 1024 * 1024,
+        nimbus_origin: "http://localhost:5173".into(),
+    });
 
-    let storage = Storage::new(storage_dir.join("storage"), 1024 * 1024);
+    let email = EmailSender::new(config.clone()).await;
+    let storage = Storage::new(storage_dir.join("storage"), config.clone());
     let repository = Repository::new(pool.clone());
-
-    let rp_origin =
-        webauthn_rs::prelude::Url::parse("http://localhost:5173").expect("test webauthn origin");
-    let webauthn = webauthn_rs::prelude::WebauthnBuilder::new("localhost", &rp_origin)
-        .expect("test webauthn builder")
-        .rp_name("Nimbus")
-        .build()
-        .expect("test webauthn");
 
     let auth = AuthenticationService::new(
         repository.clone(),
         TokenStore::new(cache.clone()),
         LoginAttemptStore::new(cache.clone()),
         email.clone(),
-        webauthn,
-        "http://localhost:5173",
+        config.clone(),
     );
 
     let user_service = UserService::new(
@@ -260,9 +256,11 @@ async fn build_services(
             files,
             share,
             trash,
+            config: ConfigurationService::new(config.clone()),
         },
         repository,
         storage,
+        config,
     )
 }
 

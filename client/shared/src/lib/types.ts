@@ -447,3 +447,29 @@ export type Activity = {
   data: ActivityData;
   createdAt: string;
 };
+
+/** Runtime settings from `GET /admin/config` (password redacted when set). */
+export type NimbusConfiguration = {
+  fileRetentionDays: number;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUsername: string;
+  /** `"<redacted>"` when a password is set; empty string when unset. */
+  smtpPassword: string;
+  emailFrom: string;
+  uploadMaxBytes: number;
+  nimbusOrigin: string;
+};
+
+/** Partial update for `PATCH /admin/config`; only send changed fields. */
+export type NimbusConfigUpdate = {
+  fileRetentionDays?: number;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUsername?: string;
+  /** Omit to leave unchanged; empty string clears. */
+  smtpPassword?: string;
+  emailFrom?: string;
+  uploadMaxBytes?: number;
+  nimbusOrigin?: string;
+};

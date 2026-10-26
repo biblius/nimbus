@@ -1,4 +1,5 @@
 use crate::{
+    config::NimbusConfig,
     db::{Repository, files::FileTable},
     error::AppError,
     file::{
@@ -79,7 +80,7 @@ pub struct DeletionQueue {
 
     storage: Storage,
 
-    retention_days: u16,
+    config: NimbusConfig,
 }
 
 impl DeletionQueue {
@@ -87,10 +88,10 @@ impl DeletionQueue {
         repository: Repository,
         storage: Storage,
         sweep_interval: StdDuration,
-        retention_days: u16,
+        config: NimbusConfig,
     ) -> DeletionQueueHandle {
         let (tx, rx) = mpsc::channel(128);
-        DeletionQueue::new(repository, storage, rx, retention_days)._start(sweep_interval);
+        DeletionQueue::new(repository, storage, rx, config)._start(sweep_interval);
         tx
     }
 
@@ -98,14 +99,14 @@ impl DeletionQueue {
         repository: Repository,
         storage: Storage,
         requests: mpsc::Receiver<DeletionRequest>,
-        retention_days: u16,
+        config: NimbusConfig,
     ) -> Self {
         Self {
             requests,
             listeners: HashMap::new(),
             repository,
             storage,
-            retention_days,
+            config,
         }
     }
 
@@ -170,7 +171,8 @@ impl DeletionQueue {
     /// Hard-delete trashed files past the retention window.
     #[instrument(skip(self), err(Debug))]
     async fn sweep_expired(&mut self) -> Result<(), AppError> {
-        let cutoff = Utc::now() - Duration::days(self.retention_days as i64);
+        let retention_days = self.config.file_retention_days().await;
+        let cutoff = Utc::now() - Duration::days(retention_days as i64);
         let expired = self.repository.trash.list_expired_trash(cutoff).await?;
 
         if expired.is_empty() {
@@ -212,7 +214,7 @@ impl DeletionQueue {
         }
 
         let mut live = Vec::new();
-        
+
         for (root_id, ids) in &live_by_root {
             live.extend(self.repository.files.get_live_many(*root_id, ids).await?);
         }

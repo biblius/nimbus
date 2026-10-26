@@ -14,6 +14,8 @@ import type {
   Page,
   PasskeyLoginChallenge,
   PasskeySetupChallenge,
+  NimbusConfigUpdate,
+  NimbusConfiguration,
   Root,
   RootData,
   SelfUserData,
@@ -253,5 +255,9 @@ export interface NimbusApi {
   listMembers(id: string, query: ListQuery): Promise<Page<Member>>;
 
   folderUsage(id: string): Promise<number>;
+
+  getConfig(): Promise<NimbusConfiguration>;
+
+  updateConfig(input: NimbusConfigUpdate): Promise<NimbusConfiguration>;
 
 }

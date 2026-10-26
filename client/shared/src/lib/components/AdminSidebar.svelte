@@ -20,7 +20,7 @@
   </p>
 
   <a
-    href={"/admin/users"}
+    href="/admin/users"
     class="flex min-h-11 items-center rounded-md px-3 text-left text-sm {isActive(
       '/admin/users',
     )
@@ -30,6 +30,19 @@
     onclick={close}
   >
     Users
+  </a>
+
+  <a
+    href="/admin/settings"
+    class="flex min-h-11 items-center rounded-md px-3 text-left text-sm {isActive(
+      '/admin/settings',
+    )
+      ? 'bg-accent font-medium text-accent-foreground'
+      : 'hover:bg-accent'}"
+    aria-current={isActive("/admin/settings") ? "page" : undefined}
+    onclick={close}
+  >
+    Settings
   </a>
 
   <div

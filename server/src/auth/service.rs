@@ -10,6 +10,7 @@ use super::{
     token::{OneShotToken, TokenStore},
 };
 use crate::{
+    config::NimbusConfig,
     db::{Repository, sessions::NewSession},
     email::EmailSender,
     error::{AppError, AuthFailure},
@@ -23,7 +24,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use validify::Validify;
 use webauthn_rs::prelude::{
-    DiscoverableAuthentication, DiscoverableKey, PasskeyRegistration, Webauthn,
+    DiscoverableAuthentication, DiscoverableKey, PasskeyRegistration,
 };
 
 /// Sessions without "remember" expire after this long.
@@ -53,8 +54,7 @@ pub struct AuthenticationService {
     tokens: TokenStore,
     login_attempts: LoginAttemptStore,
     email: EmailSender,
-    webauthn: Webauthn,
-    nimbus_origin: Arc<str>,
+    config: NimbusConfig,
 }
 
 impl AuthenticationService {
@@ -63,16 +63,14 @@ impl AuthenticationService {
         tokens: TokenStore,
         login_attempts: LoginAttemptStore,
         email: EmailSender,
-        webauthn: Webauthn,
-        nimbus_origin: impl Into<Arc<str>>,
+        config: NimbusConfig,
     ) -> Self {
         Self {
             repo,
             tokens,
             login_attempts,
             email,
-            webauthn,
-            nimbus_origin: nimbus_origin.into(),
+            config,
         }
     }
 
@@ -293,10 +291,7 @@ impl AuthenticationService {
             )
             .await?;
 
-        self.repo
-            .sessions
-            .delete_with(&mut *tx, session.id)
-            .await?;
+        self.repo.sessions.delete_with(&mut *tx, session.id).await?;
 
         tx.commit().await?;
 
@@ -574,16 +569,20 @@ impl AuthenticationService {
 
         let exclude = (!exclude.is_empty()).then_some(exclude);
 
-        let (challenge, regdata) = self.webauthn.start_passkey_registration(
-            session.user.id,
-            session
-                .user
-                .email
-                .as_ref()
-                .unwrap_or(&session.user.username),
-            &session.user.username,
-            exclude,
-        )?;
+        let (challenge, regdata) = self
+            .config
+            .webauthn()
+            .await
+            .start_passkey_registration(
+                session.user.id,
+                session
+                    .user
+                    .email
+                    .as_ref()
+                    .unwrap_or(&session.user.username),
+                &session.user.username,
+                exclude,
+            )?;
 
         let token = Uuid::new_v4();
 
@@ -607,7 +606,9 @@ impl AuthenticationService {
             .await?;
 
         let passkey = self
-            .webauthn
+            .config
+            .webauthn()
+            .await
             .finish_passkey_registration(&data.credential, &regdata)?;
 
         if self
@@ -647,7 +648,11 @@ impl AuthenticationService {
             (Uuid::new_v4(), data.remember, data.permanent)
         };
 
-        let (challenge, auth) = self.webauthn.start_discoverable_authentication()?;
+        let (challenge, auth) = self
+            .config
+            .webauthn()
+            .await
+            .start_discoverable_authentication()?;
 
         self.tokens
             .store(
@@ -664,7 +669,7 @@ impl AuthenticationService {
         Ok(PasskeyLoginChallenge {
             token,
             challenge,
-            nimbus_origin: self.nimbus_origin.clone(),
+            nimbus_origin: Arc::from(self.config.nimbus_origin().await),
         })
     }
 
@@ -755,9 +760,10 @@ impl AuthenticationService {
             .consume(OneShotToken::Passkey, data.token)
             .await?;
 
-        let (user_id, _cred_id) = self
-            .webauthn
-            .identify_discoverable_authentication(&data.credential)?;
+        let webauthn = self.config.webauthn().await;
+
+        let (user_id, _cred_id) =
+            webauthn.identify_discoverable_authentication(&data.credential)?;
 
         let passkeys = self.repo.users.list_passkeys(user_id).await?;
 
@@ -770,7 +776,7 @@ impl AuthenticationService {
             .map(|row| DiscoverableKey::from(&row.data.0))
             .collect::<Vec<_>>();
 
-        let auth_result = self.webauthn.finish_discoverable_authentication(
+        let auth_result = webauthn.finish_discoverable_authentication(
             &data.credential,
             ceremony.auth,
             &disc_keys,

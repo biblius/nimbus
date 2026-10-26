@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod config;
 pub mod files;
 pub mod folders;
 pub mod middleware;
@@ -31,7 +32,9 @@ use tracing::Span;
 use crate::{error::AppError, file::service::DownloadBody, state::AppState};
 
 pub fn router(state: AppState) -> Router {
-    let upload_max = state.upload_max_bytes;
+    // Body size is enforced from live configuration in Storage::writer.
+    // Disable axum's static limit so admin changes to UPLOAD_MAX_BYTES apply immediately.
+    let upload_limit = DefaultBodyLimit::disable();
 
     let public = Router::new()
         .route("/auth/login", post(auth::credentials_login))
@@ -49,10 +52,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/reset", post(auth::start_password_reset))
         .route("/auth/reset/{token}", post(auth::finish_password_reset))
         .route("/files/shared/{file_id}", get(shared::file))
-        .route(
-            "/files/shared/{file_id}/children",
-            get(shared::children),
-        )
+        .route("/files/shared/{file_id}/children", get(shared::children))
         .route(
             "/files/shared/{file_id}/blob/download",
             get(shared::download),
@@ -61,10 +61,7 @@ pub fn router(state: AppState) -> Router {
             "/files/shared/{file_id}/blob/chunk",
             get(shared::download_chunk),
         )
-        .route(
-            "/files/shared/{file_id}/icon",
-            get(shared::thumbnail),
-        )
+        .route("/files/shared/{file_id}/icon", get(shared::thumbnail))
         .route(
             "/files/shared/{file_id}/preview",
             get(shared::content_for_preview),
@@ -99,13 +96,10 @@ pub fn router(state: AppState) -> Router {
         .route("/roots/{root_id}", get(files::list))
         .route("/roots/{root_id}/search", get(files::search))
         .route("/roots/{root_id}/descendants", get(files::descendants))
-        .route(
-            "/roots/{root_id}",
-            post(files::upload).layer(DefaultBodyLimit::max(upload_max)),
-        )
+        .route("/roots/{root_id}", post(files::upload).layer(upload_limit))
         .route(
             "/roots/{root_id}/upload/dir",
-            post(files::upload_dir).layer(DefaultBodyLimit::max(upload_max)),
+            post(files::upload_dir).layer(upload_limit),
         )
         .route(
             "/roots/{root_id}/directories",
@@ -132,12 +126,9 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/roots/{root_id}/files/{id}/overwrite",
-            put(files::overwrite).layer(DefaultBodyLimit::max(upload_max)),
+            put(files::overwrite).layer(upload_limit),
         )
-        .route(
-            "/roots/{root_id}/files/{id}/icon",
-            get(files::thumbnail),
-        )
+        .route("/roots/{root_id}/files/{id}/icon", get(files::thumbnail))
         .route(
             "/roots/{root_id}/files/{id}/preview",
             get(files::content_for_preview),
@@ -168,6 +159,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/users/{id}",
             delete(users::delete_user).patch(users::update_user),
+        )
+        .route(
+            "/config",
+            get(config::get_config).patch(config::update_config),
         )
         .route("/roots/private", get(folders::list_private))
         .route(
@@ -204,50 +199,50 @@ pub fn router(state: AppState) -> Router {
     // Cross-origin access is only for local Vite / Tauri during development.
     // Release builds are same-origin (embedded SPA) or native Bearer (no CORS).
     #[cfg(debug_assertions)]
-    let app = {
-        use axum::http::{HeaderName, HeaderValue, Method};
-        use std::str::FromStr;
-        use tower_http::cors::{AllowCredentials, CorsLayer};
+    let app =
+        {
+            use axum::http::{HeaderName, HeaderValue, Method};
+            use std::str::FromStr;
+            use tower_http::cors::{AllowCredentials, CorsLayer};
 
-        let origins = state.http_config.cors_origins.iter().filter_map(|origin| {
-            match HeaderValue::from_str(origin) {
-                Ok(value) => Some(value),
-                Err(error) => {
-                    tracing::warn!(%error, origin, "skipping invalid CORS origin");
-                    None
-                }
-            }
-        });
-
-        let headers = state
-            .http_config
-            .cors_headers
-            .iter()
-            .filter_map(|name| match HeaderName::from_str(name) {
-                Ok(value) => Some(value),
-                Err(error) => {
-                    tracing::warn!(%error, name, "skipping invalid CORS header");
-                    None
+            let origins = state.http_config.cors_origins.iter().filter_map(|origin| {
+                match HeaderValue::from_str(origin) {
+                    Ok(value) => Some(value),
+                    Err(error) => {
+                        tracing::warn!(%error, origin, "skipping invalid CORS origin");
+                        None
+                    }
                 }
             });
 
-        let cors = CorsLayer::new()
-            .allow_origin(tower_http::cors::AllowOrigin::list(origins))
-            .allow_headers(tower_http::cors::AllowHeaders::list(headers))
-            .expose_headers([HeaderName::from_static(
-                crate::auth::model::OTP_TOKEN_HEADER,
-            )])
-            .allow_credentials(AllowCredentials::yes())
-            .allow_methods([
-                Method::GET,
-                Method::POST,
-                Method::DELETE,
-                Method::PUT,
-                Method::PATCH,
-            ]);
+            let headers =
+                state.http_config.cors_headers.iter().filter_map(
+                    |name| match HeaderName::from_str(name) {
+                        Ok(value) => Some(value),
+                        Err(error) => {
+                            tracing::warn!(%error, name, "skipping invalid CORS header");
+                            None
+                        }
+                    },
+                );
 
-        app.layer(cors)
-    };
+            let cors = CorsLayer::new()
+                .allow_origin(tower_http::cors::AllowOrigin::list(origins))
+                .allow_headers(tower_http::cors::AllowHeaders::list(headers))
+                .expose_headers([HeaderName::from_static(
+                    crate::auth::model::OTP_TOKEN_HEADER,
+                )])
+                .allow_credentials(AllowCredentials::yes())
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::DELETE,
+                    Method::PUT,
+                    Method::PATCH,
+                ]);
+
+            app.layer(cors)
+        };
 
     app.layer(
         TraceLayer::new_for_http()

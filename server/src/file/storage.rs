@@ -1,5 +1,5 @@
 use super::format::{FileType, SNIFF_LEN};
-use crate::error::AppError;
+use crate::{config::NimbusConfig, error::AppError};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tokio::{fs::File, io::AsyncWriteExt};
@@ -26,7 +26,8 @@ pub struct Storage {
     /// Ephemeral files (in-progress uploads, zip archives).
     tmp: PathBuf,
 
-    max_bytes: i64,
+    /// Live upload size limit from shared configuration.
+    config: NimbusConfig,
 }
 
 /// Per-file writer for uploads. Used to hash the file as it is being written.
@@ -80,14 +81,14 @@ pub struct TempFile {
 }
 
 impl Storage {
-    pub fn new(root: PathBuf, max_bytes: usize) -> Self {
+    pub fn new(root: PathBuf, config: NimbusConfig) -> Self {
         let preview = root.join(PREVIEW_DIR);
         let tmp = root.join(TMP_DIR);
         Self {
             root,
             preview,
             tmp,
-            max_bytes: max_bytes as i64,
+            config,
         }
     }
 
@@ -115,6 +116,7 @@ impl Storage {
         let temp = self.tmp_path();
 
         let file = File::create(&temp).await?;
+        let max_bytes = self.config.upload_max_bytes().await as i64;
 
         Ok(UploadWriter {
             name: name.into(),
@@ -122,7 +124,7 @@ impl Storage {
             hasher: Sha256::new(),
             size: 0,
             temp,
-            max_bytes: self.max_bytes,
+            max_bytes,
             header: Vec::with_capacity(SNIFF_LEN),
             committed: false,
         })

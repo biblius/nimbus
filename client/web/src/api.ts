@@ -11,6 +11,8 @@ import type {
   SharedFileView,
   Member,
   ListQuery,
+  NimbusConfigUpdate,
+  NimbusConfiguration,
   OtpSetup,
   Page,
   PasskeyLoginChallenge,
@@ -930,6 +932,17 @@ export class NimbusClient implements NimbusWebApi {
 
   folderUsage(id: string): Promise<number> {
     return this.request<number>(`/roots/${encodeURIComponent(id)}/usage`);
+  }
+
+  getConfig(): Promise<NimbusConfiguration> {
+    return this.request<NimbusConfiguration>("/admin/config");
+  }
+
+  updateConfig(input: NimbusConfigUpdate): Promise<NimbusConfiguration> {
+    return this.request<NimbusConfiguration>("/admin/config", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
   }
 
   private async *events(

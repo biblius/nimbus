@@ -3,12 +3,11 @@ use lettre::{
     message::{Mailbox, header::ContentType},
     transport::smtp::authentication::Credentials,
 };
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::instrument;
 use uuid::Uuid;
 
-use crate::error::AppError;
+use crate::{config::NimbusConfig, error::AppError};
 
 struct EmailRequest {
     to: String,
@@ -21,30 +20,18 @@ type EmailQueueHandle = mpsc::Sender<EmailRequest>;
 /// Background worker that delivers queued outbound messages over SMTP.
 struct EmailQueue {
     requests: mpsc::Receiver<EmailRequest>,
-    mailer: Option<AsyncSmtpTransport<Tokio1Executor>>,
-    from: Mailbox,
+    config: NimbusConfig,
 }
 
 impl EmailQueue {
-    fn start(
-        mailer: Option<AsyncSmtpTransport<Tokio1Executor>>,
-        from: Mailbox,
-    ) -> EmailQueueHandle {
+    fn start(config: NimbusConfig) -> EmailQueueHandle {
         let (tx, rx) = mpsc::channel(128);
-        EmailQueue::new(mailer, from, rx)._start();
+        EmailQueue::new(config, rx)._start();
         tx
     }
 
-    fn new(
-        mailer: Option<AsyncSmtpTransport<Tokio1Executor>>,
-        from: Mailbox,
-        requests: mpsc::Receiver<EmailRequest>,
-    ) -> Self {
-        Self {
-            requests,
-            mailer,
-            from,
-        }
+    fn new(config: NimbusConfig, requests: mpsc::Receiver<EmailRequest>) -> Self {
+        Self { requests, config }
     }
 
     #[instrument(skip(self))]
@@ -62,7 +49,14 @@ impl EmailQueue {
 
     #[instrument(skip(self, request), fields(to = %request.to, subject = %request.subject), err(Debug))]
     async fn deliver(&self, request: EmailRequest) -> Result<(), AppError> {
-        let Some(mailer) = &self.mailer else {
+        let cfg = self.config.get().await;
+
+        let Some(mailer) = build_mailer(
+            &cfg.smtp_host,
+            cfg.smtp_port,
+            &cfg.smtp_username,
+            &cfg.smtp_password,
+        ) else {
             tracing::info!(
                 to = %request.to,
                 subject = %request.subject,
@@ -71,13 +65,15 @@ impl EmailQueue {
             return Ok(());
         };
 
+        let from = build_from(&cfg.smtp_username, &cfg.email_from);
+
         let to = request.to.parse::<Mailbox>().map_err(|error| {
             tracing::error!(%error, "invalid recipient address");
             AppError::Unprocessable("Invalid email address".into())
         })?;
 
         let message = Message::builder()
-            .from(self.from.clone())
+            .from(from)
             .to(to)
             .subject(request.subject)
             .header(ContentType::TEXT_HTML)
@@ -95,75 +91,71 @@ impl EmailQueue {
     }
 }
 
+fn build_from(username: &str, from_name: &str) -> Mailbox {
+    let parsed = if username.is_empty() {
+        "nimbus@localhost".parse()
+    } else {
+        username.parse()
+    };
+
+    match parsed {
+        Ok(email) => Mailbox::new(Some(from_name.to_string()), email),
+        Err(error) => {
+            tracing::error!(%error, "invalid smtp from address; using fallback");
+            Mailbox::new(None, "nimbus@localhost".parse().expect("static mailbox"))
+        }
+    }
+}
+
+fn build_mailer(
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+) -> Option<AsyncSmtpTransport<Tokio1Executor>> {
+    if host.is_empty() || username.is_empty() || password.is_empty() {
+        return None;
+    }
+
+    let transport = if port == 465 {
+        AsyncSmtpTransport::<Tokio1Executor>::relay(host)
+    } else {
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host)
+    };
+
+    match transport {
+        Ok(builder) => Some(
+            builder
+                .port(port)
+                .credentials(Credentials::new(username.to_string(), password.to_string()))
+                .build(),
+        ),
+        Err(error) => {
+            tracing::error!(%error, "smtp transport could not be built; email is disabled");
+            None
+        }
+    }
+}
+
 /// SMTP sender. Missing host, username, or password disables delivery and logs instead.
 ///
 /// Delivery runs on a background queue so callers are not blocked on SMTP latency.
+/// SMTP settings are read from the shared [`NimbusConfig`] on each send.
 #[derive(Clone)]
 pub struct EmailSender {
     queue: EmailQueueHandle,
-    nimbus_origin: Arc<str>,
-    #[cfg(debug_assertions)]
-    mailer_configured: bool,
+    config: NimbusConfig,
 }
 
 impl EmailSender {
-    pub fn new(
-        host: String,
-        port: u16,
-        username: String,
-        password: String,
-        from_name: String,
-        nimbus_origin: impl Into<Arc<str>>,
-    ) -> Self {
-        let parsed = if username.is_empty() {
-            "nimbus@localhost".parse()
-        } else {
-            username.parse()
-        };
-
-        let from = match parsed {
-            Ok(email) => Mailbox::new(Some(from_name), email),
-            Err(error) => {
-                tracing::error!(%error, "invalid smtp from address; email is disabled");
-                Mailbox::new(None, "nimbus@localhost".parse().expect("static mailbox"))
-            }
-        };
-
-        let mailer = if host.is_empty() || username.is_empty() || password.is_empty() {
+    pub async fn new(config: NimbusConfig) -> Self {
+        if !config.get().await.smtp_configured() {
             tracing::info!("smtp is not configured; outbound email is disabled");
-            None
-        } else {
-            let transport = if port == 465 {
-                AsyncSmtpTransport::<Tokio1Executor>::relay(&host)
-            } else {
-                AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&host)
-            };
-
-            match transport {
-                Ok(builder) => Some(
-                    builder
-                        .port(port)
-                        .credentials(Credentials::new(username, password))
-                        .build(),
-                ),
-                Err(error) => {
-                    tracing::error!(%error, "smtp transport could not be built; email is disabled");
-                    None
-                }
-            }
-        };
-
-        #[cfg(debug_assertions)]
-        let mailer_configured = mailer.is_some();
-
-        let queue = EmailQueue::start(mailer, from);
-
-        Self {
-            queue,
-            nimbus_origin: nimbus_origin.into(),
-            #[cfg(debug_assertions)]
-            mailer_configured,
         }
+
+        let queue = EmailQueue::start(config.clone());
+
+        Self { queue, config }
     }
 
     pub async fn send_account_created(&self, to: &str, username: &str) -> Result<(), AppError> {
@@ -181,7 +173,8 @@ impl EmailSender {
         username: &str,
         token: Uuid,
     ) -> Result<(), AppError> {
-        let link = format!("{}/reset-password/{token}", self.nimbus_origin);
+        let origin = self.config.nimbus_origin().await;
+        let link = format!("{origin}/reset-password/{token}");
 
         let username = escape(username);
 
@@ -192,7 +185,7 @@ impl EmailSender {
         );
 
         #[cfg(debug_assertions)]
-        if !self.mailer_configured {
+        if !self.config.get().await.smtp_configured() {
             tracing::info!(%link, "smtp is not configured; password reset link");
         }
 

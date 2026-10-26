@@ -21,6 +21,7 @@ export const baseRoutes = {
     },
     "/admin": {
       "/users": () => import("./pages/admin/UsersPage.svelte"),
+      "/settings": () => import("./pages/admin/SettingsPage.svelte"),
       "/folders": {
         "/private": {
           "/": () => import("./pages/admin/PrivateFoldersPage.svelte"),

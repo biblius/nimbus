@@ -7,7 +7,7 @@ use crate::{
     activity::ActivityQueue,
     auth::{login_attempt::LoginAttemptStore, service::AuthenticationService, token::TokenStore},
     cache::Cache,
-    config::StartArgs,
+    config::{ConfigurationService, NimbusConfig, StartArgs},
     db::{self, Repository, Transactor},
     email::EmailSender,
     file::{
@@ -23,7 +23,6 @@ pub struct AppState {
     pub services: ServiceState,
     pub queue: DeletionQueueHandle,
     pub http_config: HttpConfiguration,
-    pub upload_max_bytes: usize,
 }
 
 #[derive(Clone)]
@@ -33,6 +32,7 @@ pub struct ServiceState {
     pub files: FileService,
     pub share: ShareService,
     pub trash: TrashFileService,
+    pub config: ConfigurationService,
 }
 
 #[derive(Debug, Clone)]
@@ -54,11 +54,13 @@ impl AppState {
         }
 
         let db = db::connect_with_retry(&args.db_url()).await;
+
         db::migrate(&db)
             .await
             .expect("unable to migrate the database");
 
         let valkey_url = args.valkey_url();
+
         let cache = if valkey_url.is_empty() {
             tracing::info!("VALKEY_URL unset; using in-memory cache");
             Cache::new()
@@ -66,40 +68,17 @@ impl AppState {
             Cache::connect(&valkey_url).expect("unable to create the valkey pool")
         };
 
-        let nimbus_origin: Arc<str> = args.nimbus_origin().trim_end_matches('/').into();
-        let rp_origin = webauthn_rs::prelude::Url::parse(&nimbus_origin)
-            .unwrap_or_else(|error| panic!("invalid NIMBUS_ORIGIN `{nimbus_origin}`: {error}"));
+        let upload_dir = args.upload_dir();
 
-        let rp_id_override = args.webauthn_rp_id();
-        let rp_id = if rp_id_override.is_empty() {
-            rp_origin
-                .host_str()
-                .unwrap_or_else(|| panic!("NIMBUS_ORIGIN `{nimbus_origin}` has no host"))
-                .to_string()
-        } else {
-            rp_id_override
-        };
+        let config = NimbusConfig::load(
+            args,
+            std::path::PathBuf::from(&upload_dir).join("config.json"),
+        )
+        .await;
 
-        let webauthn = webauthn_rs::prelude::WebauthnBuilder::new(&rp_id, &rp_origin)
-            .unwrap_or_else(|error| {
-                panic!(
-                    "invalid WebAuthn configuration (RP_ID={rp_id}, RP_ORIGIN={rp_origin}): {error}"
-                )
-            })
-            .rp_name("Nimbus")
-            .build()
-            .unwrap_or_else(|error| panic!("unable to build WebAuthn: {error}"));
+        let storage = Storage::new(upload_dir.into(), config.clone());
 
-        let storage = Storage::new(args.upload_dir().into(), args.upload_max_bytes());
-
-        let email = EmailSender::new(
-            args.smtp_host(),
-            args.smtp_port(),
-            args.smtp_username(),
-            args.smtp_password(),
-            args.email_from(),
-            Arc::clone(&nimbus_origin),
-        );
+        let email = EmailSender::new(config.clone()).await;
 
         let repository = Repository::new(db.clone());
         let tokens = TokenStore::new(cache.clone());
@@ -112,8 +91,7 @@ impl AppState {
             tokens,
             login_attempts,
             email.clone(),
-            webauthn,
-            nimbus_origin,
+            config.clone(),
         );
 
         let user_service = UserService::new(
@@ -161,26 +139,29 @@ impl AppState {
             cors_headers: Arc::from(args.allowed_headers()),
         };
 
+        let config_service = ConfigurationService::new(config.clone());
+
         let services = ServiceState {
             auth,
             users: user_service,
             files: file_service,
             share: share_service,
             trash: trash_service,
+            config: config_service,
         };
 
+        // Expired trash is swept every five minutes.
         let queue = DeletionQueue::start(
             repository,
             storage,
-            std::time::Duration::from_secs(args.file_deletion_interval_secs()),
-            args.file_retention_days(),
+            std::time::Duration::from_secs(5 * 60),
+            config,
         );
 
         Self {
             services,
             queue,
             http_config,
-            upload_max_bytes: args.upload_max_bytes(),
         }
     }
 }
