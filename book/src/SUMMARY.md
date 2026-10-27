@@ -1,7 +1,7 @@
 # Summary
 
-HELLO WORLD, TODO, 420, 69
-
 [Introduction](introduction.md)
+
+- [Nimbus installation](nimbus-installation.md)
 
 - [Migrate SQLite <-> Postgres](migrate-sqlite-postgres.md)

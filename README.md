@@ -217,15 +217,23 @@ cargo test --no-default-features -F postgres -- --nocapture
 
 Release targets:
 
-- `x86_64-unkown-linux-gnu`
+- `x86_64-unknown-linux-gnu`
 - `aarch64-unknown-linux-gnu`
 
-Every release will have 2 variants built with `sqlite` and `postgres` as the database engine.
+Every release includes SQLite and Postgres builds for each target (4 archives).
+Assets are named `nimbus-server-<version>-<target>-<feature>.tar.gz`.
 
 ### Nimbus desktop
 
-Desktop only (Linux, macOS, Windows). Mobile targets are not supported.
-
 Release targets:
 
-- TODO
+- Linux
+- macOS Apple Silicon
+- macOS Intel
+- Windows
+
+Desktop releases will always follow server releases when necessary.
+
+### Nimbus Android
+
+TODO

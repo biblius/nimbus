@@ -3,6 +3,9 @@
 **/*.rs.bk
 .env
 /data
+/tmp
+*.key
+*.key.pub
 /node_modules
 .npm-logs/
 npm-debug.log*
