@@ -1,0 +1,40 @@
+name: Test
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: [sqlite, postgres]
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            clang \
+            libclang-dev \
+            pkg-config \
+            libssl-dev
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: test-${{ matrix.feature }}
+      - name: Run tests
+        run: |
+          cargo test --no-default-features -F ${{ matrix.feature }} -- --nocapture
