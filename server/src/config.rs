@@ -413,7 +413,9 @@ mod tests {
         let args = StartArgs {
             address: None,
             log: None,
+            #[cfg(debug_assertions)]
             cors_allowed_origins: None,
+            #[cfg(debug_assertions)]
             cors_allowed_headers: None,
             db_url: None,
             valkey_url: None,

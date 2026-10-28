@@ -68,7 +68,7 @@ webauthn-rs = { version = "0.5.5", features = [
   # Used ONLY to serialize the state on the server during registration /
   # discoverable authentication. Serialized state is never sent to clients.
   "danger-allow-state-serialisation",
-  # Usermameless passkey login via start/finish_discoverable_authentication.
+  # Usernameless passkey login via start/finish_discoverable_authentication.
   "conditional-ui",
 ] }
 async_zip = { version = "0.0.19", default-features = false, features = [
@@ -76,6 +76,7 @@ async_zip = { version = "0.0.19", default-features = false, features = [
   "deflate",
 ] }
 bitflags = { version = "2.13.2", features = ["std"] }
+openssl = { version = "0.10.81", features = ["vendored"] }
 
 [dev-dependencies]
 suitest = { version = "0.1.5" }

@@ -27,7 +27,8 @@ jobs:
             clang \
             libclang-dev \
             pkg-config \
-            libssl-dev
+            libssl-dev \
+            ffmpeg
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       - name: Rust cache

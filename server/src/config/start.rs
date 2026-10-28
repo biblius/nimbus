@@ -18,11 +18,13 @@ pub struct StartArgs {
     #[arg(long, short)]
     pub(crate) log: Option<String>,
 
-    /// CORS allowed origins.
+    /// CORS allowed origins (debug builds only; release is same-origin).
+    #[cfg(debug_assertions)]
     #[arg(long)]
     pub(crate) cors_allowed_origins: Option<String>,
 
-    /// CORS allowed headers.
+    /// CORS allowed headers (debug builds only; release is same-origin).
+    #[cfg(debug_assertions)]
     #[arg(long)]
     pub(crate) cors_allowed_headers: Option<String>,
 
@@ -125,6 +127,7 @@ macro_rules! arg {
     };
 }
 
+#[cfg(debug_assertions)]
 impl StartArgs {
     pub fn allowed_origins(&self) -> Vec<String> {
         self.csv_list(

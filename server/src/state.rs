@@ -1,3 +1,4 @@
+#[cfg(debug_assertions)]
 use std::sync::Arc;
 
 use tracing_error::ErrorLayer;
@@ -22,6 +23,7 @@ use crate::{
 pub struct AppState {
     pub services: ServiceState,
     pub queue: DeletionQueueHandle,
+    #[cfg(debug_assertions)]
     pub http_config: HttpConfiguration,
 }
 
@@ -35,6 +37,7 @@ pub struct ServiceState {
     pub config: ConfigurationService,
 }
 
+#[cfg(debug_assertions)]
 #[derive(Debug, Clone)]
 pub struct HttpConfiguration {
     pub cors_origins: Arc<[String]>,
@@ -134,6 +137,7 @@ impl AppState {
             .await
             .expect("unable to seed the initial admin");
 
+        #[cfg(debug_assertions)]
         let http_config = HttpConfiguration {
             cors_origins: Arc::from(args.allowed_origins()),
             cors_headers: Arc::from(args.allowed_headers()),
@@ -161,12 +165,13 @@ impl AppState {
         Self {
             services,
             queue,
+            #[cfg(debug_assertions)]
             http_config,
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, debug_assertions))]
 impl Default for HttpConfiguration {
     fn default() -> Self {
         HttpConfiguration {
