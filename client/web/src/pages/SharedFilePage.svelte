@@ -8,7 +8,6 @@
   import Button from "@nimbus/lib/components/ui/button/button.svelte";
   import { isPreviewable } from "@nimbus/lib/fileKind";
   import SharedFileBrowser from "../components/SharedFileBrowser.svelte";
-  import SharedFilePreview from "../components/SharedFilePreview.svelte";
 
   type LoadState = "loading" | "ready" | "not-found" | "error";
 
@@ -87,8 +86,10 @@
 </svelte:head>
 
 {#if status === "ready" && entry && entry.file.kind === "file" && isPreviewable(entry)}
-  <!-- Standalone preview; it brings its own header with name and download. -->
-  <SharedFilePreview files={[entry]} fileId={entry.file.id} />
+  <!-- Dynamic import so pdfjs / codemirror / sheetjs load only when previewing. -->
+  {#await import("../components/SharedFilePreview.svelte") then { default: SharedFilePreview }}
+    <SharedFilePreview files={[entry]} fileId={entry.file.id} />
+  {/await}
 {:else}
   <div class="flex h-dvh min-h-0 flex-col overflow-hidden">
     <header
