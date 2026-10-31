@@ -419,7 +419,7 @@ mod tests {
             cors_allowed_headers: None,
             db_url: None,
             valkey_url: None,
-            upload_dir: Some(dir.to_string_lossy().into()),
+            data_dir: Some(dir.to_string_lossy().into()),
             file_retention_days: Some("30".into()),
             upload_max_bytes: Some("1024".into()),
             smtp_host: None,

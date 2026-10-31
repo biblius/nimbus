@@ -8,7 +8,7 @@
 #   - Target Postgres database already has the Nimbus schema
 #     (sqlx migrate run --source server/migrations/postgres).
 #   - Target tables must be empty.
-#   - Copy UPLOAD_DIR (file BLOBs) separately; this script moves DB rows only.
+#   - Copy DATA_DIR (file BLOBs) separately; this script moves DB rows only.
 #
 # Example:
 #   ./scripts/sqlite2pg.sh ./data/nimbus.db \

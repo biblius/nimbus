@@ -2,6 +2,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { minify as minifyHtml } from "html-minifier-terser";
+import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
@@ -9,6 +11,28 @@ const sharedLib = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../shared/src/lib",
 );
+
+function htmlMinify(): Plugin {
+  return {
+    name: "html-minify",
+    apply: "build",
+    transformIndexHtml: {
+      order: "post",
+      async handler(html) {
+        return minifyHtml(html, {
+          collapseBooleanAttributes: true,
+          collapseWhitespace: true,
+          minifyCSS: true,
+          minifyJS: true,
+          removeComments: true,
+          removeRedundantAttributes: true,
+          removeScriptTypeAttributes: true,
+          removeStyleLinkTypeAttributes: true,
+        });
+      },
+    },
+  };
+}
 
 export default defineConfig({
   resolve: {
@@ -20,10 +44,17 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     svelte(),
+    htmlMinify(),
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: false,
-      includeAssets: ["favicon.ico", "favicon.png", "logo.png", "robots.txt"],
+      includeAssets: [
+        "favicon.ico",
+        "favicon.png",
+        "logo.png",
+        "robots.txt",
+        "theme-boot.js",
+      ],
       manifest: {
         name: "Nimbus",
         short_name: "Nimbus",
@@ -113,6 +144,22 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    minify: "terser",
+    cssMinify: true,
+    terserOptions: {
+      compress: {
+        passes: 2,
+        pure_getters: true,
+      },
+      format: {
+        comments: false,
+      },
+    },
+  },
+  esbuild: {
+    legalComments: "none",
+  },
   // Load `VITE_*` from the monorepo root (same place as example.env).
   envDir: "../..",
   server: {

@@ -147,7 +147,7 @@ async fn init_sqlite(dir: &Path) -> DbPool {
 async fn init_postgres() -> (DbPool, PostgresContainer) {
     use testcontainers::core::{IntoContainerPort, WaitFor};
 
-    let postgres = GenericImage::new("postgres", "17")
+    let postgres = GenericImage::new("postgres", "18")
         .with_exposed_port(5432.tcp())
         .with_wait_for(WaitFor::message_on_stdout(
             "database system is ready to accept connections",

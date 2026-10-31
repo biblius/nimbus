@@ -48,7 +48,11 @@ impl AppState {
     pub async fn new(args: &StartArgs) -> Self {
         let subscriber = tracing_subscriber::Registry::default()
             .with(EnvFilter::from(args.log()))
-            .with(tracing_subscriber::fmt::layer())
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(std::io::stderr),
+            )
             .with(ErrorLayer::default());
 
         if let Err(error) = tracing::subscriber::set_global_default(subscriber) {
@@ -56,11 +60,16 @@ impl AppState {
             eprintln!("Application will not contain logs!");
         }
 
-        let db = db::connect_with_retry(&args.db_url()).await;
+        let db_url = args.db_url();
+        tracing::info!(%db_url, "connecting to database");
+
+        let db = db::connect_with_retry(&db_url).await;
 
         db::migrate(&db)
             .await
             .expect("unable to migrate the database");
+
+        tracing::info!("database migrations applied");
 
         let valkey_url = args.valkey_url();
 
@@ -71,15 +80,15 @@ impl AppState {
             Cache::connect(&valkey_url).expect("unable to create the valkey pool")
         };
 
-        let upload_dir = args.upload_dir();
+        let data_dir = args.data_dir();
 
         let config = NimbusConfig::load(
             args,
-            std::path::PathBuf::from(&upload_dir).join("config.json"),
+            std::path::PathBuf::from(&data_dir).join("config.json"),
         )
         .await;
 
-        let storage = Storage::new(upload_dir.into(), config.clone());
+        let storage = Storage::new(data_dir.into(), config.clone());
 
         let email = EmailSender::new(config.clone()).await;
 

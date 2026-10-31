@@ -123,29 +123,17 @@ pub async fn connect_with_retry(url: &str) -> DbPool {
 }
 
 pub async fn migrate(pool: &DbPool) -> Result<(), AppError> {
-    let migrations = {
-        #[cfg(feature = "postgres")]
-        {
-            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/migrations/postgres"))
-        }
-        #[cfg(feature = "sqlite")]
-        {
-            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/migrations/sqlite"))
-        }
-    };
+    // Embedded at compile time so release binaries / Docker images do not need
+    // the migrations directory on the target host.
+    #[cfg(feature = "postgres")]
+    let migrator = sqlx::migrate!("./migrations/postgres");
+    #[cfg(feature = "sqlite")]
+    let migrator = sqlx::migrate!("./migrations/sqlite");
 
-    sqlx::migrate::Migrator::new(migrations)
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, "failed to load database migrations");
-            AppError::Internal
-        })?
-        .run(pool)
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, "database migration failed");
-            AppError::Internal
-        })
+    migrator.run(pool).await.map_err(|error| {
+        tracing::error!(%error, "database migration failed");
+        AppError::Internal
+    })
 }
 
 #[cfg(feature = "sqlite")]

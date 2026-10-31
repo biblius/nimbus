@@ -1,6 +1,9 @@
 use std::{fs, path::PathBuf};
 
 fn main() {
+    // sqlx::migrate! embeds these; without this, new SQL files alone may not rebuild.
+    println!("cargo:rerun-if-changed=migrations");
+
     let dist = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../client/web/dist");
     println!("cargo:rerun-if-changed={}", dist.display());
 

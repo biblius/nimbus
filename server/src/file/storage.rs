@@ -12,12 +12,12 @@ const TMP_DIR: &str = "tmp";
 /// Content-addressed bytes on the local filesystem.
 ///
 /// Database rows point at these blobs by hash so identical uploads share one file.
-/// Layout under [Self::root] (`UPLOAD_DIR`): `data/`, `preview/`, `tmp/`.
+/// Layout under [Self::root] (`DATA_DIR`): `data/`, `preview/`, `tmp/`.
 #[derive(Clone)]
 pub struct Storage {
     /// Root directory of all files stored in Nimbus.
     ///
-    /// See [crate::config::StartArgs::upload_dir]
+    /// See [crate::config::StartArgs::data_dir]
     root: PathBuf,
 
     /// Directory for generated preview blobs (content-addressed by hash).

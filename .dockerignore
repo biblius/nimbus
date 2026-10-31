@@ -2,15 +2,23 @@ target
 data
 preview
 .git
+.github
 .env
 **/*.db
 **/node_modules
 **/dist
+book
+deploy
+scripts
+*.md
+.npm-logs
+
+# Desktop app sources are not needed for the server image; package.json
+# is still copied so the npm workspace resolves.
 client/desktop/src
 client/desktop/src-tauri
 client/desktop/index.html
 client/desktop/vite.config.ts
 client/desktop/svelte.config.js
 client/desktop/tsconfig.json
-*.md
-.npm-logs
+client/desktop/static

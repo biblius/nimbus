@@ -39,8 +39,8 @@ sqlx = { version = "0.9.0", default-features = false, features = [
   "chrono",
   "uuid",
   "migrate",
+  "macros",
   "runtime-tokio",
-  "derive",
   "json",
 ] }
 chrono = { version = "0.4.45", features = ["serde"] }

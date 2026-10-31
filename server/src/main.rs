@@ -24,9 +24,10 @@ compile_error!("features `postgres` and `sqlite` are mutually exclusive");
 async fn main() {
     let args = <config::StartArgs as clap::Parser>::parse();
 
-    println!("======= ARGS =======\n{args}\n=======");
-
+    // Subscriber is installed inside AppState::new; log config after that.
     let app = state::AppState::new(&args).await;
+
+    tracing::info!("======= ARGS =======\n{args}\n=======");
 
     let addr = args.address();
 

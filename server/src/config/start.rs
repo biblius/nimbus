@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Debug, Parser)]
 #[command(
     name = "nimbus",
-    author = "barrage",
+    author = "biblius",
     version = "0.1.0",
     about = "Self-hosted file sharing",
     long_about = None
@@ -38,7 +38,7 @@ pub struct StartArgs {
 
     /// Root data directory (`data/`, `preview/`, and `tmp/` are created under it).
     #[arg(long)]
-    pub(crate) upload_dir: Option<String>,
+    pub(crate) data_dir: Option<String>,
 
     /// Days a soft-deleted file stays recoverable.
     #[arg(long)]
@@ -170,22 +170,47 @@ impl StartArgs {
     }
 }
 
-arg!(log, "RUST_LOG", default "info".to_string());
+// Empty RUST_LOG (e.g. `RUST_LOG=` in an env file) would otherwise yield an
+// EnvFilter with no directives and silence every event.
+impl StartArgs {
+    pub fn log(&self) -> String {
+        const DEFAULT: &str = "info";
+        let raw = match &self.log {
+            Some(val) => val.clone(),
+            None => std::env::var("RUST_LOG").unwrap_or_else(|_| DEFAULT.to_string()),
+        };
+        if raw.trim().is_empty() {
+            DEFAULT.to_string()
+        } else {
+            raw
+        }
+    }
+}
 arg!(address, "ADDRESS", default "0.0.0.0:8080".to_string());
 
 #[cfg(feature = "postgres")]
 arg!(db_url, "DATABASE_URL", panic "Database url not found; Pass --db-url or set DATABASE_URL");
 
+/// SQLite default: `$DATA_DIR/nimbus.db` (created on startup if missing).
 #[cfg(feature = "sqlite")]
-arg!(
-    db_url,
-    "DATABASE_URL",
-    default "sqlite://./data/nimbus.db?mode=rwc".to_string()
-);
+impl StartArgs {
+    pub fn db_url(&self) -> String {
+        match &self.db_url {
+            Some(val) if !val.trim().is_empty() => val.clone(),
+            _ => match std::env::var("DATABASE_URL") {
+                Ok(val) if !val.trim().is_empty() => val,
+                _ => {
+                    let path = std::path::Path::new(&self.data_dir()).join("nimbus.db");
+                    format!("sqlite://{}?mode=rwc", path.display())
+                }
+            },
+        }
+    }
+}
 
 arg!(valkey_url, "VALKEY_URL", default String::new());
 
-arg!(upload_dir, "UPLOAD_DIR", default "./data".to_string());
+arg!(data_dir, "DATA_DIR", default "./data".to_string());
 arg!(file_retention_days, "FILE_RETENTION_DAYS", default 30, u16);
 arg!(
     upload_max_bytes,
@@ -237,7 +262,7 @@ impl fmt::Display for StartArgs {
         writeln!(f, "db_url: {}", self.db_url())?;
         #[cfg(debug_assertions)]
         writeln!(f, "valkey_url: {}", show(&self.valkey_url()))?;
-        writeln!(f, "upload_dir: {}", self.upload_dir())?;
+        writeln!(f, "data_dir: {}", self.data_dir())?;
         writeln!(f, "file_retention_days: {}", self.file_retention_days())?;
         writeln!(
             f,
