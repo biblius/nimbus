@@ -87,56 +87,71 @@ export class FileListing {
     this.order();
   }
 
-  order() {
-    this.entries.sort((left, right) => {
-      const a = left.file;
-      const b = right.file;
+  /**
+   * Clear the list before trail/leading-row changes so the virtual list
+   * never reshuffles the previous folder's keyed rows mid-navigation.
+   */
+  beginNavigation() {
+    this.loading = true;
+    this.entries = [];
+  }
 
-      let byColumn = 0;
+  compareEntries(left: FileView, right: FileView): number {
+    const a = left.file;
+    const b = right.file;
 
-      switch (this.sort.column) {
-        case "kind":
-          byColumn = a.kind.localeCompare(b.kind);
-          break;
-        case "name":
-          byColumn = a.name.localeCompare(b.name, undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
-          break;
-        case "size":
-          byColumn = a.sizeBytes - b.sizeBytes;
-          break;
-        case "created":
-          byColumn = a.createdAt.localeCompare(b.createdAt);
-          break;
-      }
+    let byColumn = 0;
 
-      const directed = this.sort.direction === "asc" ? byColumn : -byColumn;
+    switch (this.sort.column) {
+      case "kind":
+        byColumn = a.kind.localeCompare(b.kind);
+        break;
+      case "name":
+        byColumn = a.name.localeCompare(b.name, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+        break;
+      case "size":
+        byColumn = a.sizeBytes - b.sizeBytes;
+        break;
+      case "created":
+        byColumn = a.createdAt.localeCompare(b.createdAt);
+        break;
+    }
 
-      if (directed !== 0) {
-        return directed;
-      }
+    const directed = this.sort.direction === "asc" ? byColumn : -byColumn;
 
-      const byName = a.name.localeCompare(b.name, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
+    if (directed !== 0) {
+      return directed;
+    }
 
-      if (byName !== 0) {
-        return byName;
-      }
-
-      if (a.createdAt !== b.createdAt) {
-        return a.createdAt < b.createdAt ? -1 : 1;
-      }
-
-      if (a.id === b.id) {
-        return 0;
-      }
-
-      return a.id < b.id ? -1 : 1;
+    const byName = a.name.localeCompare(b.name, undefined, {
+      numeric: true,
+      sensitivity: "base",
     });
+
+    if (byName !== 0) {
+      return byName;
+    }
+
+    if (a.createdAt !== b.createdAt) {
+      return a.createdAt < b.createdAt ? -1 : 1;
+    }
+
+    if (a.id === b.id) {
+      return 0;
+    }
+
+    return a.id < b.id ? -1 : 1;
+  }
+
+  order() {
+    this.entries = this.sorted(this.entries);
+  }
+
+  sorted(entries: FileView[]): FileView[] {
+    return entries.slice().sort((left, right) => this.compareEntries(left, right));
   }
 
   /** Drop the returned entry into the open folder. */
@@ -257,9 +272,10 @@ export class FileListing {
         return;
       }
 
-      this.entries = next.filter((entry) => entry.file.parent === parent);
-
-      this.order();
+      // One assignment (already sorted) so keyed rows do not reshuffle twice.
+      this.entries = this.sorted(
+        next.filter((entry) => entry.file.parent === parent),
+      );
 
       this.opts.onLocationChange(this.entries);
     } catch (cause) {
@@ -298,6 +314,9 @@ export class FileListing {
       return;
     }
 
+    // Drop old rows before trail/`..` updates so the scroller cannot shift them.
+    this.beginNavigation();
+
     if (this.ancestors.at(-1)?.id !== id) {
       this.ancestors = this.ancestors.concat({
         id,
@@ -318,12 +337,15 @@ export class FileListing {
       return;
     }
 
+    this.beginNavigation();
+
     const index = trailLength - 2;
     this.ancestors = this.ancestors.slice(0, index);
     showDirectory(parentId);
   }
 
   sliceAncestors(index: number) {
+    this.beginNavigation();
     this.ancestors = this.ancestors.slice(0, index);
   }
 

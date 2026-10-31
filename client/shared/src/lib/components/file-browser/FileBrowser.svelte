@@ -19,6 +19,7 @@
   import { PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
   import { DragDropProvider, DragOverlay } from "@dnd-kit/svelte";
   import { onDestroy, untrack } from "svelte";
+  import { fade } from "svelte/transition";
   import { navigate, route } from "../../router";
   import { PreviewQueue } from "../../previewQueue.svelte";
   import { session } from "../../session.svelte";
@@ -215,7 +216,6 @@
       sharing.resetOnOpen();
       previewFileId = null;
       previews.clear();
-      scroller?.scrollTo({ top: 0 });
     },
     onLocationChange: (entries) => {
       const key = tiles ? "preview256" : "preview64";
@@ -345,6 +345,29 @@
     untrack(() => {
       listing.open(rootId, parent);
     });
+  });
+
+  /** Scroll to top once the new folder scroller mounts after a load. */
+  let resetScrollAfterLoad = false;
+
+  $effect(() => {
+    if (listing.loading) {
+      resetScrollAfterLoad = true;
+      return;
+    }
+
+    if (!resetScrollAfterLoad) {
+      return;
+    }
+
+    const node = scroller;
+
+    if (!node) {
+      return;
+    }
+
+    resetScrollAfterLoad = false;
+    node.scrollTo({ top: 0 });
   });
 
   $effect(() => {
@@ -1012,6 +1035,7 @@
         <div
           bind:this={scroller}
           class="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          in:fade={{ duration: 50 }}
         >
           <div
             class="flex h-full flex-col items-center justify-center gap-2 px-6 py-16 text-center"
@@ -1027,6 +1051,10 @@
         {#snippet parentLeading()}
           <ParentDropItem {columns} {viewMode} onOpen={openParentDirectory} />
         {/snippet}
+        <div
+          class="flex min-h-0 min-w-0 flex-1 flex-col"
+          in:fade={{ duration: 50 }}
+        >
         <DragDropProvider
           {sensors}
           onDragStart={(e) => {
@@ -1253,6 +1281,7 @@
             {/snippet}
           </DragOverlay>
         </DragDropProvider>
+        </div>
       {/if}
     {/if}
   </div>
