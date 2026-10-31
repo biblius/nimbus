@@ -945,6 +945,12 @@ export class NimbusClient implements NimbusWebApi {
     });
   }
 
+  sendTestEmail(): Promise<void> {
+    return this.request<void>("/admin/config/test-email", {
+      method: "POST",
+    });
+  }
+
   private async *events(
     path: string,
     init: RequestInit,

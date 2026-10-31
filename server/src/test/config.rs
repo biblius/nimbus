@@ -105,6 +105,18 @@ mod configuration_service {
     }
 
     #[test]
+    async fn send_test_email_rejects_when_smtp_incomplete(state: TestState) {
+        let err = state
+            .services
+            .config
+            .send_test_email("admin@example.com")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, crate::error::AppError::Unprocessable(_)));
+    }
+
+    #[test]
     async fn auth_reads_nimbus_origin_from_shared_config(state: TestState) {
         state
             .services

@@ -29,12 +29,16 @@
   ): Promise<NimbusConfiguration> {
     return session.client.updateConfig(input);
   }
+
+  async function testEmail(): Promise<void> {
+    await session.client.sendTestEmail();
+  }
 </script>
 
 <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
   <div class="mx-auto max-w-3xl">
     {#if config}
-      <ConfigForm bind:config {save} />
+      <ConfigForm bind:config {save} {testEmail} />
     {:else}
       <div class="border-b pb-3">
         <h2 class="text-lg font-semibold tracking-tight">Settings</h2>

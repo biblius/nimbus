@@ -27,7 +27,7 @@
       onToggleMenu={() => (session.menuOpen = !session.menuOpen)}
       onToggleMode={() => {
         session.menuOpen = false;
-        navigate(admin ? "/files" : "/admin/users");
+        navigate(admin ? "/files" : "/admin/settings");
       }}
       onLogout={logout}
     />

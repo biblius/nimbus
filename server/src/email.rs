@@ -3,43 +3,92 @@ use lettre::{
     message::{Mailbox, header::ContentType},
     transport::smtp::authentication::Credentials,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::instrument;
 use uuid::Uuid;
 
-use crate::{config::NimbusConfig, error::AppError};
+use crate::{
+    config::{Configuration, NimbusConfig},
+    error::AppError,
+};
 
 struct EmailRequest {
     to: String,
     subject: String,
     html: String,
+    /// When set, the worker reports whether delivery succeeded (SMTP test).
+    reply: Option<oneshot::Sender<Result<(), AppError>>>,
 }
 
-type EmailQueueHandle = mpsc::Sender<EmailRequest>;
+enum EmailCommand {
+    Send(EmailRequest),
+    /// Rebuild the transport from the current [`NimbusConfig`].
+    Reconfigure(oneshot::Sender<()>),
+}
+
+/// SMTP connection settings used only while building a transport.
+struct SmtpEndpoint {
+    host: String,
+    port: u16,
+    username: String,
+    password: String,
+}
+
+impl SmtpEndpoint {
+    fn from_config(config: &Configuration) -> Option<Self> {
+        if !config.smtp_configured() {
+            return None;
+        }
+        Some(Self {
+            host: config.smtp_host.clone(),
+            port: config.smtp_port,
+            username: config.smtp_username.clone(),
+            password: config.smtp_password.clone(),
+        })
+    }
+}
+
+type EmailQueueHandle = mpsc::Sender<EmailCommand>;
 
 /// Background worker that delivers queued outbound messages over SMTP.
 struct EmailQueue {
-    requests: mpsc::Receiver<EmailRequest>,
+    commands: mpsc::Receiver<EmailCommand>,
     config: NimbusConfig,
+    mailer: AsyncSmtpTransport<Tokio1Executor>,
 }
 
 impl EmailQueue {
-    fn start(config: NimbusConfig) -> EmailQueueHandle {
+    fn start(config: NimbusConfig, mailer: AsyncSmtpTransport<Tokio1Executor>) -> EmailQueueHandle {
         let (tx, rx) = mpsc::channel(128);
-        EmailQueue::new(config, rx)._start();
+        EmailQueue {
+            commands: rx,
+            config,
+            mailer,
+        }
+        ._start();
         tx
-    }
-
-    fn new(config: NimbusConfig, requests: mpsc::Receiver<EmailRequest>) -> Self {
-        Self { requests, config }
     }
 
     #[instrument(skip(self))]
     fn _start(mut self) {
         tokio::spawn(async move {
-            while let Some(request) = self.requests.recv().await {
-                if let Err(e) = self.deliver(request).await {
-                    tracing::error!(error=%e, "error sending email");
+            while let Some(command) = self.commands.recv().await {
+                match command {
+                    EmailCommand::Reconfigure(done) => {
+                        self.reconfigure().await;
+                        let _ = done.send(());
+                    }
+                    EmailCommand::Send(mut request) => {
+                        let reply = request.reply.take();
+                        let require_smtp = reply.is_some();
+                        let result = self.deliver(request, require_smtp).await;
+
+                        if let Some(reply) = reply {
+                            let _ = reply.send(result);
+                        } else if let Err(e) = result {
+                            tracing::error!(error=%e, "error sending email");
+                        }
+                    }
                 }
             }
 
@@ -47,23 +96,28 @@ impl EmailQueue {
         });
     }
 
+    async fn reconfigure(&mut self) {
+        let cfg = self.config.get().await;
+        self.mailer = transport(&cfg);
+    }
+
     #[instrument(skip(self, request), fields(to = %request.to, subject = %request.subject), err(Debug))]
-    async fn deliver(&self, request: EmailRequest) -> Result<(), AppError> {
+    async fn deliver(&self, request: EmailRequest, require_smtp: bool) -> Result<(), AppError> {
         let cfg = self.config.get().await;
 
-        let Some(mailer) = build_mailer(
-            &cfg.smtp_host,
-            cfg.smtp_port,
-            &cfg.smtp_username,
-            &cfg.smtp_password,
-        ) else {
+        if !cfg.smtp_configured() {
+            if require_smtp {
+                return Err(AppError::Unprocessable(
+                    "SMTP is not fully configured".into(),
+                ));
+            }
             tracing::info!(
                 to = %request.to,
                 subject = %request.subject,
                 "smtp is not configured; email was not sent"
             );
             return Ok(());
-        };
+        }
 
         let from = build_from(&cfg.smtp_username, &cfg.email_from);
 
@@ -83,9 +137,13 @@ impl EmailQueue {
                 AppError::Internal
             })?;
 
-        mailer.send(message).await.map_err(|error| {
+        self.mailer.send(message).await.map_err(|error| {
             tracing::error!(%error, "smtp send failed");
-            AppError::Internal
+            if require_smtp {
+                AppError::Unprocessable("SMTP delivery failed".into())
+            } else {
+                AppError::Internal
+            }
         })?;
         Ok(())
     }
@@ -107,32 +165,29 @@ fn build_from(username: &str, from_name: &str) -> Mailbox {
     }
 }
 
-fn build_mailer(
-    host: &str,
-    port: u16,
-    username: &str,
-    password: &str,
-) -> Option<AsyncSmtpTransport<Tokio1Executor>> {
-    if host.is_empty() || username.is_empty() || password.is_empty() {
-        return None;
-    }
+fn transport(config: &Configuration) -> AsyncSmtpTransport<Tokio1Executor> {
+    let Some(endpoint) = SmtpEndpoint::from_config(config) else {
+        tracing::info!("smtp is not configured; using inert transport");
+        return AsyncSmtpTransport::<Tokio1Executor>::unencrypted_localhost();
+    };
 
-    let transport = if port == 465 {
-        AsyncSmtpTransport::<Tokio1Executor>::relay(host)
+    let transport = if endpoint.port == 465 {
+        AsyncSmtpTransport::<Tokio1Executor>::relay(&endpoint.host)
     } else {
-        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host)
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&endpoint.host)
     };
 
     match transport {
-        Ok(builder) => Some(
+        Ok(builder) => {
+            tracing::info!(host = %endpoint.host, port = endpoint.port, "smtp transport ready");
             builder
-                .port(port)
-                .credentials(Credentials::new(username.to_string(), password.to_string()))
-                .build(),
-        ),
+                .port(endpoint.port)
+                .credentials(Credentials::new(endpoint.username, endpoint.password))
+                .build()
+        }
         Err(error) => {
-            tracing::error!(%error, "smtp transport could not be built; email is disabled");
-            None
+            tracing::error!(%error, "smtp transport could not be built; using inert transport");
+            AsyncSmtpTransport::<Tokio1Executor>::unencrypted_localhost()
         }
     }
 }
@@ -140,7 +195,8 @@ fn build_mailer(
 /// SMTP sender. Missing host, username, or password disables delivery and logs instead.
 ///
 /// Delivery runs on a background queue so callers are not blocked on SMTP latency.
-/// SMTP settings are read from the shared [`NimbusConfig`] on each send.
+/// The queue owns a single SMTP transport; call [`EmailSender::reconfigure`] after
+/// SMTP settings change.
 #[derive(Clone)]
 pub struct EmailSender {
     queue: EmailQueueHandle,
@@ -149,13 +205,20 @@ pub struct EmailSender {
 
 impl EmailSender {
     pub async fn new(config: NimbusConfig) -> Self {
-        if !config.get().await.smtp_configured() {
-            tracing::info!("smtp is not configured; outbound email is disabled");
-        }
-
-        let queue = EmailQueue::start(config.clone());
+        let mailer = transport(&config.get().await);
+        let queue = EmailQueue::start(config.clone(), mailer);
 
         Self { queue, config }
+    }
+
+    /// Rebuild the queue's SMTP transport from the current config.
+    pub async fn reconfigure(&self) -> Result<(), AppError> {
+        let (tx, rx) = oneshot::channel();
+        self.queue
+            .send(EmailCommand::Reconfigure(tx))
+            .await
+            .map_err(|_| AppError::Internal)?;
+        rx.await.map_err(|_| AppError::Internal)
     }
 
     pub async fn send_account_created(&self, to: &str, username: &str) -> Result<(), AppError> {
@@ -164,7 +227,7 @@ impl EmailSender {
             "<p>An administrator created a Nimbus account for <strong>{username}</strong>.</p>\
              <p>Sign in and change the password you were given.</p>"
         );
-        self.enqueue(to, "Your Nimbus account", html).await
+        self.enqueue(to, "Your Nimbus account", html, None).await
     }
 
     pub async fn send_password_reset(
@@ -189,17 +252,38 @@ impl EmailSender {
             tracing::info!(%link, "smtp is not configured; password reset link");
         }
 
-        self.enqueue(to, "Reset your Nimbus password", html).await
+        self.enqueue(to, "Reset your Nimbus password", html, None)
+            .await
     }
 
     pub async fn send_password_changed(&self, to: &str, username: &str) -> Result<(), AppError> {
         let username = escape(username);
         let html = format!("<p>{username}, your Nimbus password was changed.</p>");
-        self.enqueue(to, "Nimbus password changed", html).await
+        self.enqueue(to, "Nimbus password changed", html, None)
+            .await
+    }
+
+    /// Send a short message used to verify SMTP settings. Delivers via the shared
+    /// queue transport and waits for the outcome so the caller learns whether the
+    /// relay accepted the message.
+    pub async fn send_smtp_test(&self, to: &str) -> Result<(), AppError> {
+        let html = String::from(
+            "<p>This is a test message from Nimbus.</p>\
+             <p>If you received it, SMTP is configured correctly.</p>",
+        );
+        let (tx, rx) = oneshot::channel();
+        self.enqueue(to, "Nimbus SMTP test", html, Some(tx)).await?;
+        rx.await.map_err(|_| AppError::Internal)?
     }
 
     /// Validate the recipient and enqueue delivery on the background worker.
-    async fn enqueue(&self, to: &str, subject: &str, html: String) -> Result<(), AppError> {
+    async fn enqueue(
+        &self,
+        to: &str,
+        subject: &str,
+        html: String,
+        reply: Option<oneshot::Sender<Result<(), AppError>>>,
+    ) -> Result<(), AppError> {
         // Fail fast on bad addresses so API callers still see Unprocessable.
         let _ = to.parse::<Mailbox>().map_err(|error| {
             tracing::error!(%error, "invalid recipient address");
@@ -207,11 +291,12 @@ impl EmailSender {
         })?;
 
         self.queue
-            .send(EmailRequest {
+            .send(EmailCommand::Send(EmailRequest {
                 to: to.to_string(),
                 subject: subject.to_string(),
                 html,
-            })
+                reply,
+            }))
             .await
             .map_err(|_| AppError::Internal)
     }

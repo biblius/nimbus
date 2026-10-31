@@ -260,4 +260,7 @@ export interface NimbusApi {
 
   updateConfig(input: NimbusConfigUpdate): Promise<NimbusConfiguration>;
 
+  /** Send a test message to the current admin's account email. */
+  sendTestEmail(): Promise<void>;
+
 }

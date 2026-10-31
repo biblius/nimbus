@@ -164,6 +164,7 @@ pub fn router(state: AppState) -> Router {
             "/config",
             get(config::get_config).patch(config::update_config),
         )
+        .route("/config/test-email", post(config::send_test_email))
         .route("/roots/private", get(folders::list_private))
         .route(
             "/roots/shared",

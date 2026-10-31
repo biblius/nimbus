@@ -20,9 +20,11 @@
   let {
     config = $bindable(),
     save,
+    testEmail,
   }: {
     config: NimbusConfiguration;
     save: (input: NimbusConfigUpdate) => Promise<NimbusConfiguration>;
+    testEmail: () => Promise<void>;
   } = $props();
 
   let nimbusOrigin = $state(config.nimbusOrigin);
@@ -37,6 +39,7 @@
   let passwordWasSet = $state(config.smtpPassword === REDACTED);
 
   let busy = $state(false);
+  let testBusy = $state(false);
   let validation = $state<ValidationError | undefined>();
   let localErrors = $state<Record<string, ValidationField | undefined>>({});
 
@@ -276,6 +279,29 @@
       busy = false;
     }
   }
+
+  async function onTestEmail() {
+    if (busy || testBusy || smtpIncomplete || dirty) {
+      return;
+    }
+
+    testBusy = true;
+
+    try {
+      await testEmail();
+      toastSuccess("Test email sent");
+    } catch (cause) {
+      toastError(
+        cause instanceof TypeError
+          ? "The server could not be reached"
+          : cause instanceof ApiError
+            ? cause.message
+            : "Could not send test email",
+      );
+    } finally {
+      testBusy = false;
+    }
+  }
 </script>
 
 <form class="space-y-5" onsubmit={onSubmit}>
@@ -505,6 +531,22 @@
             {passwordError.message || passwordError.code}
           </p>
         {/if}
+      </div>
+
+      <div class="space-y-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy || testBusy || smtpIncomplete || dirty}
+          onclick={onTestEmail}
+        >
+          {testBusy ? "Sending…" : "Send test email"}
+        </Button>
+        <p class="text-xs text-muted-foreground">
+          Sends a test message to your account email using the saved SMTP
+          settings. Save changes first.
+        </p>
       </div>
     </div>
   </section>

@@ -225,7 +225,7 @@ async fn build_services(
         repository.trash.clone(),
         repository.folders.clone(),
         repository.sessions.clone(),
-        email,
+        email.clone(),
         Transactor::new(pool.clone()),
     );
 
@@ -256,7 +256,7 @@ async fn build_services(
             files,
             share,
             trash,
-            config: ConfigurationService::new(config.clone()),
+            config: ConfigurationService::new(config.clone(), email),
         },
         repository,
         storage,

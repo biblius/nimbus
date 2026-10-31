@@ -1,16 +1,17 @@
 use super::{ConfigUpdate, Configuration, NimbusConfig};
-use crate::error::AppError;
+use crate::{email::EmailSender, error::AppError};
 use validify::Validify;
 
 /// Admin-facing configuration API.
 #[derive(Clone)]
 pub struct ConfigurationService {
     config: NimbusConfig,
+    email: EmailSender,
 }
 
 impl ConfigurationService {
-    pub fn new(config: NimbusConfig) -> Self {
-        Self { config }
+    pub fn new(config: NimbusConfig, email: EmailSender) -> Self {
+        Self { config, email }
     }
 
     #[cfg(test)]
@@ -34,7 +35,20 @@ impl ConfigurationService {
             update.nimbus_origin = Some(trimmed.to_string());
         }
 
-        Ok(self.config.update(update).await?.redacted())
+        let updated = self.config.update(update).await?;
+        self.email.reconfigure().await?;
+        Ok(updated.redacted())
+    }
+
+    /// Deliver a test message to `to` using the current SMTP settings.
+    pub async fn send_test_email(&self, to: &str) -> Result<(), AppError> {
+        if !self.config.get().await.smtp_configured() {
+            return Err(AppError::Unprocessable(
+                "SMTP is not fully configured".into(),
+            ));
+        }
+
+        self.email.send_smtp_test(to).await
     }
 }
 
@@ -59,7 +73,9 @@ mod tests {
     async fn configuration_service_redacts_password() {
         let mut config = sample();
         config.smtp_password = "secret".into();
-        let service = ConfigurationService::new(NimbusConfig::in_memory(config));
+        let nimbus = NimbusConfig::in_memory(config);
+        let email = crate::email::EmailSender::new(nimbus.clone()).await;
+        let service = ConfigurationService::new(nimbus, email);
 
         let view = service.get().await;
         assert_eq!(view.smtp_password, "<redacted>");

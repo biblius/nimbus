@@ -112,7 +112,7 @@ impl AppState {
             repository.trash.clone(),
             repository.folders.clone(),
             repository.sessions.clone(),
-            email,
+            email.clone(),
             transactor.clone(),
         );
 
@@ -152,7 +152,7 @@ impl AppState {
             cors_headers: Arc::from(args.allowed_headers()),
         };
 
-        let config_service = ConfigurationService::new(config.clone());
+        let config_service = ConfigurationService::new(config.clone(), email);
 
         let services = ServiceState {
             auth,
