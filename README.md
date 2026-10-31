@@ -23,16 +23,6 @@ for information on how to set up your instance.
 Nimbus is made with AI tooling. That being said, this document, and all documentation
 regarding the self hosting of Nimbus is written by a human being, i.e. I, `biblius`.
 
-I reviewed all code in `server`, the business logic is \*mostly hand written and
-AI was used to implement the plumbing (wiring routes, services to repos, boilerplate).
-Most of the code in `client` was AI generated;
-Connecting the server API is mostly just duplicating the DTOs
-and writing out requests in `NimbusClient`. Page and component JS was \*\*mostly reviewed.
-The main component `FileBrowser`, the pages, the admin UI components, and the
-preview components were reviewed, mostly focusing on the JS parts because I
-am shit at component layout and design anyway and a quick glance at the screen verifies
-whether the styling is correct.
-
 This project was not vibe coded (the "make it PRO" prompts do not count :-).
 I've created Nimbus because I intend to use it.
 
@@ -44,7 +34,7 @@ or Doom - it is just a file hosting application.
 Nimbus is not E N T E R P R I S E and is focused toward smaller groups of
 people that need a fast and reliable file hosting system. It aims to be
 easy to set up and use and can be made better if one wants to go through
-setting up Postgres.
+setting up additional infrastructure.
 
 ---
 
