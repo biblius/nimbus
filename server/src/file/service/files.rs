@@ -229,16 +229,7 @@ impl FileService {
             return Err(AppError::Internal);
         };
 
-        super::activity(
-            &self.activity_q,
-            ctx,
-            ActivityData::Create(ActivityTarget::Single {
-                id: file.id,
-                name: file.name.clone(),
-            }),
-        )
-        .await;
-
+        // Create activity is logged by finish_upload; do not log again here.
         Ok(file)
     }
 

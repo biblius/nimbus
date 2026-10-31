@@ -6,8 +6,8 @@ mod activity {
         activity::{Activity, ActivityData, ActivityTarget},
         auth::session::Session,
         file::model::{
-            CreateDirectory, MoveFiles, RenameFile, RestoreFile, ShareFiles, SharingMode,
-            TrashFiles,
+            CreateDirectory, CreateTextFile, MoveFiles, RenameFile, RestoreFile, ShareFiles,
+            SharingMode, TrashFiles,
         },
         model::{List, Pagination},
         test::{self, TestState},
@@ -147,6 +147,31 @@ mod activity {
         assert!(matches!(
             &listed.items[0].data,
             ActivityData::Create(ActivityTarget::Multiple { count: 2 })
+        ));
+    }
+
+    /// Creating a text file independently records a single Create (not doubled via finish_upload).
+    #[test]
+    async fn create_text_file_logs_create_once(state: TestState, session: Session, root: Uuid) {
+        let file = state
+            .services
+            .files
+            .create_text_file(
+                &ctx(state, &session.user, *root).await,
+                CreateTextFile {
+                    parent: None,
+                    name: "blank.txt".into(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let listed = wait_for_total(state, session, *root, 1).await;
+        assert_eq!(listed.total, 1);
+        assert!(matches!(
+            &listed.items[0].data,
+            ActivityData::Create(ActivityTarget::Single { id, name })
+                if *id == file.id && name == "blank.txt"
         ));
     }
 

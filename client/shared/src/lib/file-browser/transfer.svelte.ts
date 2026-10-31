@@ -228,6 +228,7 @@ export class FileTransfer {
       }
 
       this.opts.removeMovedEntries(ids);
+      this.opts.exitSelectMode();
     } catch (cause) {
       const entries = this.opts.getEntries();
       const single =

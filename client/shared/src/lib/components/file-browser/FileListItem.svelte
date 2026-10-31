@@ -123,7 +123,8 @@
     id: fileId,
     type: "entry",
     get disabled() {
-      return !canWrite;
+      // Touch: keep names scrollable until long-press enters select mode.
+      return !canWrite || (!hasFinePointerHover() && !selectMode);
     },
   });
   // Files are not drop targets. A folder is the only valid parent.
