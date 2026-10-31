@@ -96,6 +96,9 @@
    */
   let deleteOpen = $state(false);
 
+  /** Drag source id kept mounted in the virtual list while scrolling. */
+  let dragPinKey = $state<string | null>(null);
+
   /**
    * True when the users has confirmed deletion
    * and the request is processing.
@@ -1024,7 +1027,17 @@
         {#snippet parentLeading()}
           <ParentDropItem {columns} {viewMode} onOpen={openParentDirectory} />
         {/snippet}
-        <DragDropProvider {sensors} onDragEnd={(e) => transfer.onDragEnd(e)}>
+        <DragDropProvider
+          {sensors}
+          onDragStart={(e) => {
+            const id = e.operation.source?.id;
+            dragPinKey = typeof id === "string" ? id : null;
+          }}
+          onDragEnd={(e) => {
+            dragPinKey = null;
+            transfer.onDragEnd(e);
+          }}
+        >
           <VirtualScroller
             bind:element={scroller}
             items={listing.entries}
@@ -1032,13 +1045,16 @@
             columns={virtualLayout.columns}
             gap={virtualLayout.gap}
             getKey={(entry) => entry.file.id}
+            pinKeys={dragPinKey ? [dragPinKey] : []}
             as="ul"
             class={tiles
               ? tileSize === "large"
                 ? "p-2"
                 : "p-1.5 sm:p-2"
               : undefined}
-            windowClass={tiles ? undefined : "divide-y"}
+            windowClass={tiles
+              ? undefined
+              : "[&>div+div>li]:border-t [&>div+div>li]:border-border"}
             leading={showParentDrop ? parentLeading : undefined}
           >
             {#snippet header()}

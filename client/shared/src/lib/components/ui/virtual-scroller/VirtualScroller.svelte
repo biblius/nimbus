@@ -10,6 +10,8 @@
     gap = 0,
     overscan = 8,
     getKey,
+    /** Keys kept mounted while outside the window (e.g. active drag source). */
+    pinKeys = [],
     class: className,
     windowClass,
     as = "div",
@@ -26,6 +28,7 @@
     gap?: number;
     overscan?: number;
     getKey?: (item: T, index: number) => string | number;
+    pinKeys?: readonly (string | number)[];
     class?: string;
     /** Classes on the positioned window that holds visible items. */
     windowClass?: string;
@@ -84,10 +87,18 @@
 
   type VisibleSlot =
     | { kind: "leading"; key: string }
-    | { kind: "item"; item: T; index: number; key: string | number };
+    | {
+        kind: "item";
+        item: T;
+        index: number;
+        key: string | number;
+        /** Outside the scroll window; stay mounted but out of layout. */
+        offscreen?: boolean;
+      };
 
   const visible = $derived.by(() => {
     const out: VisibleSlot[] = [];
+    const seen = new Set<string | number>();
 
     for (let row = startRow; row <= endRow; row++) {
       for (let col = 0; col < cols; col++) {
@@ -104,11 +115,41 @@
 
         const index = slot - leadingCount;
         const item = items[index];
+        const key = getKey?.(item, index) ?? index;
+        seen.add(key);
         out.push({
           kind: "item",
           item,
           index,
-          key: getKey?.(item, index) ?? index,
+          key,
+        });
+      }
+    }
+
+    // Keep pinned rows mounted without remounting when they leave the window
+    // (needed so drag sources survive virtualization).
+    if (pinKeys.length > 0) {
+      for (const key of pinKeys) {
+        if (seen.has(key)) {
+          continue;
+        }
+
+        const index = getKey
+          ? items.findIndex((item, i) => getKey(item, i) === key)
+          : typeof key === "number"
+            ? key
+            : -1;
+
+        if (index < 0 || index >= items.length) {
+          continue;
+        }
+
+        out.push({
+          kind: "item",
+          item: items[index],
+          index,
+          key,
+          offscreen: true,
         });
       }
     }
@@ -178,11 +219,24 @@
       style:gap={cols > 1 && rowGap > 0 ? `${rowGap}px` : undefined}
     >
       {#each visible as slot (slot.key)}
-        {#if slot.kind === "leading"}
-          {@render leading?.()}
-        {:else}
-          {@render children(slot.item, slot.index)}
-        {/if}
+        <!--
+          Always wrap so offscreen pinning only toggles CSS (no remount).
+          `contents` keeps list/grid layout; `hidden` parks pinned rows off-layout.
+        -->
+        <div
+          class={slot.kind === "item" && slot.offscreen
+            ? "hidden"
+            : "contents"}
+          aria-hidden={slot.kind === "item" && slot.offscreen
+            ? true
+            : undefined}
+        >
+          {#if slot.kind === "leading"}
+            {@render leading?.()}
+          {:else}
+            {@render children(slot.item, slot.index)}
+          {/if}
+        </div>
       {/each}
     </svelte:element>
   </div>
