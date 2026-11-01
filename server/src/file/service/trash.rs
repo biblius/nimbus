@@ -81,10 +81,6 @@ impl TrashFileService {
 
         let root_id = ctx.root.id;
 
-        if self.trash.get_trashed(root_id, id).await?.is_none() {
-            return Err(AppError::ResourceMissing("File does not exist".into()));
-        }
-
         self.validate_restore_parent(root_id, input.parent).await?;
 
         let quota = self.files.root_quota(root_id).await?;
@@ -97,26 +93,17 @@ impl TrashFileService {
 
         let mut tx = self.tx.begin().await?;
 
-        let mut restored = self.trash.delete_tree(&mut tx, root_id, id).await?;
-
-        let bytes: i64 = restored
-            .iter()
-            .filter(|row| row.kind == FileKind::File)
-            .map(|row| row.size_bytes)
-            .sum();
+        let Some(bytes) = self.trash.trashed_tree_bytes(&mut tx, root_id, id).await? else {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        };
 
         if quota > 0 && used.saturating_add(bytes) > quota {
             return Err(AppError::QuotaExceeded);
         }
 
-        for file in restored.iter_mut() {
-            if file.id == id {
-                file.parent = input.parent;
-                break;
-            }
-        }
-
-        self.files.insert_many(&mut tx, &restored).await?;
+        self.trash
+            .restore_tree(&mut tx, root_id, id, input.parent)
+            .await?;
 
         tx.commit().await?;
 
@@ -125,7 +112,8 @@ impl TrashFileService {
             ProcessActivity::ProcessRestore {
                 root_id: ctx.root.id,
                 username: ctx.user.username.clone(),
-                ids: vec![id],
+                id,
+                count: 1,
             },
         )
         .await
@@ -159,32 +147,20 @@ impl TrashFileService {
 
         let mut tx = self.tx.begin().await?;
 
-        let mut restored = self.trash.delete_all(&mut tx, root_id).await?;
-
-        if restored.is_empty() {
-            tx.commit().await?;
-
-            return Ok(());
-        }
-
-        let bytes: i64 = restored
-            .iter()
-            .filter(|row| row.kind == FileKind::File)
-            .map(|row| row.size_bytes)
-            .sum();
+        let bytes = self.trash.trashed_root_bytes(&mut tx, root_id).await?;
 
         if quota > 0 && used.saturating_add(bytes) > quota {
             return Err(AppError::QuotaExceeded);
         }
 
-        // Trash roots have a null parent, point them at the restore target.
-        for file in restored.iter_mut() {
-            if file.parent.is_none() {
-                file.parent = target.parent;
-            }
-        }
-
-        self.files.insert_many(&mut tx, &restored).await?;
+        let Some((count, sample_id)) = self
+            .trash
+            .restore_all(&mut tx, root_id, target.parent)
+            .await?
+        else {
+            tx.commit().await?;
+            return Ok(());
+        };
 
         tx.commit().await?;
 
@@ -193,7 +169,8 @@ impl TrashFileService {
             ProcessActivity::ProcessRestore {
                 root_id: ctx.root.id,
                 username: ctx.user.username.clone(),
-                ids: restored.into_iter().map(|file| file.id).collect(),
+                id: sample_id,
+                count: count as usize,
             },
         )
         .await

@@ -270,20 +270,33 @@ impl TrashRepository {
         Ok(())
     }
 
-    /// Delete `id` and its descendants from `trashed_files`. Returns the removed rows.
+    /// Total `size_bytes` of files in the trashed subtree rooted at `id`.
     ///
-    /// Does not touch `file_metadata` because the same IDs are reused on restore.
-    ///
-    /// Selects before delete so parent links survive SQLite's immediate
-    /// `ON DELETE SET NULL` during the multi-row delete.
+    /// `None` when `id` is not a trashed row in `root_id`.
     #[instrument(skip(self, conn), err(Debug))]
-    pub async fn delete_tree(
+    pub async fn trashed_tree_bytes(
         &self,
         conn: &mut <Db as sqlx::Database>::Connection,
         root_id: Uuid,
         id: Uuid,
-    ) -> Result<Vec<FileEntry>, AppError> {
-        let restored = sqlx::query_as::<_, FileEntry>(
+    ) -> Result<Option<i64>, AppError> {
+        let exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM trashed_files WHERE id = $1 AND root_id = $2
+            )
+            "#,
+        )
+        .bind(id)
+        .bind(root_id)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        if !exists {
+            return Ok(None);
+        }
+
+        let bytes = sqlx::query_scalar::<_, i64>(
             r#"
             WITH RECURSIVE tree AS (
                 SELECT id
@@ -295,100 +308,208 @@ impl TrashRepository {
                 FROM trashed_files child
                 JOIN tree t ON child.parent = t.id
             )
-            SELECT
-                f.id,
-                f.root_id,
-                f.created_by,
-                f."type" AS kind,
-                f.name,
-                f.parent,
-                f.format AS file_type,
-                f.hash,
-                f.size_bytes,
-                NULL AS sharing_mode,
-                NULL AS share_expires_at,
-                m.preview_64,
-                m.preview_256,
-                m.preview_blob,
-                f.created_at,
-                f.updated_at
+            SELECT CAST(COALESCE(SUM(f.size_bytes), 0) AS BIGINT)
             FROM tree t
             JOIN trashed_files f ON f.id = t.id
-            LEFT JOIN file_metadata m ON m.file_id = f.id
+            WHERE f."type" = 'f'
             "#,
         )
         .bind(id)
         .bind(root_id)
-        .fetch_all(&mut *conn)
+        .fetch_one(&mut *conn)
         .await?;
 
-        if restored.iter().all(|row| row.id != id) {
-            return Err(AppError::ResourceMissing("File does not exist".into()));
-        }
-
-        let mut delete = QueryBuilder::<Db>::new("DELETE FROM trashed_files WHERE root_id = ");
-        delete.push_bind(root_id);
-        delete.push(" AND id IN (");
-        {
-            let mut selected = delete.separated(", ");
-            for row in &restored {
-                selected.push_bind(row.id);
-            }
-        }
-        delete.push(")");
-        delete.build().execute(&mut *conn).await?;
-
-        Ok(restored)
+        Ok(Some(bytes))
     }
 
-    /// Delete every trashed row in `root_id`. Returns the removed rows.
-    ///
-    /// Does not touch `file_metadata` because the same IDs are reused on restore.
-    ///
-    /// Selects before delete so parent links survive SQLite's immediate
-    /// `ON DELETE SET NULL` during the multi-row delete.
+    /// Total `size_bytes` of every trashed file in `root_id`.
     #[instrument(skip(self, conn), err(Debug))]
-    pub async fn delete_all(
+    pub async fn trashed_root_bytes(
         &self,
         conn: &mut <Db as sqlx::Database>::Connection,
         root_id: Uuid,
-    ) -> Result<Vec<FileEntry>, AppError> {
-        let restored = sqlx::query_as::<_, FileEntry>(
+    ) -> Result<i64, AppError> {
+        sqlx::query_scalar::<_, i64>(
             r#"
+            SELECT CAST(COALESCE(SUM(size_bytes), 0) AS BIGINT)
+            FROM trashed_files
+            WHERE root_id = $1
+              AND "type" = 'f'
+            "#,
+        )
+        .bind(root_id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(AppError::from)
+    }
+
+    /// Move `id` and its descendants from `trashed_files` into `files`.
+    ///
+    /// The restored root is reparented to `parent` (trash-root semantics for that
+    /// row only). Descendants keep their in-trash parents. `file_metadata` is
+    /// left alone (same ids).
+    ///
+    /// Returns how many rows were moved.
+    #[instrument(skip(self, conn), err(Debug))]
+    pub async fn restore_tree(
+        &self,
+        conn: &mut <Db as sqlx::Database>::Connection,
+        root_id: Uuid,
+        id: Uuid,
+        parent: Option<Uuid>,
+    ) -> Result<u64, AppError> {
+        let inserted = sqlx::query(
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT id
+                FROM trashed_files
+                WHERE id = $1
+                  AND root_id = $2
+                UNION ALL
+                SELECT child.id
+                FROM trashed_files child
+                JOIN tree t ON child.parent = t.id
+            )
+            INSERT INTO files (
+                id,
+                root_id,
+                created_by,
+                "type",
+                name,
+                parent,
+                format,
+                hash,
+                size_bytes,
+                sharing_mode,
+                share_expires_at,
+                created_at,
+                updated_at
+            )
             SELECT
                 f.id,
                 f.root_id,
                 f.created_by,
-                f."type" AS kind,
+                f."type",
                 f.name,
-                f.parent,
-                f.format AS file_type,
+                CASE WHEN f.id = $1 THEN $3 ELSE f.parent END,
+                f.format,
                 f.hash,
                 f.size_bytes,
-                NULL AS sharing_mode,
-                NULL AS share_expires_at,
-                m.preview_64,
-                m.preview_256,
-                m.preview_blob,
+                NULL,
+                NULL,
+                f.created_at,
+                f.updated_at
+            FROM tree t
+            JOIN trashed_files f ON f.id = t.id
+            "#,
+        )
+        .bind(id)
+        .bind(root_id)
+        .bind(parent)
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
+
+        if inserted == 0 {
+            return Err(AppError::ResourceMissing("File does not exist".into()));
+        }
+
+        sqlx::query(
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT id
+                FROM trashed_files
+                WHERE id = $1
+                  AND root_id = $2
+                UNION ALL
+                SELECT child.id
+                FROM trashed_files child
+                JOIN tree t ON child.parent = t.id
+            )
+            DELETE FROM trashed_files
+            WHERE root_id = $2
+              AND id IN (SELECT id FROM tree)
+            "#,
+        )
+        .bind(id)
+        .bind(root_id)
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(inserted)
+    }
+
+    /// Move every trashed row in `root_id` into `files`.
+    ///
+    /// Former trash roots (`parent IS NULL`) are reparented to `parent`.
+    /// `file_metadata` is left alone.
+    ///
+    /// Returns `(rows_moved, sample_id)` for activity, or `None` when trash is empty.
+    #[instrument(skip(self, conn), err(Debug))]
+    pub async fn restore_all(
+        &self,
+        conn: &mut <Db as sqlx::Database>::Connection,
+        root_id: Uuid,
+        parent: Option<Uuid>,
+    ) -> Result<Option<(u64, Uuid)>, AppError> {
+        let sample_id = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM trashed_files WHERE root_id = $1 LIMIT 1",
+        )
+        .bind(root_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        let Some(sample_id) = sample_id else {
+            return Ok(None);
+        };
+
+        let inserted = sqlx::query(
+            r#"
+            INSERT INTO files (
+                id,
+                root_id,
+                created_by,
+                "type",
+                name,
+                parent,
+                format,
+                hash,
+                size_bytes,
+                sharing_mode,
+                share_expires_at,
+                created_at,
+                updated_at
+            )
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type",
+                f.name,
+                CASE WHEN f.parent IS NULL THEN $2 ELSE f.parent END,
+                f.format,
+                f.hash,
+                f.size_bytes,
+                NULL,
+                NULL,
                 f.created_at,
                 f.updated_at
             FROM trashed_files f
-            LEFT JOIN file_metadata m ON m.file_id = f.id
             WHERE f.root_id = $1
             "#,
         )
         .bind(root_id)
-        .fetch_all(&mut *conn)
-        .await?;
+        .bind(parent)
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
 
-        if !restored.is_empty() {
-            sqlx::query("DELETE FROM trashed_files WHERE root_id = $1")
-                .bind(root_id)
-                .execute(&mut *conn)
-                .await?;
-        }
+        sqlx::query("DELETE FROM trashed_files WHERE root_id = $1")
+            .bind(root_id)
+            .execute(&mut *conn)
+            .await?;
 
-        Ok(restored)
+        Ok(Some((inserted, sample_id)))
     }
 
     /// Delete trashed rows for `ids` in `root_id`. Returns the ids that were actually removed.

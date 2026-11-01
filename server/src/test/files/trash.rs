@@ -797,4 +797,114 @@ mod trash {
             child_count as i64
         );
     }
+
+    /// Restoring a directory larger than `SQL_MAX_STATEMENTS` uses INSERT…SELECT
+    /// (no per-row binds) and keeps child parent links.
+    #[test]
+    async fn restore_large_directory_beyond_sql_variable_limit(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let directory = state
+            .services
+            .files
+            .create_directory(
+                &ctx(state, &session.user, *root).await,
+                CreateDirectory {
+                    parent: None,
+                    name: "huge-restore".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let child_count = SQL_MAX_STATEMENTS + 1;
+        let now = Utc::now();
+        let mut children = Vec::with_capacity(child_count);
+        for i in 0..child_count {
+            children.push(FileEntry {
+                id: Uuid::new_v4(),
+                root_id: *root,
+                created_by: Some(session.user.id),
+                kind: FileKind::File,
+                name: format!("r{i}"),
+                parent: Some(directory.id),
+                file_type: None,
+                hash: None,
+                size_bytes: 0,
+                sharing_mode: None,
+                share_expires_at: None,
+                metadata: FileMetadata::default(),
+                created_at: now,
+                updated_at: now,
+            });
+        }
+
+        let mut conn = state.pool.acquire().await.unwrap();
+        for chunk in children.chunks(1_000) {
+            state
+                .repository
+                .files
+                .insert_many(&mut conn, chunk)
+                .await
+                .unwrap();
+        }
+        drop(conn);
+
+        state
+            .services
+            .files
+            .delete(
+                &ctx(state, &session.user, *root).await,
+                directory.id,
+            )
+            .await
+            .unwrap();
+
+        state
+            .services
+            .trash
+            .restore(
+                &ctx(state, &session.user, *root).await,
+                directory.id,
+                RestoreFile { parent: None },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE root_id = $1",
+                *root
+            ),
+            0
+        );
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM files WHERE root_id = $1",
+                *root
+            ),
+            (child_count + 1) as i64
+        );
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM files WHERE id = $1 AND parent IS NULL",
+                directory.id
+            ),
+            1
+        );
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM files WHERE parent = $1",
+                directory.id
+            ),
+            child_count as i64
+        );
+    }
 }

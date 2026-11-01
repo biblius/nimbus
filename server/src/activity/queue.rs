@@ -33,7 +33,10 @@ pub enum ProcessActivity {
     ProcessRestore {
         root_id: Uuid,
         username: String,
-        ids: Vec<Uuid>,
+        /// One restored id (name / parent lookup).
+        id: Uuid,
+        /// Total rows restored (1 → single target, else multiple).
+        count: usize,
     },
 }
 
@@ -106,21 +109,22 @@ impl ActivityQueue {
             ProcessActivity::ProcessRestore {
                 root_id,
                 username,
-                ids,
+                id,
+                count,
             } => {
-                let target = if ids.len() == 1 {
+                let target = if count == 1 {
                     ActivityTarget::Single {
-                        id: ids[0],
-                        name: self.repository.files.get_file_name(root_id, ids[0]).await?,
+                        id,
+                        name: self.repository.files.get_file_name(root_id, id).await?,
                     }
                 } else {
-                    ActivityTarget::Multiple { count: ids.len() }
+                    ActivityTarget::Multiple { count }
                 };
 
                 let to = self
                     .repository
                     .files
-                    .get_parent_name(root_id, ids[0])
+                    .get_parent_name(root_id, id)
                     .await?;
 
                 self.repository
