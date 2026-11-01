@@ -798,6 +798,97 @@ mod trash {
         );
     }
 
+    /// Permanent delete of a directory larger than `SQL_MAX_STATEMENTS` expands
+    /// the tree in SQL (CTE delete) rather than binding every id.
+    #[test]
+    async fn hard_delete_large_directory_beyond_sql_variable_limit(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let directory = state
+            .services
+            .files
+            .create_directory(
+                &ctx(state, &session.user, *root).await,
+                CreateDirectory {
+                    parent: None,
+                    name: "huge-hard-delete".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let child_count = SQL_MAX_STATEMENTS + 1;
+        let now = Utc::now();
+        let mut children = Vec::with_capacity(child_count);
+        for i in 0..child_count {
+            children.push(FileEntry {
+                id: Uuid::new_v4(),
+                root_id: *root,
+                created_by: Some(session.user.id),
+                kind: FileKind::File,
+                name: format!("h{i}"),
+                parent: Some(directory.id),
+                file_type: None,
+                // No backing blob — worker skips remove when the count is zero elsewhere.
+                // Use a shared hash so count_hashes stays a single bind key.
+                hash: Some("dead".into()),
+                size_bytes: 0,
+                sharing_mode: None,
+                share_expires_at: None,
+                metadata: FileMetadata::default(),
+                created_at: now,
+                updated_at: now,
+            });
+        }
+
+        let mut conn = state.pool.acquire().await.unwrap();
+        for chunk in children.chunks(1_000) {
+            state
+                .repository
+                .files
+                .insert_many(&mut conn, chunk)
+                .await
+                .unwrap();
+        }
+        drop(conn);
+
+        state
+            .services
+            .files
+            .delete(
+                &ctx(state, &session.user, *root).await,
+                directory.id,
+            )
+            .await
+            .unwrap();
+
+        let rx = state
+            .services
+            .trash
+            .delete_trash(
+                &ctx(state, &session.user, *root).await,
+                directory.id,
+                state.queue.clone(),
+            )
+            .await
+            .unwrap();
+        let results = state.await_deletion(rx).await;
+
+        assert_eq!(results.len(), child_count + 1);
+        assert!(results.iter().all(|result| result.success));
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM trashed_files WHERE root_id = $1",
+                *root
+            ),
+            0
+        );
+    }
+
     /// Restoring a directory larger than `SQL_MAX_STATEMENTS` uses INSERT…SELECT
     /// (no per-row binds) and keeps child parent links.
     #[test]

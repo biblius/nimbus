@@ -57,13 +57,17 @@ impl TrashFileService {
             .await?
             .ok_or_else(|| AppError::ResourceMissing("File does not exist".into()))?;
 
-        let files = self.trash.list_trashed_tree_ids(root_id, file.id).await?;
+        // Seed only — the worker expands the subtree in SQL (no per-id binds).
         let request_id = Uuid::new_v4();
 
         DeletionQueue::submit(
             handle,
             request_id,
-            PendingDeletion::from_refs(FileTable::Trashed, &files),
+            vec![PendingDeletion {
+                file_id: file.id,
+                root_id,
+                origin: FileTable::Trashed,
+            }],
             None,
         )
         .await

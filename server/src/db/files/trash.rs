@@ -74,61 +74,6 @@ impl TrashRepository {
         .map_err(AppError::from)
     }
 
-    /// Trashed rows for every id in `ids` within `root_id`. Missing ids are omitted.
-    #[instrument(skip(self, ids), err(Debug))]
-    pub async fn get_trashed_many(
-        &self,
-        root_id: Uuid,
-        ids: &[Uuid],
-    ) -> Result<Vec<FileEntry>, AppError> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut query = QueryBuilder::<Db>::new(
-            r#"
-            SELECT
-                f.id,
-                f.root_id,
-                f.created_by,
-                f."type" AS kind,
-                f.name,
-                f.parent,
-                f.format AS file_type,
-                f.hash,
-                f.size_bytes,
-                NULL AS sharing_mode,
-                NULL AS share_expires_at,
-                m.preview_64,
-                m.preview_256,
-                m.preview_blob,
-                f.created_at,
-                f.updated_at
-            FROM trashed_files f
-            LEFT JOIN file_metadata m ON m.file_id = f.id
-            WHERE f.root_id =
-            "#,
-        );
-
-        query.push_bind(root_id);
-        query.push(" AND f.id IN (");
-
-        {
-            let mut selected = query.separated(", ");
-            for id in ids {
-                selected.push_bind(*id);
-            }
-        }
-
-        query.push(")");
-
-        query
-            .build_query_as::<FileEntry>()
-            .fetch_all(&self.pool)
-            .await
-            .map_err(AppError::from)
-    }
-
     /// Trash for a root. Directly trashed rows have a null parent, so they are the roots.
     pub async fn list_trash(&self, root_id: Uuid) -> Result<Vec<FileEntryTree>, AppError> {
         list_descendants_in(&self.pool, FileTable::Trashed, root_id, None).await
@@ -512,100 +457,164 @@ impl TrashRepository {
         Ok(Some((inserted, sample_id)))
     }
 
-    /// Delete trashed rows for `ids` in `root_id`. Returns the ids that were actually removed.
+    /// Hard-delete `id` and its descendants. Returns the removed rows (for blob cleanup).
     ///
-    /// Also removes matching `file_metadata` rows (hard delete).
-    #[instrument(skip(self, ids), err(Debug))]
-    pub async fn delete_many(&self, root_id: Uuid, ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut tx = self.pool.begin().await?;
-
-        let mut query = QueryBuilder::<Db>::new("DELETE FROM trashed_files WHERE root_id = ");
-        query.push_bind(root_id);
-        query.push(" AND id IN (");
-        {
-            let mut selected = query.separated(", ");
-            for id in ids {
-                selected.push_bind(*id);
-            }
-        }
-        query.push(") RETURNING id");
-
-        let deleted = query
-            .build_query_scalar::<Uuid>()
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(AppError::from)?;
-
-        if !deleted.is_empty() {
-            let mut meta = QueryBuilder::<Db>::new("DELETE FROM file_metadata WHERE file_id IN (");
-            {
-                let mut selected = meta.separated(", ");
-                for id in &deleted {
-                    selected.push_bind(*id);
-                }
-            }
-            meta.push(")");
-            meta.build().execute(&mut *tx).await?;
-        }
-
-        tx.commit().await?;
-
-        Ok(deleted)
-    }
-
+    /// Empty when `id` is missing (e.g. already removed as part of a parent tree).
+    /// Selects before delete so parent links and metadata hashes survive the DELETE.
     #[instrument(skip(self), err(Debug))]
-    pub async fn list_trashed_ids(&self, root_id: Uuid) -> Result<Vec<FileRef>, AppError> {
-        sqlx::query_as::<_, FileRef>(
-            r#"
-            SELECT
-                id,
-                root_id
-            FROM trashed_files
-            WHERE root_id = $1
-            "#,
-        )
-        .bind(root_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(AppError::from)
-    }
-
-    /// A trashed row and every descendant still attached below it.
-    #[instrument(skip(self), err(Debug))]
-    pub async fn list_trashed_tree_ids(
+    pub async fn hard_delete_tree(
         &self,
         root_id: Uuid,
         id: Uuid,
-    ) -> Result<Vec<FileRef>, AppError> {
-        sqlx::query_as::<_, FileRef>(
+    ) -> Result<Vec<FileEntry>, AppError> {
+        let mut tx = self.pool.begin().await?;
+
+        let entries = sqlx::query_as::<_, FileEntry>(
             r#"
             WITH RECURSIVE tree AS (
-                SELECT id, root_id
+                SELECT id
                 FROM trashed_files
                 WHERE id = $1
                   AND root_id = $2
-
                 UNION ALL
-
-                SELECT child.id, child.root_id
+                SELECT child.id
                 FROM trashed_files child
-                JOIN tree parent ON child.parent = parent.id
+                JOIN tree t ON child.parent = t.id
             )
             SELECT
-                id,
-                root_id
-            FROM tree
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                NULL AS sharing_mode,
+                NULL AS share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                m.preview_blob,
+                f.created_at,
+                f.updated_at
+            FROM tree t
+            JOIN trashed_files f ON f.id = t.id
+            LEFT JOIN file_metadata m ON m.file_id = f.id
             "#,
         )
         .bind(id)
         .bind(root_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(AppError::from)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        if entries.is_empty() {
+            return Ok(entries);
+        }
+
+        sqlx::query(
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT id
+                FROM trashed_files
+                WHERE id = $1
+                  AND root_id = $2
+                UNION ALL
+                SELECT child.id
+                FROM trashed_files child
+                JOIN tree t ON child.parent = t.id
+            )
+            DELETE FROM file_metadata
+            WHERE file_id IN (SELECT id FROM tree)
+            "#,
+        )
+        .bind(id)
+        .bind(root_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT id
+                FROM trashed_files
+                WHERE id = $1
+                  AND root_id = $2
+                UNION ALL
+                SELECT child.id
+                FROM trashed_files child
+                JOIN tree t ON child.parent = t.id
+            )
+            DELETE FROM trashed_files
+            WHERE root_id = $2
+              AND id IN (SELECT id FROM tree)
+            "#,
+        )
+        .bind(id)
+        .bind(root_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(entries)
+    }
+
+    /// Hard-delete every trashed row in `root_id`. Returns the removed rows.
+    #[instrument(skip(self), err(Debug))]
+    pub async fn hard_delete_all(&self, root_id: Uuid) -> Result<Vec<FileEntry>, AppError> {
+        let mut tx = self.pool.begin().await?;
+
+        let entries = sqlx::query_as::<_, FileEntry>(
+            r#"
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                NULL AS sharing_mode,
+                NULL AS share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                m.preview_blob,
+                f.created_at,
+                f.updated_at
+            FROM trashed_files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
+            WHERE f.root_id = $1
+            "#,
+        )
+        .bind(root_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        if entries.is_empty() {
+            return Ok(entries);
+        }
+
+        sqlx::query(
+            r#"
+            DELETE FROM file_metadata
+            WHERE file_id IN (SELECT id FROM trashed_files WHERE root_id = $1)
+            "#,
+        )
+        .bind(root_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query("DELETE FROM trashed_files WHERE root_id = $1")
+            .bind(root_id)
+            .execute(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
+
+        Ok(entries)
     }
 
     /// Trashed rows with `trashed_at` before `cutoff` (past retention).

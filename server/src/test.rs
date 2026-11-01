@@ -222,7 +222,6 @@ async fn build_services(
     let user_service = UserService::new(
         repository.users.clone(),
         repository.files.clone(),
-        repository.trash.clone(),
         repository.folders.clone(),
         repository.sessions.clone(),
         email.clone(),

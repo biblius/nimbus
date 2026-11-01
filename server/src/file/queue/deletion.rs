@@ -3,7 +3,7 @@ use crate::{
     db::{Repository, files::FileTable},
     error::AppError,
     file::{
-        model::{Cleanup, FileEntry, FileKind, FileRef},
+        model::{Cleanup, FileKind, FileRef},
         storage::Storage,
     },
 };
@@ -195,91 +195,57 @@ impl DeletionQueue {
         cleanup: Option<Cleanup>,
     ) -> Result<(), AppError> {
         let mut failed = false;
+        let mut removed = Vec::new();
 
-        // Group by root so deletes hit `(root_id, id)` indexes.
-        let mut live_by_root: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
-        let mut trash_by_root: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
-
-        for entry in files.iter() {
-            match entry.origin {
-                FileTable::Live => live_by_root
-                    .entry(entry.root_id)
-                    .or_default()
-                    .push(entry.file_id),
-                FileTable::Trashed => trash_by_root
-                    .entry(entry.root_id)
-                    .or_default()
-                    .push(entry.file_id),
+        // Whole-root wipe: delete by `root_id` (no per-id binds).
+        if let Some(root_id) = cleanup.as_ref().map(|c| match c {
+            Cleanup::User { root_id, .. } | Cleanup::Root { root_id } => *root_id,
+        }) {
+            removed.extend(self.repository.files.hard_delete_all(root_id).await?);
+            removed.extend(self.repository.trash.hard_delete_all(root_id).await?);
+        } else {
+            // Seed ids only: each call expands the subtree in SQL.
+            // Already-removed descendants (parent deleted earlier) yield an empty vec.
+            for entry in &files {
+                match entry.origin {
+                    FileTable::Live => {
+                        tracing::error!(
+                            file=%entry.file_id,
+                            "live hard-delete of individual ids is not supported; use root cleanup"
+                        );
+                        failed = true;
+                    }
+                    FileTable::Trashed => {
+                        // Empty when already removed as a descendant of an earlier seed.
+                        let entries = self
+                            .repository
+                            .trash
+                            .hard_delete_tree(entry.root_id, entry.file_id)
+                            .await?;
+                        removed.extend(entries);
+                    }
+                }
             }
         }
 
-        let mut live = Vec::new();
-
-        for (root_id, ids) in &live_by_root {
-            live.extend(self.repository.files.get_live_many(*root_id, ids).await?);
-        }
-
-        let mut trashed = Vec::new();
-
-        for (root_id, ids) in &trash_by_root {
-            trashed.extend(
-                self.repository
-                    .trash
-                    .get_trashed_many(*root_id, ids)
-                    .await?,
-            );
-        }
-
-        let cap = live.len() + trashed.len();
-
-        let by_id: HashMap<Uuid, FileEntry> = live.into_iter().chain(trashed.into_iter()).fold(
-            HashMap::with_capacity(cap),
-            |mut acc, file| {
-                acc.insert(file.id, file);
-                acc
-            },
-        );
-
-        let mut deleted = HashSet::new();
-
-        for (root_id, ids) in &live_by_root {
-            deleted.extend(self.repository.files.delete_many(*root_id, ids).await?);
-        }
-
-        for (root_id, ids) in &trash_by_root {
-            deleted.extend(self.repository.trash.delete_many(*root_id, ids).await?);
-        }
+        let mut seen = HashSet::new();
+        removed.retain(|file| seen.insert(file.id));
 
         let mut content_hashes = HashSet::new();
         let mut preview_hashes = HashSet::new();
 
-        for entry in files.iter() {
-            let Some(file) = by_id.get(&entry.file_id) else {
-                tracing::debug!(?entry, "file was not deleted");
-                failed = true;
-                continue;
-            };
-
-            // If DB entry was successfully deleted, clients can consider this a success
-            // since it is no longer accessible through the API.
-            let success = deleted.contains(&file.id);
-
-            if !success {
-                tracing::error!(file=%file.id, "failed to delete file row");
-                failed = true;
-            }
-
+        for file in &removed {
             if let Some(request_id) = request_id {
                 self.send_result(DeletionResult {
                     request_id,
                     file_id: file.id,
                     name: file.name.clone(),
-                    success,
+                    success: true,
                 })
                 .await;
             }
 
-            if !success || file.kind == FileKind::Directory {
+            if file.kind == FileKind::Directory {
                 continue;
             }
 

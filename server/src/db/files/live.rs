@@ -7,7 +7,7 @@ use crate::{
     file::{
         AccessMode,
         format::FileType,
-        model::{FileEntry, FileMetadata, FileRef, FileView, MAX_ANCESTOR_DEPTH, Root, RootView},
+        model::{FileEntry, FileMetadata, FileView, MAX_ANCESTOR_DEPTH, Root, RootView},
         tree::FileEntryTree,
     },
 };
@@ -344,61 +344,6 @@ impl FileRepository {
     #[instrument(skip(self), err(Debug))]
     pub async fn get_live(&self, root_id: Uuid, id: Uuid) -> Result<Option<FileEntry>, AppError> {
         self.get_live_with(&self.pool, root_id, id).await
-    }
-
-    /// Live rows for every id in `ids` within `root_id`. Missing ids are omitted.
-    #[instrument(skip(self, ids), err(Debug))]
-    pub async fn get_live_many(
-        &self,
-        root_id: Uuid,
-        ids: &[Uuid],
-    ) -> Result<Vec<FileEntry>, AppError> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut query = QueryBuilder::<Db>::new(
-            r#"
-            SELECT
-                f.id,
-                f.root_id,
-                f.created_by,
-                f."type" AS kind,
-                f.name,
-                f.parent,
-                f.format AS file_type,
-                f.hash,
-                f.size_bytes,
-                f.sharing_mode,
-                f.share_expires_at,
-                m.preview_64,
-                m.preview_256,
-                m.preview_blob,
-                f.created_at,
-                f.updated_at
-            FROM files f
-            LEFT JOIN file_metadata m ON m.file_id = f.id
-            WHERE f.root_id =
-            "#,
-        );
-
-        query.push_bind(root_id);
-        query.push(" AND f.id IN (");
-
-        {
-            let mut selected = query.separated(", ");
-            for id in ids {
-                selected.push_bind(*id);
-            }
-        }
-
-        query.push(")");
-
-        query
-            .build_query_as::<FileEntry>()
-            .fetch_all(&self.pool)
-            .await
-            .map_err(AppError::from)
     }
 
     /// Ancestors of `id` in `root_id`, ordered root → … → `id` (inclusive).
@@ -1226,49 +1171,61 @@ impl FileRepository {
         Ok(())
     }
 
-    /// Delete rows for `ids` in `root_id`. Returns the ids that were actually removed.
-    ///
-    /// Also removes matching `file_metadata` rows (hard delete).
-    #[instrument(skip(self, ids), err(Debug))]
-    pub async fn delete_many(&self, root_id: Uuid, ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
+    /// Hard-delete every live row in `root_id`. Returns the removed rows (for blob cleanup).
+    #[instrument(skip(self), err(Debug))]
+    pub async fn hard_delete_all(&self, root_id: Uuid) -> Result<Vec<FileEntry>, AppError> {
         let mut tx = self.pool.begin().await?;
 
-        let mut query = QueryBuilder::<Db>::new("DELETE FROM files WHERE root_id = ");
-        query.push_bind(root_id);
-        query.push(" AND id IN (");
-        {
-            let mut selected = query.separated(", ");
-            for id in ids {
-                selected.push_bind(*id);
-            }
-        }
-        query.push(") RETURNING id");
+        let entries = sqlx::query_as::<_, FileEntry>(
+            r#"
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+                f."type" AS kind,
+                f.name,
+                f.parent,
+                f.format AS file_type,
+                f.hash,
+                f.size_bytes,
+                f.sharing_mode,
+                f.share_expires_at,
+                m.preview_64,
+                m.preview_256,
+                m.preview_blob,
+                f.created_at,
+                f.updated_at
+            FROM files f
+            LEFT JOIN file_metadata m ON m.file_id = f.id
+            WHERE f.root_id = $1
+            "#,
+        )
+        .bind(root_id)
+        .fetch_all(&mut *tx)
+        .await?;
 
-        let deleted = query
-            .build_query_scalar::<Uuid>()
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(AppError::from)?;
-
-        if !deleted.is_empty() {
-            let mut meta = QueryBuilder::<Db>::new("DELETE FROM file_metadata WHERE file_id IN (");
-            {
-                let mut selected = meta.separated(", ");
-                for id in &deleted {
-                    selected.push_bind(*id);
-                }
-            }
-            meta.push(")");
-            meta.build().execute(&mut *tx).await?;
+        if entries.is_empty() {
+            return Ok(entries);
         }
+
+        sqlx::query(
+            r#"
+            DELETE FROM file_metadata
+            WHERE file_id IN (SELECT id FROM files WHERE root_id = $1)
+            "#,
+        )
+        .bind(root_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query("DELETE FROM files WHERE root_id = $1")
+            .bind(root_id)
+            .execute(&mut *tx)
+            .await?;
 
         tx.commit().await?;
 
-        Ok(deleted)
+        Ok(entries)
     }
 
     pub async fn delete_root(&self, id: Uuid) -> Result<(), AppError> {
@@ -1296,20 +1253,4 @@ impl FileRepository {
         Ok(())
     }
 
-    #[instrument(skip(self), err(Debug))]
-    pub async fn list_file_ids(&self, root_id: Uuid) -> Result<Vec<FileRef>, AppError> {
-        sqlx::query_as::<_, FileRef>(
-            r#"
-            SELECT
-                id,
-                root_id
-            FROM files
-            WHERE root_id = $1
-            "#,
-        )
-        .bind(root_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(AppError::from)
-    }
 }

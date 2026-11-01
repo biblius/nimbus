@@ -1,18 +1,15 @@
 use crate::{
     auth::crypto::{hash_password, verify_password},
     db::{
-        Transactor,
-        files::{FileRepository, FileTable, TrashRepository},
-        sessions::SessionRepository,
-        user_roots::UserRootRepository,
-        users::UserRepository,
+        Transactor, files::FileRepository, sessions::SessionRepository,
+        user_roots::UserRootRepository, users::UserRepository,
     },
     email::EmailSender,
     error::{AppError, AuthFailure},
     file::{
         AccessMode,
         model::{Cleanup, FileEntry, RootAssignment, RootView},
-        queue::{DeletionQueue, DeletionQueueHandle, DeletionResult, PendingDeletion},
+        queue::{DeletionQueue, DeletionQueueHandle, DeletionResult},
     },
     model::{List, PaginationSort},
     user::model::{
@@ -30,7 +27,6 @@ use validify::{Validate, Validify};
 pub struct UserService {
     users: UserRepository,
     files: FileRepository,
-    trash: TrashRepository,
     folders: UserRootRepository,
     sessions: SessionRepository,
     email: EmailSender,
@@ -41,7 +37,6 @@ impl UserService {
     pub fn new(
         users: UserRepository,
         files: FileRepository,
-        trash: TrashRepository,
         folders: UserRootRepository,
         sessions: SessionRepository,
         email: EmailSender,
@@ -50,7 +45,6 @@ impl UserService {
         Self {
             users,
             files,
-            trash,
             folders,
             sessions,
             email,
@@ -262,19 +256,13 @@ impl UserService {
 
         let private_root = self.files.get_private_root(id).await?;
 
-        let live = self.files.list_file_ids(private_root.id).await?;
-
-        let trashed = self.trash.list_trashed_ids(private_root.id).await?;
-
         let request_id = Uuid::new_v4();
 
-        let mut files = PendingDeletion::from_refs(FileTable::Live, &live);
-        files.extend(PendingDeletion::from_refs(FileTable::Trashed, &trashed));
-
+        // Empty seed list, the worker wipes live + trash by root_id in SQL.
         let rx = DeletionQueue::submit(
             handle,
             request_id,
-            files,
+            vec![],
             Some(Cleanup::User {
                 user_id: user.id,
                 root_id: private_root.id,
@@ -431,18 +419,13 @@ impl UserService {
             ));
         }
 
-        let live = self.files.list_file_ids(id).await?;
-        let trashed = self.trash.list_trashed_ids(id).await?;
-
         let request_id = Uuid::new_v4();
 
-        let mut files = PendingDeletion::from_refs(FileTable::Live, &live);
-        files.extend(PendingDeletion::from_refs(FileTable::Trashed, &trashed));
-
+        // Empty seed list, the worker wipes live + trash by root_id in SQL.
         let rx = DeletionQueue::submit(
             handle,
             request_id,
-            files,
+            vec![],
             Some(Cleanup::Root { root_id: root.id }),
         )
         .await?;
