@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronRight, RotateCcw } from "@lucide/svelte";
+  import { ChevronRight, RotateCcw, Trash } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { trackDeletion } from "../deletion.svelte";
   import { session } from "../session.svelte";
@@ -21,13 +21,31 @@
   let expanded = $state<Record<string, boolean>>({});
 
   let destination = $state<DestinationRequest | null>(null);
-  let deleteTarget = $state<{ root: Root; node: FileTree } | null>(null);
+  let deleteTarget = $state<
+    | { mode: "one"; root: Root; node: FileTree }
+    | { mode: "all"; root: Root }
+    | null
+  >(null);
   let deleting = $state(false);
 
+  const deleteTitle = $derived(
+    deleteTarget?.mode === "all"
+      ? "Permanently delete all trash?"
+      : deleteTarget
+        ? `Permanently delete ${deleteTarget.node.name}?`
+        : "",
+  );
+
   const deleteDescription = $derived(
-    deleteTarget?.node.kind === "directory"
-      ? "This folder and everything inside it will be permanently deleted. This cannot be undone."
-      : "This file will be permanently deleted. This cannot be undone.",
+    deleteTarget?.mode === "all"
+      ? "Everything in this trash will be permanently deleted. This cannot be undone."
+      : deleteTarget?.node.kind === "directory"
+        ? "This folder and everything inside it will be permanently deleted. This cannot be undone."
+        : "This file will be permanently deleted. This cannot be undone.",
+  );
+
+  const deleteConfirmLabel = $derived(
+    deleteTarget?.mode === "all" ? "Delete all" : "Delete permanently",
   );
 
   onMount(() => {
@@ -117,17 +135,40 @@
       return;
     }
 
-    const { root, node } = deleteTarget;
+    const target = deleteTarget;
 
     deleting = true;
 
     try {
       deleteTarget = null;
-      await trackDeletion(session.client.deleteTrash(root.id, node.id));
-      await reload(root.id);
+
+      if (target.mode === "all") {
+        const children = trees[target.root.id]?.children ?? [];
+
+        await trackDeletion(
+          ...children.map((node) =>
+            session.client.deleteTrash(target.root.id, node.id),
+          ),
+        );
+      } else {
+        await trackDeletion(
+          session.client.deleteTrash(target.root.id, target.node.id),
+        );
+      }
+
     } catch {
-      toastError(`Could not permanently delete ${node.name}`);
+      toastError(
+        target.mode === "all"
+          ? "Could not empty trash"
+          : `Could not permanently delete ${target.node.name}`,
+      );
     } finally {
+      try {
+        await reload(target.root.id);
+      } catch {
+        /* tree refresh is best-effort after delete */
+      }
+
       deleting = false;
     }
   }
@@ -148,7 +189,7 @@
           onRestore={() => openPicker(root, node)}
           onDelete={() => {
             if (canWrite) {
-              deleteTarget = { root, node };
+              deleteTarget = { mode: "one", root, node };
             }
           }}
         />
@@ -238,6 +279,29 @@
                   Restore all
                 </Button>
               </span>
+              <span
+                class="inline-flex"
+                title={canWrite ? undefined : "You do not have write access"}
+              >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  class="h-8 shrink-0 gap-1.5 text-muted-foreground hover:text-destructive"
+                  disabled={!canWrite || deleting}
+                  aria-label={canWrite
+                    ? "Delete all"
+                    : "You do not have write access"}
+                  onclick={() => {
+                    if (canWrite) {
+                      deleteTarget = { mode: "all", root };
+                    }
+                  }}
+                >
+                  <Trash size={14} />
+                  Delete all
+                </Button>
+              </span>
             {/if}
           </header>
 
@@ -269,9 +333,9 @@
 
 <ConfirmDialog
   open={deleteTarget !== null}
-  title={deleteTarget ? `Permanently delete ${deleteTarget.node.name}?` : ""}
+  title={deleteTitle}
   description={deleteDescription}
-  confirmLabel="Delete permanently"
+  confirmLabel={deleteConfirmLabel}
   busy={deleting}
   onCancel={() => {
     if (!deleting) {

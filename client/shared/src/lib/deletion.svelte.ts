@@ -9,11 +9,12 @@ export const deletionBanner = $state({
 });
 
 /**
- * Drive the banner from a deletion SSE channel until `{ type: "end" }`.
- * Re-throws after the stream ends if any item failed (or the request failed).
+ * Drive the banner from one or more deletion SSE channels until each ends.
+ * Streams are consumed sequentially. Re-throws after the last stream if any
+ * item failed (or a request failed).
  */
 export async function trackDeletion(
-  stream: AsyncGenerator<DeletionEvent>,
+  ...streams: AsyncGenerator<DeletionEvent>[]
 ): Promise<void> {
   deletionBanner.open = true;
   deletionBanner.label = "Deleting…";
@@ -21,27 +22,34 @@ export async function trackDeletion(
   deletionBanner.failed = false;
 
   try {
-    for await (const event of stream) {
-      if (event.type === "progress") {
-        const { result } = event;
+    for (const stream of streams) {
+      for await (const event of stream) {
+        if (event.type === "progress") {
+          const { result } = event;
 
-        if (result.name) {
-          deletionBanner.label = result.success
-            ? `Deleted ${result.name}`
-            : `Failed ${result.name}`;
-        }
+          if (result.name) {
+            deletionBanner.label = result.success
+              ? `Deleted ${result.name}`
+              : `Failed ${result.name}`;
+          }
 
-        if (!result.success) {
-          deletionBanner.failed = true;
-        }
+          if (!result.success) {
+            deletionBanner.failed = true;
+          }
 
-        deletionBanner.percent = Math.min(90, deletionBanner.percent + 8);
-      } else {
-        deletionBanner.percent = 100;
-        if (!deletionBanner.failed && deletionBanner.label === "Deleting…") {
-          deletionBanner.label = "Deletion complete";
+          deletionBanner.percent = Math.min(90, deletionBanner.percent + 8);
+        } else {
+          deletionBanner.percent = Math.min(99, deletionBanner.percent + 1);
+          if (!deletionBanner.failed && deletionBanner.label === "Deleting…") {
+            deletionBanner.label = "Deletion complete";
+          }
         }
       }
+    }
+
+    deletionBanner.percent = 100;
+    if (!deletionBanner.failed && deletionBanner.label === "Deleting…") {
+      deletionBanner.label = "Deletion complete";
     }
   } catch (error) {
     deletionBanner.failed = true;
