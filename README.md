@@ -208,6 +208,20 @@ cargo test -p nimbus-server --no-default-features -F postgres -- --nocapture
 
 ## Releases
 
+Releases are managed as follows:
+
+- `nimbus-server` -> tag `nimbus-server-v*`; ([workflow](./.github/workflows/release-server.yml))
+- `nimbus` CLI -> tag `nimbus-cli-v*`; ([workflow](./.github/workflows/release-cli.yml))
+- Nimbus desktop -> tag `nimbus-desktop-v*`; ([workflow](./.github/workflows/release-desktop.yml))
+
+GitHub Actions check the corresponding package version in `Cargo.toml`
+and only publish that artifact when its version changes when pushing to
+the `release` branch.
+
+The `latest` release is owned by the desktop so its auto-updater can
+just point to `/releases/latest`. The server and CLI are never marked
+latest.
+
 ### nimbus-server
 
 Release targets (static musl):
@@ -217,7 +231,7 @@ Release targets (static musl):
 
 Every release includes SQLite and Postgres builds for each target (4 archives in total).
 Binaries are statically linked so they do not depend on the host glibc version.
-Released under tag: `nimbus-server`.
+Released under: `nimbus-server-v*`.
 
 ### nimbus-cli
 
@@ -226,7 +240,7 @@ Release targets (static musl):
 - `x86_64-unknown-linux-musl`
 - `aarch64-unknown-linux-musl`
 
-Released under tag: `nimbus-cli`.
+Released under: `nimbus-cli-v*`.
 
 ### Nimbus desktop
 
@@ -237,8 +251,4 @@ Release targets:
 - macOS Intel
 - Windows
 
-Desktop releases will always follow server releases when necessary.
-
-### Nimbus Android
-
-Coming soon... ;)
+Released under: `nimbus-desktop-v*`.

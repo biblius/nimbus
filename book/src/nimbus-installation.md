@@ -4,7 +4,7 @@ You will need the `nimbus-server` executable, which can be obtained from the fol
 
 ## Releases
 
-See: [release page](<>).
+See: [GitHub releases](https://github.com/biblius/nimbus/releases) (tags `nimbus-server-v*`).
 
 Every `nimbus-server` release ships 2 binaries with different database
 engines; SQLite and Postgres, the main difference being connection pooling.

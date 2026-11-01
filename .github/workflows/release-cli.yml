@@ -141,7 +141,7 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nimbus-cli
+          tag_name: nimbus-cli-v${{ needs.check-version.outputs.version }}
           name: nimbus-cli v${{ needs.check-version.outputs.version }}
           body: |
             Release of `nimbus-cli` v${{ needs.check-version.outputs.version }} (`nimbus` binary).
@@ -151,7 +151,7 @@ jobs:
             - `x86_64-unknown-linux-musl`
             - `aarch64-unknown-linux-musl`
 
-            Download: `https://github.com/${{ github.repository }}/releases/download/nimbus-cli/<asset>.tar.gz`
+            Download: `https://github.com/${{ github.repository }}/releases/download/nimbus-cli-v${{ needs.check-version.outputs.version }}/<asset>.tar.gz`
           files: dist/*
           fail_on_unmatched_files: true
           # Desktop owns GitHub "latest" for the auto-updater manifest (latest.json).

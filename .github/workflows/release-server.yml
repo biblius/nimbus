@@ -160,7 +160,7 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nimbus-server
+          tag_name: nimbus-server-v${{ needs.check-version.outputs.version }}
           name: nimbus-server v${{ needs.check-version.outputs.version }}
           body: |
             Release of `nimbus-server` v${{ needs.check-version.outputs.version }}.
@@ -172,7 +172,7 @@ jobs:
 
             Binaries are statically linked (musl) so they run on glibc and musl hosts without a minimum glibc version.
 
-            Download: `https://github.com/${{ github.repository }}/releases/download/nimbus-server/<asset>.tar.gz`
+            Download: `https://github.com/${{ github.repository }}/releases/download/nimbus-server-v${{ needs.check-version.outputs.version }}/<asset>.tar.gz`
           files: dist/*
           fail_on_unmatched_files: true
           # Desktop owns GitHub "latest" for the auto-updater manifest (latest.json).
