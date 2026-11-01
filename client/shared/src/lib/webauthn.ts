@@ -126,7 +126,14 @@ export async function createPasskey(
     },
     pubKeyCredParams: pubKey.pubKeyCredParams,
     timeout: pubKey.timeout,
-    authenticatorSelection: pubKey.authenticatorSelection,
+    // Usernameless login needs a discoverable credential. webauthn-rs
+    // defaults to residentKey "discouraged"; Bitwarden/Google often then
+    // store a non-discoverable key (or refuse registration).
+    authenticatorSelection: {
+      ...pubKey.authenticatorSelection,
+      residentKey: "required",
+      requireResidentKey: true,
+    },
     attestation: pubKey.attestation,
     extensions: pubKey.extensions,
     excludeCredentials: pubKey.excludeCredentials?.map((cred) => ({
