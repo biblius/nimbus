@@ -1,14 +1,16 @@
 #[suitest::suite(files_copy)]
 #[suitest::suite_cfg(sequential = true)]
 mod copying {
-    use super::super::{ctx, shared_root, upload_in, user};
+    use super::super::{ctx, count, shared_root, upload_in, user};
     use crate::{
         auth::session::Session,
+        db::SQL_MAX_STATEMENTS,
         error::AppError,
-        file::model::{CopyFiles, CreateDirectory, FileKind},
+        file::model::{CopyFiles, CreateDirectory, FileEntry, FileKind, FileMetadata},
         test::{self, TestState},
         user::model::CreateSharedFolder,
     };
+    use chrono::Utc;
     use suitest::{before_all, before_each};
     use uuid::Uuid;
 
@@ -442,5 +444,93 @@ mod copying {
             .unwrap_err();
 
         assert!(matches!(err, AppError::QuotaExceeded));
+    }
+
+    /// Copying a directory larger than `SQL_MAX_STATEMENTS` stays under the bind
+    /// limit because `insert_many` chunks by column count.
+    #[test]
+    async fn copy_large_directory_beyond_sql_variable_limit(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let directory = state
+            .services
+            .files
+            .create_directory(
+                &ctx(state, &session.user, *root).await,
+                CreateDirectory {
+                    parent: None,
+                    name: "huge-copy".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let child_count = SQL_MAX_STATEMENTS + 1;
+        let now = Utc::now();
+        let mut children = Vec::with_capacity(child_count);
+        for i in 0..child_count {
+            children.push(FileEntry {
+                id: Uuid::new_v4(),
+                root_id: *root,
+                created_by: Some(session.user.id),
+                kind: FileKind::File,
+                name: format!("c{i}"),
+                parent: Some(directory.id),
+                file_type: None,
+                hash: Some("copyhash".into()),
+                size_bytes: 0,
+                sharing_mode: None,
+                share_expires_at: None,
+                metadata: FileMetadata::default(),
+                created_at: now,
+                updated_at: now,
+            });
+        }
+
+        let mut conn = state.pool.acquire().await.unwrap();
+        for chunk in children.chunks(1_000) {
+            state
+                .repository
+                .files
+                .insert_many(&mut conn, chunk)
+                .await
+                .unwrap();
+        }
+        drop(conn);
+
+        state
+            .services
+            .files
+            .copy_files(
+                &ctx(state, &session.user, *root).await,
+                CopyFiles {
+                    ids: vec![directory.id],
+                    target_root_id: *root,
+                    parent: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        // Source tree + copy of directory and all children.
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM files WHERE root_id = $1",
+                *root
+            ),
+            ((child_count + 1) * 2) as i64
+        );
+        assert_eq!(
+            count!(
+                state,
+                "SELECT COUNT(*) FROM files WHERE root_id = $1 AND parent IS NULL",
+                *root
+            ),
+            2
+        );
     }
 }

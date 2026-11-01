@@ -1,6 +1,6 @@
 use crate::{
     db::{
-        Db, DbPool,
+        Db, DbPool, SQL_MAX_STATEMENTS,
         files::{FileTable, NewFile, list_descendants_in},
     },
     error::AppError,
@@ -551,7 +551,7 @@ impl FileRepository {
         .map_err(AppError::from)
     }
 
-    /// Insert every row in one statement. Parents and children may appear in any order.
+    /// Insert rows in bind-safe batches. Parents and children may appear in any order.
     #[instrument(skip(self, conn, files), err(Debug))]
     pub async fn insert_many(
         &self,
@@ -562,47 +562,50 @@ impl FileRepository {
             return Ok(());
         }
 
-        let mut insert = QueryBuilder::<Db>::new(
-            r#"
-            INSERT INTO files (
-                id,
-                root_id,
-                created_by,
-                "type",
-                name,
-                parent,
-                format,
-                hash,
-                size_bytes,
-                sharing_mode,
-                share_expires_at,
-                created_at,
-                updated_at
-            )
-            "#,
-        );
+        // 13 bound columns per file row.
+        for chunk in files.chunks((SQL_MAX_STATEMENTS / 13).max(1)) {
+            let mut insert = QueryBuilder::<Db>::new(
+                r#"
+                INSERT INTO files (
+                    id,
+                    root_id,
+                    created_by,
+                    "type",
+                    name,
+                    parent,
+                    format,
+                    hash,
+                    size_bytes,
+                    sharing_mode,
+                    share_expires_at,
+                    created_at,
+                    updated_at
+                )
+                "#,
+            );
 
-        insert.push_values(files, |mut row, file| {
-            row.push_bind(file.id)
-                .push_bind(file.root_id)
-                .push_bind(file.created_by)
-                .push_bind(file.kind)
-                .push_bind(&file.name)
-                .push_bind(file.parent)
-                .push_bind(&file.file_type)
-                .push_bind(&file.hash)
-                .push_bind(file.size_bytes)
-                .push_bind(file.sharing_mode)
-                .push_bind(file.share_expires_at)
-                .push_bind(file.created_at)
-                .push_bind(file.updated_at);
-        });
+            insert.push_values(chunk, |mut row, file| {
+                row.push_bind(file.id)
+                    .push_bind(file.root_id)
+                    .push_bind(file.created_by)
+                    .push_bind(file.kind)
+                    .push_bind(&file.name)
+                    .push_bind(file.parent)
+                    .push_bind(&file.file_type)
+                    .push_bind(&file.hash)
+                    .push_bind(file.size_bytes)
+                    .push_bind(file.sharing_mode)
+                    .push_bind(file.share_expires_at)
+                    .push_bind(file.created_at)
+                    .push_bind(file.updated_at);
+            });
 
-        insert
-            .build()
-            .execute(&mut *conn)
-            .await
-            .map_err(AppError::from)?;
+            insert
+                .build()
+                .execute(&mut *conn)
+                .await
+                .map_err(AppError::from)?;
+        }
 
         let file_metadata: Vec<_> = files
             .iter()
@@ -621,34 +624,37 @@ impl FileRepository {
             return Ok(());
         }
 
-        let mut upsert = QueryBuilder::<Db>::new(
-            "INSERT INTO file_metadata (file_id, preview_64, preview_256, preview_blob) ",
-        );
+        // 4 bound columns per metadata row.
+        for chunk in file_metadata.chunks((SQL_MAX_STATEMENTS / 4).max(1)) {
+            let mut upsert = QueryBuilder::<Db>::new(
+                "INSERT INTO file_metadata (file_id, preview_64, preview_256, preview_blob) ",
+            );
 
-        upsert.push_values(
-            file_metadata,
-            |mut row, (id, preview_64, preview_256, preview_blob)| {
-                row.push_bind(id)
-                    .push_bind(preview_64)
-                    .push_bind(preview_256)
-                    .push_bind(preview_blob);
-            },
-        );
+            upsert.push_values(
+                chunk,
+                |mut row, (id, preview_64, preview_256, preview_blob)| {
+                    row.push_bind(*id)
+                        .push_bind(*preview_64)
+                        .push_bind(*preview_256)
+                        .push_bind(*preview_blob);
+                },
+            );
 
-        upsert.push(
-            r#"
+            upsert.push(
+                r#"
                 ON CONFLICT (file_id) DO UPDATE SET
                     preview_64 = EXCLUDED.preview_64,
                     preview_256 = EXCLUDED.preview_256,
                     preview_blob = EXCLUDED.preview_blob
                 "#,
-        );
+            );
 
-        upsert
-            .build()
-            .execute(&mut *conn)
-            .await
-            .map_err(AppError::from)?;
+            upsert
+                .build()
+                .execute(&mut *conn)
+                .await
+                .map_err(AppError::from)?;
+        }
 
         Ok(())
     }

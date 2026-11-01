@@ -16,8 +16,7 @@ pub use user_roots::UserRootRepository;
 pub use users::UserRepository;
 
 /// SQLite host-parameter ceiling we treat as the practical per-statement budget.
-/// Used by large-tree trash/restore tests; production paths avoid binding that many values.
-#[allow(dead_code)]
+/// Large-tree paths avoid binding this many values; map seeding / tests may chunk to it.
 pub const SQL_MAX_STATEMENTS: usize = 32766;
 
 /// Every repository backed by the database pool.
