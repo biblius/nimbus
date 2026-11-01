@@ -30,13 +30,13 @@ npm run build -w @nimbus/web
 The build target is up to you.
 
 ```bash
-cargo build --release --no-default-features -F sqlite
+cargo build -p nimbus-server --release --no-default-features -F sqlite
 ```
 
 or
 
 ```bash
-cargo build --release --no-default-features -F postgres
+cargo build -p nimbus-server --release --no-default-features -F postgres
 ```
 
 The binary should be in `./target[/target-arch]/release/nimbus-server`.
@@ -55,7 +55,7 @@ to adjust the values.
 There are several ways you can transfer the binary to the host and is beyond
 the scope of this guide.
 
-One way you can do it is with `rsync` (and is what the script does):
+One way you can do it is with `rsync`:
 
 ```bash
 rsync --mkpath /path/to/nimbus-server user@69.69.69.69:/opt/nimbus

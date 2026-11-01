@@ -66,7 +66,7 @@ source setup.sh [-h | -r | -c]
 4. Start the server.
 
 ```bash
-RUST_LOG=info,sqlx=off,nimbus_server=debug cargo run
+RUST_LOG=info,sqlx=off,nimbus_server=debug cargo run -p nimbus-server
 ```
 
 It should be available at `http://localhost:42069`.
@@ -183,7 +183,7 @@ since they do not mutate the state. The MC/DC is only scoped to service methods.
 export DATABASE_URL=sqlite://./data/nimbus.db?mode=rwc
 sqlite3 data/nimbus.db ""
 sqlx migrate run --source server/migrations/sqlite
-cargo test --no-default-features -F sqlite -- --nocapture
+cargo test -p nimbus-server --no-default-features -F sqlite -- --nocapture
 
 ```
 
@@ -192,7 +192,7 @@ cargo test --no-default-features -F sqlite -- --nocapture
 ```bash
 export DATABASE_URL=postgres://nimbus:nimbus@127.0.0.1:5434/nimbus
 sqlx migrate run --source server/migrations/postgres
-cargo test --no-default-features -F postgres -- --nocapture
+cargo test -p nimbus-server --no-default-features -F postgres -- --nocapture
 ```
 
 ## Releases

@@ -1,4 +1,4 @@
 [workspace]
 resolver = "2"
-members = ["server"]
+members = ["server", "client/cli"]
 exclude = ["client/desktop/src-tauri"]
