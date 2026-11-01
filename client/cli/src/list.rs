@@ -1,18 +1,26 @@
 use crate::{
     api::{Api, FileKind},
-    config,
+    config::Context,
 };
 use anyhow::Result;
 use uuid::Uuid;
 
-pub async fn run(server_arg: Option<&str>, root: Option<Uuid>, dir: Option<Uuid>) -> Result<()> {
-    if dir.is_some() && root.is_none() {
-        anyhow::bail!("--dir requires --root");
-    }
+pub async fn run(
+    ctx: &Context,
+    server_arg: Option<&str>,
+    root: Option<Uuid>,
+    dir: Option<Uuid>,
+) -> Result<()> {
+    let server = ctx.resolve_server(server_arg)?;
+    let session = ctx.require_session()?;
+    let api = Api::new(&server, Some(&session.to_string()))?;
 
-    let server = config::resolve_server(server_arg)?;
-    let token = config::require_token()?;
-    let api = Api::new(&server, Some(&token))?;
+    // No --root and no active root → list roots. Otherwise list that root's entries.
+    let root = root.or(ctx.root_id);
+
+    if dir.is_some() && root.is_none() {
+        anyhow::bail!("--dir requires a root; pass `--root` or run `nimbus root set <id>`");
+    }
 
     match root {
         None => {
@@ -22,7 +30,7 @@ pub async fn run(server_arg: Option<&str>, root: Option<Uuid>, dir: Option<Uuid>
                 return Ok(());
             }
 
-            println!("{:<38}  {:<24}  {:>12}  ACCESS", "ID", "NAME", "QUOTA",);
+            println!("{:<38}  {:<24}  {:>12}  ACCESS", "ID", "NAME", "QUOTA");
             for root in roots {
                 let quota = if root.quota == 0 {
                     "unlimited".to_owned()
@@ -58,7 +66,10 @@ pub async fn run(server_arg: Option<&str>, root: Option<Uuid>, dir: Option<Uuid>
                     FileKind::Directory => ("dir", "-".to_owned()),
                     FileKind::File => ("file", format_bytes(file.size_bytes)),
                 };
-                println!("{:<38}  {:<4}  {:>12}  {}", file.id, kind, size, file.name);
+                println!(
+                    "{:<38}  {:<4}  {:>12}  {}",
+                    file.id, kind, size, file.name
+                );
             }
         }
     }
@@ -77,7 +88,6 @@ fn truncate(value: &str, max: usize) -> String {
 }
 
 fn format_access(mode: i64) -> String {
-    // Mirrors server AccessMode bits: WRITE = 1<<0, SHARE = 1<<1.
     let mut parts = Vec::new();
     if mode & 1 != 0 {
         parts.push("write");

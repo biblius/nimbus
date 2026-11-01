@@ -1,14 +1,20 @@
 use crate::{
     api::{Api, FileKind},
-    config,
+    config::Context,
 };
 use anyhow::Result;
 use uuid::Uuid;
 
-pub async fn run(server_arg: Option<&str>, root: Uuid, query: &str) -> Result<()> {
-    let server = config::resolve_server(server_arg)?;
-    let token = config::require_token()?;
-    let api = Api::new(&server, Some(&token))?;
+pub async fn run(
+    ctx: &Context,
+    server_arg: Option<&str>,
+    root: Option<Uuid>,
+    query: &str,
+) -> Result<()> {
+    let server = ctx.resolve_server(server_arg)?;
+    let session = ctx.require_session()?;
+    let root = ctx.resolve_root(root)?;
+    let api = Api::new(&server, Some(&session.to_string()))?;
 
     let files = api.search(root, query).await?;
     if files.is_empty() {

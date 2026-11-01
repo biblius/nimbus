@@ -1,18 +1,20 @@
-use crate::{api::Api, config};
-use anyhow::{Context, Result};
+use crate::{api::Api, config::Context};
+use anyhow::{Context as _, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
 use uuid::Uuid;
 
 pub async fn run(
+    ctx: &Context,
     server_arg: Option<&str>,
-    root: Uuid,
+    root: Option<Uuid>,
     file: Uuid,
     output: Option<&Path>,
 ) -> Result<()> {
-    let server = config::resolve_server(server_arg)?;
-    let token = config::require_token()?;
-    let api = Api::new(&server, Some(&token))?;
+    let server = ctx.resolve_server(server_arg)?;
+    let session = ctx.require_session()?;
+    let root = ctx.resolve_root(root)?;
+    let api = Api::new(&server, Some(&session.to_string()))?;
 
     let dest = output.unwrap_or_else(|| Path::new("."));
     let progress = download_progress(&format!("Downloading {file}"))?;
