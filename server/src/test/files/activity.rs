@@ -1,13 +1,13 @@
 #[suitest::suite(files_activity)]
 #[suitest::suite_cfg(sequential = true)]
 mod activity {
-    use super::super::{ctx, upload_in, user};
+    use super::super::{ctx, shared_root, upload_in, user};
     use crate::{
         activity::{Activity, ActivityData, ActivityTarget},
         auth::session::Session,
         file::model::{
-            CreateDirectory, CreateTextFile, MoveFiles, RenameFile, RestoreFile, ShareFiles,
-            SharingMode, TrashFiles,
+            CopyFiles, CreateDirectory, CreateTextFile, MoveFiles, RenameFile, RestoreFile,
+            ShareFiles, SharingMode, TrashFiles,
         },
         model::{List, Pagination},
         test::{self, TestState},
@@ -271,9 +271,13 @@ mod activity {
         ));
     }
 
-    /// Bulk trash independently records Trash(Multiple) even for one id.
+    /// Bulk trash of one file independently records Trash(Single) with its name.
     #[test]
-    async fn delete_many_logs_trash_multiple(state: TestState, session: Session, root: Uuid) {
+    async fn delete_many_one_file_logs_trash_single(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
         let file = test::upload(state, &session.user, *root, "notes.txt", b"notes").await;
         wait_for_total(state, session, *root, 1).await;
 
@@ -292,7 +296,34 @@ mod activity {
         let listed = wait_for_total(state, session, *root, 2).await;
         assert!(matches!(
             &listed.items[0].data,
-            ActivityData::Trash(ActivityTarget::Multiple { count: 1 })
+            ActivityData::Trash(ActivityTarget::Single { id, name })
+                if *id == file.id && name == "notes.txt"
+        ));
+    }
+
+    /// Bulk trash of multiple files independently records Trash(Multiple).
+    #[test]
+    async fn delete_many_logs_trash_multiple(state: TestState, session: Session, root: Uuid) {
+        let first = test::upload(state, &session.user, *root, "a.txt", b"a").await;
+        let second = test::upload(state, &session.user, *root, "b.txt", b"b").await;
+        wait_for_total(state, session, *root, 2).await;
+
+        state
+            .services
+            .files
+            .delete_many(
+                &ctx(state, &session.user, *root).await,
+                TrashFiles {
+                    ids: vec![first.id, second.id],
+                },
+            )
+            .await
+            .unwrap();
+
+        let listed = wait_for_total(state, session, *root, 3).await;
+        assert!(matches!(
+            &listed.items[0].data,
+            ActivityData::Trash(ActivityTarget::Multiple { count: 2 })
         ));
     }
 
@@ -453,6 +484,53 @@ mod activity {
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         assert_eq!(list(state, session, *root, 1, 10).await.total, 1);
+    }
+
+    /// Cross-root copy independently records Create(Single) on the target root.
+    #[test]
+    async fn copy_to_another_root_logs_create_on_target(
+        state: TestState,
+        session: Session,
+        root: Uuid,
+    ) {
+        let shared = shared_root(
+            state,
+            &format!("activity-copy-{}", Uuid::new_v4()),
+            &[session.user.id],
+        )
+        .await;
+        let source = test::upload(state, &session.user, shared, "notes.txt", b"notes").await;
+
+        state
+            .services
+            .files
+            .copy_files(
+                &ctx(state, &session.user, shared).await,
+                CopyFiles {
+                    ids: vec![source.id],
+                    target_root_id: *root,
+                    parent: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let listed = wait_for_total(state, session, *root, 1).await;
+        assert_eq!(listed.items[0].username, session.user.username);
+        assert_eq!(listed.items[0].root_id, *root);
+        assert!(matches!(
+            &listed.items[0].data,
+            ActivityData::Create(ActivityTarget::Single { id, name })
+                if *id != source.id && name == "notes.txt"
+        ));
+
+        // Source root only has the original upload Create.
+        let source_listed = list(state, session, shared, 1, 10).await;
+        assert_eq!(source_listed.total, 1);
+        assert!(matches!(
+            &source_listed.items[0].data,
+            ActivityData::Create(ActivityTarget::Single { id, .. }) if *id == source.id
+        ));
     }
 
     /// Listing pages newest-first and keeps the full total across pages.

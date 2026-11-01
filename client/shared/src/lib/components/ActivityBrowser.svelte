@@ -97,7 +97,11 @@
   }
 
   function targetItems(target: ActivityTarget): string {
-    return target.t_type === "single" ? target.name : `${target.count} files`;
+    if (target.t_type === "single") {
+      return target.name;
+    }
+
+    return target.count === 1 ? "1 file" : `${target.count} files`;
   }
 
   function verbFor(type: ActivityData["type"]): string {

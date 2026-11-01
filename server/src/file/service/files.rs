@@ -758,18 +758,21 @@ impl FileService {
         input.validate()?;
         ctx.require(AccessMode::WRITE)?;
 
+        let target = if input.ids.len() == 1 {
+            let id = input.ids[0];
+            let name = self.files.get_file_name(ctx.root.id, id).await?;
+            ActivityTarget::Single { id, name }
+        } else {
+            ActivityTarget::Multiple {
+                count: input.ids.len(),
+            }
+        };
+
         self.trash
             .trash(ctx.root.id, ctx.user.id, &input.ids)
             .await?;
 
-        super::activity(
-            &self.activity_q,
-            ctx,
-            ActivityData::Trash(ActivityTarget::Multiple {
-                count: input.ids.len(),
-            }),
-        )
-        .await;
+        super::activity(&self.activity_q, ctx, ActivityData::Trash(target)).await;
 
         Ok(())
     }
@@ -987,6 +990,36 @@ impl FileService {
         self.files.insert_many(&mut tx, &copies).await?;
 
         tx.commit().await?;
+
+        // New rows live in the target root — log Create there.
+        if root_id != input.target_root_id {
+            let create_target = if ids.len() == 1 {
+                let new_id = id_remap[&ids[0]];
+                let name = copies
+                    .iter()
+                    .find(|entry| entry.id == new_id)
+                    .map(|entry| entry.name.clone())
+                    .unwrap_or_default();
+                ActivityTarget::Single { id: new_id, name }
+            } else {
+                ActivityTarget::Multiple {
+                    count: ids.len(),
+                }
+            };
+
+            if let Err(e) = ActivityQueue::submit(
+                &self.activity_q,
+                ProcessActivity::Process(Activity::new(
+                    input.target_root_id,
+                    ctx.user.username.clone(),
+                    ActivityData::Create(create_target),
+                )),
+            )
+            .await
+            {
+                tracing::error!(error = %e, "unable to submit activity to queue");
+            }
+        }
 
         Ok(())
     }
