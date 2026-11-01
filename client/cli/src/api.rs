@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result, bail};
 use futures_util::TryStreamExt;
+use indicatif::ProgressBar;
 use reqwest::{
     Body, Client, StatusCode,
     header::{AUTHORIZATION, HeaderMap, HeaderValue},
@@ -171,12 +172,13 @@ impl Api {
         root_id: Uuid,
         parent: Option<Uuid>,
         files: &[(PathBuf, String)],
+        progress: &ProgressBar,
     ) -> Result<Vec<FileEntry>> {
         if files.is_empty() {
             bail!("at least one file is required");
         }
 
-        let form = build_multipart(parent, files).await?;
+        let form = build_multipart(parent, files, progress).await?;
         let response = self
             .client
             .post(format!("{}/roots/{root_id}", self.base))
@@ -197,12 +199,13 @@ impl Api {
         root_id: Uuid,
         parent: Option<Uuid>,
         files: &[(PathBuf, String)],
+        progress: &ProgressBar,
     ) -> Result<Vec<FileEntry>> {
         if files.is_empty() {
             bail!("at least one file is required");
         }
 
-        let form = build_multipart(parent, files).await?;
+        let form = build_multipart(parent, files, progress).await?;
 
         let response = self
             .client
@@ -255,6 +258,7 @@ fn format_error(status: StatusCode, bytes: &[u8]) -> String {
 async fn build_multipart(
     parent: Option<Uuid>,
     files: &[(PathBuf, String)],
+    progress: &ProgressBar,
 ) -> Result<multipart::Form> {
     let mut form = multipart::Form::new();
 
@@ -275,7 +279,13 @@ async fn build_multipart(
             .with_context(|| format!("unable to read metadata for {}", path.display()))?
             .len();
 
-        let stream = FramedRead::new(file, BytesCodec::new()).map_ok(|bytes| bytes.freeze());
+        let bar = progress.clone();
+
+        let stream = FramedRead::new(file, BytesCodec::new()).map_ok(move |bytes| {
+            let chunk = bytes.freeze();
+            bar.inc(chunk.len() as u64);
+            chunk
+        });
 
         let body = Body::wrap_stream(stream);
 

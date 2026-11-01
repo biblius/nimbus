@@ -1,5 +1,6 @@
 use crate::{api::Api, config};
 use anyhow::{Context, Result, bail};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -25,12 +26,14 @@ pub async fn run(
         let meta = path
             .metadata()
             .with_context(|| format!("unable to stat {}", path.display()))?;
+
         if meta.is_file() {
             let name = path
                 .file_name()
                 .and_then(|name| name.to_str())
                 .with_context(|| format!("invalid file name: {}", path.display()))?
                 .to_owned();
+
             files.push((path.clone(), name));
         } else if meta.is_dir() {
             directories.push(path.clone());
@@ -40,12 +43,20 @@ pub async fn run(
     }
 
     if !files.is_empty() {
-        println!(
-            "Uploading {} file{}…",
+        let label = format!(
+            "Uploading {} file{}",
             files.len(),
             if files.len() == 1 { "" } else { "s" }
         );
-        let uploaded = api.upload_files(root, dir, &files).await?;
+
+        let progress = upload_progress(&files, &label).await?;
+
+        let result = api.upload_files(root, dir, &files, &progress).await;
+
+        finish_progress(&progress, result.is_ok());
+
+        let uploaded = result?;
+
         for entry in uploaded {
             println!("  + {} ({})", entry.name, entry.id);
         }
@@ -53,27 +64,63 @@ pub async fn run(
 
     for directory in directories {
         let relative_files = collect_dir_files(&directory)?;
+
         if relative_files.is_empty() {
-            eprintln!(
-                "skipping empty directory {}",
-                directory.display()
-            );
+            eprintln!("skipping empty directory {}", directory.display());
             continue;
         }
 
-        println!(
-            "Uploading directory {} ({} file{})…",
-            directory.display(),
-            relative_files.len(),
-            if relative_files.len() == 1 { "" } else { "s" }
-        );
-        let uploaded = api.upload_dir(root, dir, &relative_files).await?;
+        let label = format!("Uploading {}", directory.display());
+
+        let progress = upload_progress(&relative_files, &label).await?;
+
+        let result = api.upload_dir(root, dir, &relative_files, &progress).await;
+
+        finish_progress(&progress, result.is_ok());
+
+        let uploaded = result?;
+
         for entry in uploaded {
             println!("  + {} ({})", entry.name, entry.id);
         }
     }
 
     Ok(())
+}
+
+async fn upload_progress(files: &[(PathBuf, String)], message: &str) -> Result<ProgressBar> {
+    let mut total = 0u64;
+
+    for (path, _) in files {
+        let len = tokio::fs::metadata(path)
+            .await
+            .with_context(|| format!("unable to read metadata for {}", path.display()))?
+            .len();
+
+        total = total.saturating_add(len);
+    }
+
+    let bar = ProgressBar::new(total);
+
+    bar.set_style(
+        ProgressStyle::with_template(
+            "{msg}  [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, ETA {eta})",
+        )
+        .context("invalid progress bar template")?
+        .progress_chars("=>-"),
+    );
+
+    bar.set_message(message.to_owned());
+
+    Ok(bar)
+}
+
+fn finish_progress(progress: &ProgressBar, ok: bool) {
+    if ok {
+        progress.finish_with_message(format!("{} done", progress.message()));
+    } else {
+        progress.abandon_with_message(format!("{} failed", progress.message()));
+    }
 }
 
 /// Walk `dir` and build multipart filenames that preserve the top-level folder name
