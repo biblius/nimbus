@@ -15,6 +15,8 @@ pub use tx::Transactor;
 pub use user_roots::UserRootRepository;
 pub use users::UserRepository;
 
+pub const SQL_MAX_STATEMENTS: usize = 32766;
+
 /// Every repository backed by the database pool.
 #[derive(Clone)]
 pub struct Repository {

@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::{
     db::{
         Db, DbPool,
@@ -141,8 +139,8 @@ impl TrashRepository {
     /// A moved row whose parent was not moved becomes a trash root.
     /// Preview metadata stays in `file_metadata` (same file id).
     ///
-    /// Rows are selected before delete: SQLite applies `ON DELETE SET NULL`
-    /// immediately while deleting, which would wipe parent links in `RETURNING`.
+    /// Done with `INSERT…SELECT` + CTE `DELETE` so descendants are never bound
+    /// as SQL variables (only the seed `ids` are).
     #[instrument(skip(self), err(Debug))]
     pub async fn trash(
         &self,
@@ -155,8 +153,9 @@ impl TrashRepository {
         }
 
         let mut tx = self.pool.begin().await?;
+        let now = Utc::now();
 
-        let mut select = QueryBuilder::<Db>::new(
+        let mut insert = QueryBuilder::<Db>::new(
             r#"
             WITH RECURSIVE tree AS (
                 SELECT id
@@ -164,19 +163,16 @@ impl TrashRepository {
                 WHERE root_id =
             "#,
         );
-
-        select.push_bind(root_id);
-        select.push(" AND id IN (");
-
+        insert.push_bind(root_id);
+        insert.push(" AND id IN (");
         {
-            let mut selected = select.separated(", ");
+            let mut selected = insert.separated(", ");
             for id in ids {
                 selected.push_bind(*id);
             }
         }
-
         // UNION (not ALL): selected ids can also appear as descendants.
-        select.push(
+        insert.push(
             r#"
                 )
                 UNION
@@ -184,57 +180,6 @@ impl TrashRepository {
                 FROM files f
                 JOIN tree t ON f.parent = t.id
             )
-            SELECT
-                f.id,
-                f.root_id,
-                f.created_by,
-                f."type" AS kind,
-                f.name,
-                f.parent,
-                f.format AS file_type,
-                f.hash,
-                f.size_bytes,
-                f.sharing_mode,
-                f.share_expires_at,
-                m.preview_64,
-                m.preview_256,
-                m.preview_blob,
-                f.created_at,
-                f.updated_at
-            FROM tree t
-            JOIN files f ON f.id = t.id
-            LEFT JOIN file_metadata m ON m.file_id = f.id
-            "#,
-        );
-
-        let trashed = select
-            .build_query_as::<FileEntry>()
-            .fetch_all(&mut *tx)
-            .await?;
-
-        if trashed.is_empty() {
-            tracing::warn!("trash did not trash any rows");
-            return Ok(());
-        }
-
-        let removed: HashSet<Uuid> = trashed.iter().map(|file| file.id).collect();
-
-        let mut delete = QueryBuilder::<Db>::new("DELETE FROM files WHERE root_id = ");
-        delete.push_bind(root_id);
-        delete.push(" AND id IN (");
-        {
-            let mut selected = delete.separated(", ");
-            for id in &removed {
-                selected.push_bind(*id);
-            }
-        }
-        delete.push(")");
-        delete.build().execute(&mut *tx).await?;
-
-        let now = Utc::now();
-
-        let mut insert = QueryBuilder::<Db>::new(
-            r#"
             INSERT INTO trashed_files (
                 id,
                 root_id,
@@ -250,32 +195,75 @@ impl TrashRepository {
                 updated_at,
                 trashed_at
             )
+            SELECT
+                f.id,
+                f.root_id,
+                f.created_by,
+            "#,
+        );
+        insert.push_bind(trashed_by);
+        insert.push(
+            r#"
+                ,
+                CASE
+                    WHEN f.parent IN (SELECT id FROM tree) THEN f.parent
+                    ELSE NULL
+                END,
+                f."type",
+                f.name,
+                f.format,
+                f.hash,
+                f.size_bytes,
+                f.created_at,
+            "#,
+        );
+        insert.push_bind(now);
+        insert.push(",");
+        insert.push_bind(now);
+        insert.push(
+            r#"
+            FROM tree t
+            JOIN files f ON f.id = t.id
             "#,
         );
 
-        insert.push_values(&trashed, |mut row, file| {
-            // Entries whose parents are not in the removed set
-            // become new roots
-            let parent = file
-                .parent
-                .and_then(|parent| removed.contains(&parent).then_some(parent));
+        let inserted = insert.build().execute(&mut *tx).await?.rows_affected();
+        if inserted == 0 {
+            tracing::warn!("trash did not trash any rows");
+            return Ok(());
+        }
 
-            row.push_bind(file.id)
-                .push_bind(file.root_id)
-                .push_bind(file.created_by)
-                .push_bind(trashed_by)
-                .push_bind(parent)
-                .push_bind(file.kind)
-                .push_bind(&file.name)
-                .push_bind(&file.file_type)
-                .push_bind(&file.hash)
-                .push_bind(file.size_bytes)
-                .push_bind(file.created_at)
-                .push_bind(now)
-                .push_bind(now);
-        });
-
-        insert.build().execute(&mut *tx).await?;
+        let mut delete = QueryBuilder::<Db>::new(
+            r#"
+            WITH RECURSIVE tree AS (
+                SELECT id
+                FROM files
+                WHERE root_id =
+            "#,
+        );
+        delete.push_bind(root_id);
+        delete.push(" AND id IN (");
+        {
+            let mut selected = delete.separated(", ");
+            for id in ids {
+                selected.push_bind(*id);
+            }
+        }
+        delete.push(
+            r#"
+                )
+                UNION
+                SELECT f.id
+                FROM files f
+                JOIN tree t ON f.parent = t.id
+            )
+            DELETE FROM files
+            WHERE root_id =
+            "#,
+        );
+        delete.push_bind(root_id);
+        delete.push(" AND id IN (SELECT id FROM tree)");
+        delete.build().execute(&mut *tx).await?;
 
         tx.commit().await?;
 

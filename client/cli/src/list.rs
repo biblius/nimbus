@@ -59,17 +59,14 @@ pub async fn run(
                 return Ok(());
             }
 
-            println!("{:<38}  {:<4}  {:>12}  {}", "ID", "KIND", "SIZE", "NAME");
+            println!("{:<38}  {:<4}  {:>12}  NAME", "ID", "KIND", "SIZE");
             for entry in files {
                 let file = entry.file;
                 let (kind, size) = match file.kind {
                     FileKind::Directory => ("dir", "-".to_owned()),
                     FileKind::File => ("file", format_bytes(file.size_bytes)),
                 };
-                println!(
-                    "{:<38}  {:<4}  {:>12}  {}",
-                    file.id, kind, size, file.name
-                );
+                println!("{:<38}  {:<4}  {:>12}  {}", file.id, kind, size, file.name);
             }
         }
     }
