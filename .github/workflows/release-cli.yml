@@ -1,0 +1,160 @@
+name: Release nimbus-cli
+on:
+  push:
+    branches:
+      - release
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release-cli
+  cancel-in-progress: false
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Detect version bump
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' client/cli/Cargo.toml | head -n1)"
+
+          if [[ -z "$version" ]]; then
+            echo "Could not read version from client/cli/Cargo.toml" >&2
+            exit 1
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Releasing nimbus-cli v${version}"
+            exit 0
+          fi
+
+          if ! git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "First commit on branch: releasing nimbus-cli v${version}"
+            exit 0
+          fi
+
+          old="$(git show HEAD^:client/cli/Cargo.toml | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1 || true)"
+
+          if [[ "$version" == "$old" ]]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Version unchanged (${version}); skipping release"
+            exit 0
+          fi
+
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "Version bumped ${old:-none} -> ${version}; releasing"
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.platform.os }}
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            musl-tools \
+            musl-dev
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+      - name: Configure musl linker
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<EOF
+          [target.${{ matrix.platform.target }}]
+          linker = "musl-gcc"
+          EOF
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: cli-${{ matrix.platform.target }}
+      - name: Build nimbus-cli
+        run: |
+          cargo build --release -p nimbus-cli \
+            --target "${{ matrix.platform.target }}"
+      - name: Package binary
+        run: |
+          set -euo pipefail
+
+          bin="target/${{ matrix.platform.target }}/release/nimbus"
+
+          asset="nimbus-${{ matrix.platform.target }}"
+
+          strip "$bin"
+
+          cp "$bin" "$asset"
+
+          tar -czf "${asset}.tar.gz" "$asset"
+
+          sha256sum "${asset}.tar.gz" > "${asset}.tar.gz.sha256"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nimbus-${{ matrix.platform.target }}
+          path: |
+            nimbus-${{ matrix.platform.target }}.tar.gz
+            nimbus-${{ matrix.platform.target }}.tar.gz.sha256
+          if-no-files-found: error
+  release:
+    needs: [check-version, build]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: nimbus-*
+          merge-multiple: true
+      - name: Write VERSION file
+        run: echo "${{ needs.check-version.outputs.version }}" > dist/VERSION
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nimbus-cli
+          name: nimbus-cli v${{ needs.check-version.outputs.version }}
+          body: |
+            Release of `nimbus-cli` v${{ needs.check-version.outputs.version }} (`nimbus` binary).
+
+            Assets include statically linked musl builds for:
+
+            - `x86_64-unknown-linux-musl`
+            - `aarch64-unknown-linux-musl`
+
+            Download: `https://github.com/${{ github.repository }}/releases/download/nimbus-cli/<asset>.tar.gz`
+          files: dist/*
+          fail_on_unmatched_files: true
+          # Desktop owns GitHub "latest" for the auto-updater manifest (latest.json).
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

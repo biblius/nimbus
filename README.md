@@ -16,6 +16,7 @@ for information on how to set up your instance.
     - [Clients](#clients)
 - [Releases](#releases)
   - [nimbus-server](#nimbus-server)
+  - [nimbus-cli](#nimbus-cli)
   - [Nimbus desktop](#nimbus-desktop)
 
 ## Development disclaimer (AI LMAO)
@@ -147,9 +148,19 @@ in that they are deduplicated.
 
 #### Clients
 
+##### GUI
+
 Clients are further divided into the `web` and `desktop` directories, intended for web and native desktop respectively.
 The `shared` directory contains the code used by both directories - a SPA shell. `web` is built with Vite and
 its `dist` is embedded into `nimbus-server` at compile time. `desktop` is a desktop-only Tauri app (no Android/iOS).
+
+##### CLI
+
+Nimbus has a minimal CLI client for interacting with `nimbus-server` through
+its REST API.
+This comes in handy when wanting to upload/download files from a machine
+that does not have a GUI, but is not the primary focus of Nimbus since most
+operations are performed from the GUI clients.
 
 ### Testing
 
@@ -199,13 +210,23 @@ cargo test -p nimbus-server --no-default-features -F postgres -- --nocapture
 
 ### nimbus-server
 
-Release targets:
+Release targets (static musl):
 
-- `x86_64-unknown-linux-gnu`
-- `aarch64-unknown-linux-gnu`
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-musl`
 
 Every release includes SQLite and Postgres builds for each target (4 archives in total).
-Windows releases are not supported because no.
+Binaries are statically linked so they do not depend on the host glibc version.
+Released under tag: `nimbus-server`.
+
+### nimbus-cli
+
+Release targets (static musl):
+
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-musl`
+
+Released under tag: `nimbus-cli`.
 
 ### Nimbus desktop
 

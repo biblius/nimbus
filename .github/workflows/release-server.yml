@@ -67,9 +67,9 @@ jobs:
       matrix:
         feature: [sqlite, postgres]
         platform:
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-24.04
-          - target: aarch64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04-arm
     runs-on: ${{ matrix.platform.os }}
     env:
@@ -81,11 +81,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            musl-tools \
+            musl-dev \
             cmake \
             clang \
             libclang-dev \
             pkg-config \
-            libssl-dev
+            ninja-build
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -101,6 +103,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform.target }}
+      - name: Configure musl linker
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<EOF
+          [target.${{ matrix.platform.target }}]
+          linker = "musl-gcc"
+          EOF
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -158,8 +167,10 @@ jobs:
 
             Assets include SQLite and Postgres builds for:
 
-            - `x86_64-unknown-linux-gnu`
-            - `aarch64-unknown-linux-gnu`
+            - `x86_64-unknown-linux-musl`
+            - `aarch64-unknown-linux-musl`
+
+            Binaries are statically linked (musl) so they run on glibc and musl hosts without a minimum glibc version.
 
             Download: `https://github.com/${{ github.repository }}/releases/download/nimbus-server/<asset>.tar.gz`
           files: dist/*
