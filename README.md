@@ -222,6 +222,16 @@ The `latest` release is owned by the desktop so its auto-updater can
 just point to `/releases/latest`. The server and CLI are never marked
 latest.
 
+### Release checklist
+
+When releasing, bump the version in the respective `Cargo.toml`s (and tauri
+config for desktop) located at:
+
+- [`server/Cargo.toml`](./server/Cargo.toml)
+- [`client/cli/Cargo.toml`](./client/cli/Cargo.toml)
+- [`client/desktop/src-tauri/Cargo.toml`](./client/desktop/src-tauri/Cargo.toml)
+- [`client/desktop/src-tauri/tauri.conf.json`](./client/desktop/src-tauri/tauri.conf.json)
+
 ### nimbus-server
 
 Release targets (static musl):
