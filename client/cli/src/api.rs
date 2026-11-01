@@ -5,13 +5,16 @@ use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use reqwest::{
     Body, Client, StatusCode,
-    header::{AUTHORIZATION, HeaderMap, HeaderValue},
+    header::{AUTHORIZATION, CONTENT_DISPOSITION, CONTENT_LENGTH, HeaderMap, HeaderValue},
     multipart,
 };
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use tokio::fs::File;
+use tokio::{
+    fs::File,
+    io::{AsyncWriteExt, BufWriter},
+};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use uuid::Uuid;
 
@@ -166,6 +169,81 @@ impl Api {
         Self::json(response).await
     }
 
+    /// Download one file via `GET /roots/{root_id}/files/{file_id}/blob/download`.
+    ///
+    /// If `dest` is a directory (or omitted as `.`), the server filename is used.
+    pub async fn download_file(
+        &self,
+        root_id: Uuid,
+        file_id: Uuid,
+        dest: &Path,
+        progress: &ProgressBar,
+    ) -> Result<PathBuf> {
+        let response = self
+            .client
+            .get(format!(
+                "{}/roots/{root_id}/files/{file_id}/blob/download",
+                self.base
+            ))
+            .send()
+            .await
+            .context("download request failed")?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            let bytes = response
+                .bytes()
+                .await
+                .context("unable to read error response")?;
+            bail!("{}", format_error(status, &bytes));
+        }
+
+        if let Some(len) = response
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            progress.set_length(len);
+        }
+
+        let filename = filename_from_disposition(response.headers().get(CONTENT_DISPOSITION))
+            .unwrap_or_else(|| file_id.to_string());
+
+        let path = if dest.is_dir() {
+            dest.join(&filename)
+        } else {
+            dest.to_path_buf()
+        };
+
+        let file = File::create(&path)
+            .await
+            .with_context(|| format!("unable to create {}", path.display()))?;
+
+        let mut writer = BufWriter::new(file);
+        let mut stream = response.bytes_stream();
+
+        while let Some(chunk) = stream
+            .try_next()
+            .await
+            .context("error reading download stream")?
+        {
+            progress.inc(chunk.len() as u64);
+            writer
+                .write_all(&chunk)
+                .await
+                .with_context(|| format!("unable to write {}", path.display()))?;
+        }
+
+        writer
+            .flush()
+            .await
+            .with_context(|| format!("unable to flush {}", path.display()))?;
+
+        Ok(path)
+    }
+
     /// Upload one or more regular files to `POST /roots/{root_id}`.
     pub async fn upload_files(
         &self,
@@ -236,6 +314,19 @@ impl Api {
         } else {
             bail!("{}", format_error(status, &bytes))
         }
+    }
+}
+
+fn filename_from_disposition(header: Option<&HeaderValue>) -> Option<String> {
+    let value = header?.to_str().ok()?;
+    let marker = "filename=\"";
+    let start = value.find(marker)? + marker.len();
+    let end = value[start..].find('"')? + start;
+    let name = &value[start..end];
+    if name.is_empty() || name.contains('/') || name.contains('\\') {
+        None
+    } else {
+        Some(name.to_owned())
     }
 }
 

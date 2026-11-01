@@ -1,5 +1,6 @@
 mod api;
 mod config;
+mod download;
 mod list;
 mod login;
 mod search;
@@ -65,6 +66,20 @@ enum Commands {
         /// Search query (name full-text).
         query: String,
     },
+
+    /// Download a single file.
+    Download {
+        /// Root containing the file.
+        #[arg(long, short)]
+        root: Uuid,
+
+        /// File id to download.
+        file: Uuid,
+
+        /// Output path (file or directory). Defaults to `./<filename>`.
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -84,5 +99,8 @@ async fn run() -> anyhow::Result<()> {
         Commands::List { root, dir } => list::run(server, root, dir).await,
         Commands::Upload { root, dir, paths } => upload::run(server, root, dir, &paths).await,
         Commands::Search { root, query } => search::run(server, root, &query).await,
+        Commands::Download { root, file, output } => {
+            download::run(server, root, file, output.as_deref()).await
+        }
     }
 }
