@@ -296,6 +296,7 @@ Your Nimbus should now be reachable via HTTPS on your domain.
 
 ## Post-install checklist
 
+- Log in to Nimbus using username:password `admin:admin`
 - **CHANGE THE DEFAULT `admin` PASSWORD!!!**
 - Configure SMTP in the admin settings page to enable lost password
   emails
