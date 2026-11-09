@@ -174,6 +174,19 @@ journalctl -u nimbus -f
 
 If there are no errors, you have successfully installed Nimbus on bare metal!
 
+Updates to Nimbus' `.env` file will need a restart to take effect.
+
+```bash
+sudo systemctl restart nimbus
+```
+
+If you have set the listen address to something like `0.0.0.0:42069` then
+Nimbus will be available on that machine through the browser in your local
+network.
+
+If you want to keep your Nimbus only on your LAN then you are done installing Nimbus.
+Head to the [post install checklist](#post-install-checklist).
+
 ### Configure nginx
 
 The following implies you have a domain set up that you can point to Nimbus,
@@ -233,7 +246,8 @@ server {
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
         add_header Cross-Origin-Opener-Policy "same-origin" always;
-        add_header Cross-Origin-Resource-Policy "same-origin" always;
+        # Set to same-origin if you do not plan on using Nimbus desktop
+        add_header Cross-Origin-Resource-Policy "cross-origin" always;
         # SPA + pdf.js worker + blob previews; blob downloads already set their own CSP.
         add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; object-src 'none'" always;
     }
