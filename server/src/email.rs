@@ -78,16 +78,8 @@ impl EmailQueue {
                         self.reconfigure().await;
                         let _ = done.send(());
                     }
-                    EmailCommand::Send(mut request) => {
-                        let reply = request.reply.take();
-                        let require_smtp = reply.is_some();
-                        let result = self.deliver(request, require_smtp).await;
-
-                        if let Some(reply) = reply {
-                            let _ = reply.send(result);
-                        } else if let Err(e) = result {
-                            tracing::error!(error=%e, "error sending email");
-                        }
+                    EmailCommand::Send(request) => {
+                        self.deliver(request).await;
                     }
                 }
             }
@@ -101,51 +93,86 @@ impl EmailQueue {
         self.mailer = transport(&cfg);
     }
 
-    #[instrument(skip(self, request), fields(to = %request.to, subject = %request.subject), err(Debug))]
-    async fn deliver(&self, request: EmailRequest, require_smtp: bool) -> Result<(), AppError> {
+    #[instrument(skip(self, request), fields(to = %request.to, subject = %request.subject))]
+    async fn deliver(&self, request: EmailRequest) {
         let cfg = self.config.get().await;
 
         if !cfg.smtp_configured() {
-            if require_smtp {
-                return Err(AppError::Unprocessable(
-                    "SMTP is not fully configured".into(),
-                ));
-            }
-            tracing::info!(
-                to = %request.to,
-                subject = %request.subject,
-                "smtp is not configured; email was not sent"
-            );
-            return Ok(());
+            // Existence of reply channel indicates it is started by a user and
+            // needs a response
+            let Some(reply) = request.reply else {
+                tracing::info!(
+                    to = %request.to,
+                    subject = %request.subject,
+                    "smtp is not configured; email was not sent"
+                );
+
+                return;
+            };
+
+            let _ = reply.send(Err(AppError::Unprocessable(
+                "SMTP is not fully configured".into(),
+            )));
+
+            return;
         }
 
         let from = build_from(&cfg.smtp_username, &cfg.email_from);
 
-        let to = request.to.parse::<Mailbox>().map_err(|error| {
+        let to = match request.to.parse::<Mailbox>().map_err(|error| {
             tracing::error!(%error, "invalid recipient address");
             AppError::Unprocessable("Invalid email address".into())
-        })?;
+        }) {
+            Ok(to) => to,
+            Err(e) => {
+                tracing::error!(error=%e, "building recipient failed");
 
-        let message = Message::builder()
+                let Some(reply) = request.reply else {
+                    return;
+                };
+
+                let _ = reply.send(Err(AppError::Internal));
+
+                return;
+            }
+        };
+
+        let message = match Message::builder()
             .from(from)
             .to(to)
-            .subject(request.subject)
+            .subject(&request.subject)
             .header(ContentType::TEXT_HTML)
-            .body(request.html)
-            .map_err(|error| {
-                tracing::error!(%error, "building email");
-                AppError::Internal
-            })?;
+            .body(request.html.clone())
+        {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::error!(error=%e, "building email message failed");
 
-        self.mailer.send(message).await.map_err(|error| {
-            tracing::error!(%error, "smtp send failed");
-            if require_smtp {
-                AppError::Unprocessable("SMTP delivery failed".into())
-            } else {
-                AppError::Internal
+                let Some(reply) = request.reply else {
+                    return;
+                };
+
+                let _ = reply.send(Err(AppError::Internal));
+
+                return;
             }
-        })?;
-        Ok(())
+        };
+
+        if let Err(e) = self.mailer.send(message).await {
+            tracing::error!(error=%e, "email delivery failed");
+
+            let Some(reply) = request.reply else {
+                return;
+            };
+
+            let _ = reply.send(Err(AppError::Unprocessable("SMTP delivery failed".into())));
+
+            return;
+        }
+
+        if let Some(reply) = request.reply {
+            let _ = reply.send(Ok(()));
+        }
     }
 }
 
